@@ -97,6 +97,21 @@ here for reference and future updates.
 
 ---
 
+## Built on the shoulders of giants
+
+SuperSaiyan is a thin integration layer on top of four exceptional open-source projects:
+
+| Project | Author | What it contributes |
+|---------|--------|---------------------|
+| [super-board](https://github.com/EricTechPro/super-board) | Eric Tech | Autonomous GitHub Project board executor — the pipeline backbone |
+| [gstack](https://github.com/garrytan/gstack) | Garry Tan | AI builder framework — office-hours, spec, review, QA, ship skills |
+| [superpowers](https://github.com/obra/superpowers) | obra / Prime Radiant | Composable skill methodology — TDD, verification, brainstorming |
+| [get-shit-done](https://github.com/gsd-build/get-shit-done) | gsd-build | Opinionated workflow discipline used inside the autonomous loop |
+
+None of this would exist without their work.
+
+---
+
 ## For contributors / deep dive
 
 | Doc | Purpose |
