@@ -6,7 +6,7 @@
 #
 # Anti-zombie controls (added 2026-05-22 after #381 worker-storm incident):
 #   1. Orphan scan on startup — refuses to start if super-board claude workers already running.
-#   2. Issue-level lock files in .claude/super-board/inflight/<N> — survives runner restart.
+#   2. Issue-level lock files in .claude/supersaiyan/inflight/<N> — survives runner restart.
 #   3. Atomic GitHub assignee claim BEFORE spawning worker (closes 10-30s claude -p cold-start race).
 #   4. Rate-limit guard — sleeps until reset when GraphQL remaining < 200.
 #   5. Per-tick project-items cache — one gh call per tick, not per column lookup.
@@ -21,15 +21,15 @@ set -euo pipefail
 # ───────────────────────────── args + paths ─────────────────────────────
 CONFIG_SLUG="${1:-}"
 if [ -z "$CONFIG_SLUG" ]; then
-  if [ -f .claude/super-board/active ]; then
-    CONFIG_SLUG=$(cat .claude/super-board/active)
+  if [ -f .claude/supersaiyan/active ]; then
+    CONFIG_SLUG=$(cat .claude/supersaiyan/active)
   else
-    echo "usage: $0 <config-slug>  (or set .claude/super-board/active)" >&2
+    echo "usage: $0 <config-slug>  (or set .claude/supersaiyan/active)" >&2
     exit 64
   fi
 fi
 
-CONFIG_PATH=".claude/super-board/configs/${CONFIG_SLUG}.json"
+CONFIG_PATH=".claude/supersaiyan/configs/${CONFIG_SLUG}.json"
 if [ ! -f "$CONFIG_PATH" ]; then
   echo "config not found: $CONFIG_PATH" >&2
   exit 66
@@ -58,9 +58,9 @@ if [ "$WORKER_BACKEND" != "claude-p" ]; then
 fi
 
 RUN_DATE=$(date +%Y-%m-%d)
-RUN_MANIFEST="docs/super-board/runs/${RUN_DATE}-${CONFIG_SLUG}.md"
-INFLIGHT_DIR=".claude/super-board/inflight"
-mkdir -p "docs/super-board/runs" .worktrees "$INFLIGHT_DIR"
+RUN_MANIFEST="docs/supersaiyan/runs/${RUN_DATE}-${CONFIG_SLUG}.md"
+INFLIGHT_DIR=".claude/supersaiyan/inflight"
+mkdir -p "docs/supersaiyan/runs" .worktrees "$INFLIGHT_DIR"
 
 # ───────────────────────────── helpers ─────────────────────────────
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$RUN_MANIFEST"; }
@@ -271,7 +271,7 @@ if [ "$ORPHANS" -gt 0 ]; then
 fi
 
 # Workflow-backend mutual exclusion (see references/run-workflow.md §Preconditions).
-WAVE_LOCK=".claude/super-board/inflight/workflow-wave.lock"
+WAVE_LOCK=".claude/supersaiyan/inflight/workflow-wave.lock"
 if [ -f "$WAVE_LOCK" ]; then
   log "🛑 refusing to start: workflow-backend wave in flight ($WAVE_LOCK exists)."
   log "    If no wave is actually running, remove the stale lock: rm $WAVE_LOCK"

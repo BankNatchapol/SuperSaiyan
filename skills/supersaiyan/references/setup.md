@@ -44,8 +44,8 @@ Create directories (idempotent):
 ```bash
 mkdir -p docs/superpowers/specs
 mkdir -p docs/superpowers/tasks
-mkdir -p docs/gstack/designs
-mkdir -p docs/gstack/specs
+mkdir -p docs/supersaiyan/designs
+mkdir -p docs/supersaiyan/specs
 mkdir -p docs/templates
 ```
 
@@ -107,10 +107,10 @@ Add this section if not already present (check with grep):
 | Feature specs | `docs/superpowers/specs/<slug>-design.md` |
 | Board tasks | `docs/superpowers/tasks/<slug>/NN-*.md` |
 | Issue map | `docs/superpowers/tasks/<slug>/.issue-map.json` |
-| Designs | `docs/gstack/designs/<slug>-design.md` |
+| Designs | `docs/supersaiyan/designs/<slug>-design.md` |
 
 When saving design docs from `/office-hours` or similar tools, also save a
-copy to `docs/gstack/designs/<name>-design.md`.
+copy to `docs/supersaiyan/designs/<name>-design.md`.
 ```
 
 ---
@@ -119,7 +119,7 @@ copy to `docs/gstack/designs/<name>-design.md`.
 
 Follow `references/onboard.md` exactly (the interactive super-board onboarding wizard).
 
-This creates `.claude/super-board/configs/<slug>.json` and links it to a GitHub Project.
+This creates `.claude/supersaiyan/configs/<slug>.json` and links it to a GitHub Project.
 
 When onboarding prompts for variant, recommend:
 - `variant: full` (Build + QA + Review) for new features
@@ -128,7 +128,7 @@ When onboarding prompts for variant, recommend:
 After onboarding completes, always write the active pointer:
 
 ```bash
-echo "<slug>" > .claude/super-board/active
+echo "<slug>" > .claude/supersaiyan/active
 ```
 
 ---
@@ -137,7 +137,7 @@ echo "<slug>" > .claude/super-board/active
 
 ```
 ✅ SuperSaiyan setup complete.
-   Config: .claude/super-board/configs/<slug>.json
+   Config: .claude/supersaiyan/configs/<slug>.json
    Project: <GitHub Project URL>
    Docs:    docs/superpowers/{specs,tasks}/
 

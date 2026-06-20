@@ -16,7 +16,7 @@ Read before asking any questions:
 4. Run: `git log --oneline -20` — what's been built recently
 
 Check for an existing design doc:
-- `docs/gstack/designs/<name>-design.md` → found: say "I found an existing design. I'll use it as the starting point and only ask about gaps." Read it, skip questions already answered.
+- `docs/supersaiyan/designs/<name>-design.md` → found: say "I found an existing design. I'll use it as the starting point and only ask about gaps." Read it, skip questions already answered.
 - None found → proceed to Step 1.
 
 ---
@@ -188,7 +188,7 @@ If user disagrees with a premise, revise understanding and loop back. Confirmed 
 
 ## Step 5 — Write Design Doc
 
-Write `docs/gstack/designs/<name>-design.md`:
+Write `docs/supersaiyan/designs/<name>-design.md`:
 
 ```markdown
 # <Feature / Product Name>
@@ -239,7 +239,7 @@ Write `docs/gstack/designs/<name>-design.md`:
 [Unresolved items — things to decide in spec phase]
 ```
 
-Announce: "Design doc saved to `docs/gstack/designs/<slug>-design.md`. Next: `references/spec.md` will turn this into a technical spec."
+Announce: "Design doc saved to `docs/supersaiyan/designs/<slug>-design.md`. Next: `references/spec.md` will turn this into a technical spec."
 
 ---
 
@@ -251,7 +251,7 @@ Ask: "Describe the change in 1–3 sentences. What should be different when it's
 
 Then (silently):
 1. Read `CLAUDE.md` and locate the relevant files via Grep/Read — cite `path:line`.
-2. Write a minimal design doc to `docs/gstack/designs/<slug>-design.md`:
+2. Write a minimal design doc to `docs/supersaiyan/designs/<slug>-design.md`:
 
 ```markdown
 # <Slug>

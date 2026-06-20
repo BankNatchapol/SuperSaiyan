@@ -58,7 +58,7 @@ One command set. Idea → merged PR.
 
 ## Config
 
-Config lives at `.claude/super-board/configs/<slug>.json`. Created by `setup`.
+Config lives at `.claude/supersaiyan/configs/<slug>.json`. Created by `setup`.
 
 If config is missing when any verb (other than `setup`) is invoked, run `setup` inline first, then continue with the original verb.
 

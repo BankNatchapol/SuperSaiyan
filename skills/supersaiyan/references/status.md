@@ -263,7 +263,7 @@ other` if the comment can't be parsed.
 ### §G — Recent-events section format
 
 Tail the last 5 state-transition lines from the most recent run manifest
-(`docs/super-board/runs/<YYYY-MM-DD>-<slug>.md`). Reformat each as:
+(`docs/supersaiyan/runs/<YYYY-MM-DD>-<slug>.md`). Reformat each as:
 
 ```
    T-<Nm>    <glyph> <verb>      #<NNN> → <Target>  <detail>
@@ -361,7 +361,7 @@ They also apply if you need to hand-render via the model-render fallback when
 the script is missing.
 
 - **Active config resolution:** load
-  `.claude/super-board/configs/<slug>.json` for the resolved project slug.
+  `.claude/supersaiyan/configs/<slug>.json` for the resolved project slug.
   Header fields come straight from the JSON.
 - **Claim assignee resolution:** the in-flight worker scan must match the
   identity recorded in the config under `notifications.bot_identity`. This may
@@ -384,7 +384,7 @@ the script is missing.
   match the leading emoji against §I. Cache results during the snapshot — do
   not re-read mid-render.
 - **Recent events:** tail the most recent run manifest at
-  `docs/super-board/runs/<YYYY-MM-DD>-<slug>.md`. Filter to state-transition
+  `docs/supersaiyan/runs/<YYYY-MM-DD>-<slug>.md`. Filter to state-transition
   lines (§G); skip `tick —` lines. Take the last 5 after filtering.
 - **Health:**
   - `Last tick` — most recent `tick —` line in today's manifest.

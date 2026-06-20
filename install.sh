@@ -116,7 +116,7 @@ fi
 echo
 echo "Creating docs layout"
 
-for d in docs/superpowers/specs docs/superpowers/tasks docs/gstack/designs docs/gstack/specs docs/templates; do
+for d in docs/superpowers/specs docs/superpowers/tasks docs/supersaiyan/designs docs/supersaiyan/specs docs/templates; do
   mkdir -p "$TARGET/$d"
   ok "$d/"
 done
@@ -144,10 +144,10 @@ if ! grep -q "$SNIPPET" "$CLAUDE" 2>/dev/null; then
 | Feature specs | `docs/superpowers/specs/<slug>-design.md` |
 | Board tasks | `docs/superpowers/tasks/<slug>/NN-*.md` |
 | Issue map | `docs/superpowers/tasks/<slug>/.issue-map.json` |
-| Designs | `docs/gstack/designs/<slug>-design.md` |
+| Designs | `docs/supersaiyan/designs/<slug>-design.md` |
 
 When saving design docs from external tools, also save a copy to
-`docs/gstack/designs/<feature-slug>-design.md`.
+`docs/supersaiyan/designs/<name>-design.md`.
 EOF
   ok "CLAUDE.md — SuperSaiyan paths added"
 else

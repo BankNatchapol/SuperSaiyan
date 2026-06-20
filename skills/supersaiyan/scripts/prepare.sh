@@ -45,7 +45,7 @@ trap cleanup EXIT
 
 # ── Config discovery ───────────────────────────────────────────────────────────
 
-CONFIGS_DIR=".claude/super-board/configs"
+CONFIGS_DIR=".claude/supersaiyan/configs"
 if [ ! -d "$CONFIGS_DIR" ]; then
   echo "NEEDS_ONBOARD"
   exit 78
@@ -67,7 +67,7 @@ CONFIG_SLUG=""
 if [ "$config_count" -eq 1 ]; then
   CONFIG_SLUG=$(basename "$first_config" .json)
 else
-  ACTIVE_FILE=".claude/super-board/active"
+  ACTIVE_FILE=".claude/supersaiyan/active"
   if [ ! -f "$ACTIVE_FILE" ]; then
     echo "Multiple board configs found. Write the active slug to $ACTIVE_FILE." >&2
     exit 75

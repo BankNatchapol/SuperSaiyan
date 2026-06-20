@@ -42,7 +42,7 @@ After approval, write `docs/superpowers/projects/<project-slug>/PROJECT.md`:
 
 **Slug:** <project-slug>
 **Started:** <date>
-**Design:** docs/gstack/designs/<project-slug>-design.md
+**Design:** docs/supersaiyan/designs/<project-slug>-design.md
 
 ## Goal
 
@@ -77,7 +77,7 @@ Each phase runs through the autonomous loop independently:
 
 ## Source
 
-- Design: docs/gstack/designs/<project-slug>-design.md
+- Design: docs/supersaiyan/designs/<project-slug>-design.md
 - Phases: docs/superpowers/projects/<project-slug>/phase-N/
 ```
 

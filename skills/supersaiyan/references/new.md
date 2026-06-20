@@ -12,7 +12,7 @@ Announce at start: "Starting SuperSaiyan for `<name>`. I'll guide you from desig
 
 ```bash
 git rev-parse --is-inside-work-tree 2>/dev/null || echo "NOT_GIT"
-ls .claude/super-board/configs/*.json 2>/dev/null || echo "NO_CONFIG"
+ls .claude/supersaiyan/configs/*.json 2>/dev/null || echo "NO_CONFIG"
 gh auth status --active >/dev/null 2>&1 || echo "NOT_AUTHED"
 ```
 
@@ -26,7 +26,7 @@ gh auth status --active >/dev/null 2>&1 || echo "NOT_AUTHED"
 
 Read and follow `references/brainstorm.md` exactly.
 
-Output: design doc saved to `docs/gstack/designs/<name>-design.md`.
+Output: design doc saved to `docs/supersaiyan/designs/<name>-design.md`.
 
 ---
 

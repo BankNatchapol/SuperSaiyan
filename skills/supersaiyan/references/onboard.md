@@ -33,7 +33,7 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
 ```
 0. SILENT DETECT (no questions yet)
    ├─ CWD: git repo? any commits? remote URL?
-   ├─ Existing configs in .claude/super-board/configs/?
+   ├─ Existing configs in .claude/supersaiyan/configs/?
    └─ Existing PROJECT.md?
 
 1. ONE BIG QUESTION — "What do you want to run in a loop?"
@@ -89,7 +89,7 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
    │              Use the answer verbatim as the seed for PROJECT.md.
    │    → draft PROJECT.md (what the app is, stack, conventions, success criteria)
    ├─ Show draft → user confirms/edits inline
-   └─ Save to docs/super-board/PROJECT.md
+   └─ Save to docs/supersaiyan/PROJECT.md
 
 8. PICK BASE BRANCH (Full variant with local repo, OR QA-only with a local repo)
    (Skip entirely only when target.type == "url" with no repo.)
@@ -127,8 +127,8 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
     │  (when a GitHub App is installed on the repo) or the user's own
     │  GitHub login (solo projects). Pick during step 2 based on what
     │  `gh auth status` returned.
-    ├─ Write .claude/super-board/configs/<slug>.json (committed)
-    └─ Write .claude/super-board/active ← <slug> (gitignored)
+    ├─ Write .claude/supersaiyan/configs/<slug>.json (committed)
+    └─ Write .claude/supersaiyan/active ← <slug> (gitignored)
 
 12. SUMMARY
     "✅ Onboard complete.
@@ -154,7 +154,7 @@ Every onboard step that touches GitHub or the filesystem has a defined recovery 
 | 6. column create | Column add denied (read-only project) | `🔑 Project is read-only for your account. Either get write access, or pick a different project.` |
 | 7. PROJECT.md autogen | Sub-agent timeout / empty draft | `📝 Couldn't auto-draft PROJECT.md. Skip for now, or write one paragraph and I'll seed from that.` |
 | 8. base branch | gh API rate limit on protection-rule lookup | Soft-fail production detection, warn the user, fall back to asking. Do not halt. |
-| 11. write config | File system not writable | Halt with the exact path: `🛑 Can't write to .claude/super-board/configs/<slug>.json — check permissions.` |
+| 11. write config | File system not writable | Halt with the exact path: `🛑 Can't write to .claude/supersaiyan/configs/<slug>.json — check permissions.` |
 
 Every onboard halt comment includes (a) what the bot tried, (b) what failed, (c) the exact command or click the user can do, (d) how to resume (always: "re-run `super-board onboard`").
 
@@ -172,10 +172,10 @@ Every onboard halt comment includes (a) what the bot tried, (b) what failed, (c)
 
 Before exiting `onboard` successfully, the worker MUST verify:
 
-1. **Config file exists and validates** — `.claude/super-board/configs/<slug>.json`
+1. **Config file exists and validates** — `.claude/supersaiyan/configs/<slug>.json`
    parses as JSON and contains every required field from `references/config-schema.json`
    (including `notifications.bot_identity`).
-2. **Active pointer is updated** — `.claude/super-board/active` is a one-line
+2. **Active pointer is updated** — `.claude/supersaiyan/active` is a one-line
    file containing exactly the new slug, no trailing whitespace beyond a single `\n`.
 3. **Project columns are present on GitHub** — running
    `gh project field-list <project.number> --owner <project.owner>` returns all

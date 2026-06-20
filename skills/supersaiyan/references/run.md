@@ -135,7 +135,7 @@ Resolves #<N> — <title>
 | 3  | Reviewer | ✅ merged   | <time>  | squash → <merge-commit>          |
 
 ## Evidence folders
-- `docs/super-board/runs/issue-<N>-qa-v1/`
+- `docs/supersaiyan/runs/issue-<N>-qa-v1/`
 - ...
 
 ## Status
@@ -196,7 +196,7 @@ Threads are resolved via `gh api graphql` `resolveReviewThread` mutation when th
 2. URL-only variant: skip worktree + pull, run a health-check on `target.url`. If unhealthy → Block.
 3. Read issue + PR + Builder's handoff comment.
 4. Build issue-scoped test plan: one observable test per AC.
-5. Run the tests. Capture evidence to `docs/super-board/runs/issue-<N>-qa-v<N>/`. For UI/visual ACs, capture screenshots at the standard viewports (1920×1080 desktop, 1024×768 tablet, 375×667 mobile). Commit the screenshots to the issue branch BEFORE writing the comment (the markdown image URLs depend on the files being present on the branch).
+5. Run the tests. Capture evidence to `docs/supersaiyan/runs/issue-<N>-qa-v<N>/`. For UI/visual ACs, capture screenshots at the standard viewports (1920×1080 desktop, 1024×768 tablet, 375×667 mobile). Commit the screenshots to the issue branch BEFORE writing the comment (the markdown image URLs depend on the files being present on the branch).
 6. **Pass** → commit test files + screenshots to same branch + push → 🔍 PR comment with results + evidence path **+ inline screenshot embeds** (see "Screenshot embed format" below) → 🔍 issue comment with the SAME inline screenshot embeds → move card QA → Review. Clean up worktree.
 7. **Fail** → 🔍 PR comment with per-AC expected/actual + repro file:line + evidence path + "what fixed should look like" **+ inline screenshot embeds of the broken state** → 🔍 issue comment with the same inline screenshots (showing what's wrong) → increment rebuild counter → move card QA → Ready (label `loop:rebuild-N`). Clean up worktree.
 
@@ -209,9 +209,9 @@ Inline screenshots in the GitHub comment using raw-URL markdown so they render d
 
 | Viewport | Screenshot |
 |---|---|
-| Desktop 1920×1080 | ![desktop](https://github.com/<OWNER>/<REPO>/raw/<BRANCH>/docs/super-board/runs/issue-<N>-qa-v<V>/desktop.png) |
-| Tablet 1024×768  | ![tablet](https://github.com/<OWNER>/<REPO>/raw/<BRANCH>/docs/super-board/runs/issue-<N>-qa-v<V>/tablet.png) |
-| Mobile 375×667   | ![mobile](https://github.com/<OWNER>/<REPO>/raw/<BRANCH>/docs/super-board/runs/issue-<N>-qa-v<V>/mobile.png) |
+| Desktop 1920×1080 | ![desktop](https://github.com/<OWNER>/<REPO>/raw/<BRANCH>/docs/supersaiyan/runs/issue-<N>-qa-v<V>/desktop.png) |
+| Tablet 1024×768  | ![tablet](https://github.com/<OWNER>/<REPO>/raw/<BRANCH>/docs/supersaiyan/runs/issue-<N>-qa-v<V>/tablet.png) |
+| Mobile 375×667   | ![mobile](https://github.com/<OWNER>/<REPO>/raw/<BRANCH>/docs/supersaiyan/runs/issue-<N>-qa-v<V>/mobile.png) |
 ```
 
 Substitution rules:
@@ -304,15 +304,15 @@ Sample issue comment (Tester fail rebuild — with mandatory inline screenshots 
 🔍 super-board · QA fail · v1
    PR:  #87
    Failed: AC1 (TTFB 1240ms), AC2 (CLS 0.18)
-   Evidence: docs/super-board/runs/issue-42-qa-v1/
+   Evidence: docs/supersaiyan/runs/issue-42-qa-v1/
    Next: Rebuild
 
 ### Visual evidence (broken state)
 
 | Viewport | Screenshot |
 |---|---|
-| Desktop 1920×1080 | ![desktop](https://github.com/EricTechPro/BookKeepingApp/raw/issue-42-feature-slug/docs/super-board/runs/issue-42-qa-v1/desktop.png) |
-| Mobile 375×667    | ![mobile](https://github.com/EricTechPro/BookKeepingApp/raw/issue-42-feature-slug/docs/super-board/runs/issue-42-qa-v1/mobile.png) |
+| Desktop 1920×1080 | ![desktop](https://github.com/EricTechPro/BookKeepingApp/raw/issue-42-feature-slug/docs/supersaiyan/runs/issue-42-qa-v1/desktop.png) |
+| Mobile 375×667    | ![mobile](https://github.com/EricTechPro/BookKeepingApp/raw/issue-42-feature-slug/docs/supersaiyan/runs/issue-42-qa-v1/mobile.png) |
 ```
 
 Pass-state comment uses the same `### Visual evidence` block but with screenshots of the **working** UI per AC.
@@ -383,7 +383,7 @@ Worker-side assignee claim alone is **not sufficient** — `claude -p` cold-star
 The dispatcher MUST also:
 
 1. **Claim BEFORE spawning the worker** — `try_claim_assignee` runs in the dispatcher and only proceeds to `nohup claude -p` if it wins the assignee write. Closes the cold-start race.
-2. **Write a local in-flight lock** — `.claude/super-board/inflight/<issue-N>` contains the worker PID. `top_card_in_column` skips any issue with a live lock even if the assignee write hasn't propagated yet.
+2. **Write a local in-flight lock** — `.claude/supersaiyan/inflight/<issue-N>` contains the worker PID. `top_card_in_column` skips any issue with a live lock even if the assignee write hasn't propagated yet.
 3. **Cap one worker per lane** — track `BUILD_PID` / `QA_PID` / `REVIEW_PID`; do not dispatch to a lane whose prior PID is still alive.
 4. **Reap stale locks each tick** — `reap_finished_locks` removes any lock whose PID no longer exists.
 5. **Orphan-scan on startup** — refuse to start if any `claude -p .*super-board run` worker is already running from a prior crashed dispatcher.
@@ -432,7 +432,7 @@ The loop exits cleanly when:
 ## Run manifest
 
 ```
-docs/super-board/runs/<YYYY-MM-DD>-<slug>.md
+docs/supersaiyan/runs/<YYYY-MM-DD>-<slug>.md
 ```
 
 Records: config used, variant, columns, target, per-card history (claim → completion → next column with evidence links), halt gates, final counts, per-lane wall-clock, resume command.

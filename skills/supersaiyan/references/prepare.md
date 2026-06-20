@@ -8,9 +8,9 @@ Invoked by `supersaiyan new` (Phase 5) and directly via `/supersaiyan prepare <s
 
 ## How prepare works
 
-1. **Config discovery** — reads `.claude/super-board/configs/<slug>.json` to find the board.
+1. **Config discovery** — reads `.claude/supersaiyan/configs/<slug>.json` to find the board.
    - If no config exists, runs inline onboarding (`references/onboard.md`) first.
-   - If multiple configs exist, reads `.claude/super-board/active` for the active slug.
+   - If multiple configs exist, reads `.claude/supersaiyan/active` for the active slug.
 
 2. **Git validation** — verifies task files are committed and pushed. Uncommitted or unpushed
    task changes are caught here before any GitHub writes.
@@ -82,5 +82,5 @@ run the phase-discuss step before filing issues. This is opt-in; most projects s
 |-----------|---------|--------|
 | 0 | Success | Continue |
 | 65 | Validation error | Surface the error message; fix before retrying |
-| 75 | Multiple configs, no active pointer | `echo <slug> > .claude/super-board/active` then retry |
+| 75 | Multiple configs, no active pointer | `echo <slug> > .claude/supersaiyan/active` then retry |
 | 78 | No board config | Run `references/onboard.md` then retry |
