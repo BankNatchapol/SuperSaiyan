@@ -1,0 +1,1 @@
+../../../super-board/skills/super-board/references/block-template.md

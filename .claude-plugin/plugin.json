@@ -1,0 +1,19 @@
+{
+  "name": "supersaiyan",
+  "description": "End-to-end AI development pipeline — idea to merged PR with one command. Handles brainstorming, spec writing, task decomposition, GitHub issue filing, and autonomous Build → QA → Review execution.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Natchapol Patamawisut",
+    "email": "natchapol.pat@gmail.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "pipeline",
+    "autonomous",
+    "github",
+    "ai",
+    "claude",
+    "agents",
+    "super-board"
+  ]
+}
