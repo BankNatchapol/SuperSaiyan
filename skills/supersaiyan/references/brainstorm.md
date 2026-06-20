@@ -2,7 +2,7 @@
 
 Runs before the spec phase. Saves a design doc that `references/spec.md` reads as input.
 
-Announce at start: "Starting brainstorm for `<feature-slug>`. I'll guide you through a product design session before we write any specs."
+Announce at start: "Starting brainstorm for `<name>`. I'll guide you through a product design session before we write any specs."
 
 ---
 
@@ -16,7 +16,7 @@ Read before asking any questions:
 4. Run: `git log --oneline -20` — what's been built recently
 
 Check for an existing design doc:
-- `docs/gstack/designs/<feature-slug>-design.md` → found: say "I found an existing design. I'll use it as the starting point and only ask about gaps." Read it, skip questions already answered.
+- `docs/gstack/designs/<name>-design.md` → found: say "I found an existing design. I'll use it as the starting point and only ask about gaps." Read it, skip questions already answered.
 - None found → proceed to Step 1.
 
 ---
@@ -188,7 +188,7 @@ If user disagrees with a premise, revise understanding and loop back. Confirmed 
 
 ## Step 5 — Write Design Doc
 
-Write `docs/gstack/designs/<feature-slug>-design.md`:
+Write `docs/gstack/designs/<name>-design.md`:
 
 ```markdown
 # <Feature / Product Name>

@@ -26,7 +26,7 @@ gh auth status --active >/dev/null 2>&1 || echo "NOT_AUTHED"
 
 Read and follow `references/brainstorm.md` exactly.
 
-Output: design doc saved to `docs/gstack/designs/<feature-slug>-design.md`.
+Output: design doc saved to `docs/gstack/designs/<name>-design.md`.
 
 ---
 
@@ -46,18 +46,18 @@ Routes internally:
 
 Invoke the `writing-board-tasks` skill.
 
-Input: `docs/superpowers/specs/<feature-slug>-design.md`
+Input: `docs/superpowers/specs/<name>-design.md`
 
-Output: task files at `docs/superpowers/tasks/<feature-slug>/NN-task-name.md`
+Output: task files at `docs/superpowers/tasks/<name>/NN-task-name.md`
 
 ---
 
 ## Phase 4 — Commit (single feature only)
 
 ```bash
-git add docs/superpowers/specs/<feature-slug>-design.md
-git add docs/superpowers/tasks/<feature-slug>/
-git commit -m "docs: <feature-slug> spec and board tasks"
+git add docs/superpowers/specs/<name>-design.md
+git add docs/superpowers/tasks/<name>/
+git commit -m "docs: <name> spec and board tasks"
 git push
 ```
 
@@ -72,7 +72,7 @@ Follow `references/prepare.md` exactly.
 On success, print:
 
 ```
-✅ <feature-slug> ready for the autonomous loop.
+✅ <name> ready for the autonomous loop.
    Issues:  <N> created → Ready queue
    Lint:    complete
 
@@ -93,7 +93,7 @@ Re-run lint after editing issues:
    /supersaiyan lint
 
 Re-sync issues without redefining the feature:
-   /supersaiyan prepare <feature-slug>
+   /supersaiyan prepare <name>
 
 Check board status:
    /supersaiyan status

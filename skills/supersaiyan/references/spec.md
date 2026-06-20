@@ -4,7 +4,7 @@ Turns a design doc into a precise technical spec. Runs after `references/brainst
 
 Announce at start: "Moving to spec phase. I'll interrogate the technical details before writing anything."
 
-**REQUIRED INPUT:** Design doc at `docs/gstack/designs/<feature-slug>-design.md` (written by brainstorm phase).
+**REQUIRED INPUT:** Design doc at `docs/gstack/designs/<name>-design.md` (written by brainstorm phase).
 
 If no design doc exists: tell the user to run `supersaiyan new <slug>` from the beginning to complete the brainstorm phase first.
 

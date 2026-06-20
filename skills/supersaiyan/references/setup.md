@@ -56,8 +56,8 @@ If `docs/templates/task-file.md` does not exist, create it:
 title: Verb + concrete outcome
 order: 1
 depends_on_task: null
-feature: <feature-slug>
-design: docs/superpowers/specs/<feature-slug>-design.md
+feature: <name>
+design: docs/superpowers/specs/<name>-design.md
 plan:
 plan_task: Requirements 1
 skills: test-driven-development, verification-before-completion
@@ -110,7 +110,7 @@ Add this section if not already present (check with grep):
 | Designs | `docs/gstack/designs/<slug>-design.md` |
 
 When saving design docs from `/office-hours` or similar tools, also save a
-copy to `docs/gstack/designs/<feature-slug>-design.md`.
+copy to `docs/gstack/designs/<name>-design.md`.
 ```
 
 ---
@@ -141,5 +141,5 @@ echo "<slug>" > .claude/super-board/active
    Project: <GitHub Project URL>
    Docs:    docs/superpowers/{specs,tasks}/
 
-Next: /supersaiyan new <feature-slug>
+Next: /supersaiyan new <name>
 ```
