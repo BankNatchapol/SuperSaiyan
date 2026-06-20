@@ -20,14 +20,16 @@ Go from **idea to merged PR** using a single command set. No context-switching b
 
 **Option A — Plugin (recommended)**
 
+Run these once. `/supersaiyan` becomes available in every repo.
+
 ```bash
-claude plugin marketplace add github:BankNatchapol/SuperSaiyan
+claude plugin marketplace add BankNatchapol/SuperSaiyan
 claude plugin install supersaiyan
 ```
 
-Installs `supersaiyan` globally. Open Claude Code in any repo and `/supersaiyan` is available.
+**Option B — Direct install into a specific repo**
 
-**Option B — Direct install into a repo**
+Use this if you also want the pipeline scripts (`.claude/bin/`) and docs layout dropped into a repo.
 
 ```bash
 git clone https://github.com/BankNatchapol/SuperSaiyan.git
