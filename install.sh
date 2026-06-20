@@ -70,22 +70,41 @@ same_path() {
     "$(cd "$(dirname "$2")" 2>/dev/null && pwd)/$(basename "$2")" ]
 }
 
-for skill in supersaiyan super-board super-build super-qa super-review refining-spec writing-board-tasks test-driven-development verification-before-completion; do
-  src="$SAIYAN/skills/$skill"
-  dst="$TARGET/.claude/skills/$skill"
-  if [ ! -d "$src" ]; then
-    fail "$skill: source not found at $src"
-    continue
-  fi
-  if same_path "$src" "$dst"; then
-    ok "$skill (same path — skipped)"
-    continue
-  fi
-  rm -rf "$dst"
-  cp -RL "$src" "$dst"
-  if [ -f "$dst/scripts/prepare.sh" ]; then chmod +x "$dst/scripts/prepare.sh"; fi
-  ok "$skill"
-done
+PLUGIN_INSTALLED=false
+if claude plugin list 2>/dev/null | grep -q "supersaiyan"; then
+  PLUGIN_INSTALLED=true
+  echo "  (supersaiyan plugin detected — skipping local skill copies to avoid duplicates)"
+fi
+
+if [ "$PLUGIN_INSTALLED" = false ]; then
+  for skill in supersaiyan super-board super-build super-qa super-review refining-spec writing-board-tasks test-driven-development verification-before-completion; do
+    src="$SAIYAN/skills/$skill"
+    dst="$TARGET/.claude/skills/$skill"
+    if [ ! -d "$src" ]; then
+      fail "$skill: source not found at $src"
+      continue
+    fi
+    if same_path "$src" "$dst"; then
+      ok "$skill (same path — skipped)"
+      continue
+    fi
+    rm -rf "$dst"
+    cp -RL "$src" "$dst"
+    if [ -f "$dst/scripts/prepare.sh" ]; then chmod +x "$dst/scripts/prepare.sh"; fi
+    ok "$skill"
+  done
+else
+  # Plugin provides all skills. Remove any stale local copies that would cause duplicates.
+  for skill in supersaiyan super-board super-build super-qa super-review refining-spec writing-board-tasks test-driven-development verification-before-completion; do
+    dst="$TARGET/.claude/skills/$skill"
+    if [ -d "$dst" ] && ! same_path "$SAIYAN/skills/$skill" "$dst"; then
+      rm -rf "$dst"
+      ok "$skill (removed local copy — plugin provides it)"
+    else
+      ok "$skill (plugin)"
+    fi
+  done
+fi
 
 # ── Pipeline scripts ───────────────────────────────────────────────────────────
 
@@ -177,16 +196,22 @@ fi
 echo
 echo "Verification"
 
+SKILL_PATHS=""
+if [ "$PLUGIN_INSTALLED" = false ]; then
+  SKILL_PATHS="\
+  .claude/skills/supersaiyan/SKILL.md \
+  .claude/skills/super-board/SKILL.md \
+  .claude/skills/super-build/SKILL.md \
+  .claude/skills/super-qa/SKILL.md \
+  .claude/skills/super-review/SKILL.md \
+  .claude/skills/refining-spec/SKILL.md \
+  .claude/skills/writing-board-tasks/SKILL.md \
+  .claude/skills/test-driven-development/SKILL.md \
+  .claude/skills/verification-before-completion/SKILL.md"
+fi
+
 for path in \
-  ".claude/skills/supersaiyan/SKILL.md" \
-  ".claude/skills/super-board/SKILL.md" \
-  ".claude/skills/super-build/SKILL.md" \
-  ".claude/skills/super-qa/SKILL.md" \
-  ".claude/skills/super-review/SKILL.md" \
-  ".claude/skills/refining-spec/SKILL.md" \
-  ".claude/skills/writing-board-tasks/SKILL.md" \
-  ".claude/skills/test-driven-development/SKILL.md" \
-  ".claude/skills/verification-before-completion/SKILL.md" \
+  $SKILL_PATHS \
   ".claude/bin/super-board-wave-plan.sh" \
   ".claude/bin/tasks-to-issues.sh" \
   ".claude/workflows/super-board-wave.js"; do
