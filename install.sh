@@ -92,31 +92,23 @@ done
 echo
 echo "Installing pipeline scripts"
 
-for script in super-board-run.sh super-board-gh-guard.sh super-board-status.py super-board-wave-plan.sh; do
-  src="$SAIYAN/super-board/scripts/$script"
+for script in super-board-run.sh super-board-gh-guard.sh super-board-status.py super-board-wave-plan.sh tasks-to-issues.sh; do
+  src="$SAIYAN/scripts/$script"
   dst="$TARGET/.claude/bin/$script"
   if [ -f "$src" ]; then
     cp "$src" "$dst"
     chmod +x "$dst"
     ok "$script"
   else
-    fail "$script not found in super-board/scripts/"
+    fail "$script not found in scripts/"
   fi
 done
 
-if [ -f "$SAIYAN/scripts/tasks-to-issues.sh" ]; then
-  cp "$SAIYAN/scripts/tasks-to-issues.sh" "$TARGET/.claude/bin/tasks-to-issues.sh"
-  chmod +x "$TARGET/.claude/bin/tasks-to-issues.sh"
-  ok "tasks-to-issues.sh"
-else
-  fail "scripts/tasks-to-issues.sh not found"
-fi
-
-if [ -f "$SAIYAN/super-board/workflows/super-board-wave.js" ]; then
-  cp "$SAIYAN/super-board/workflows/super-board-wave.js" "$TARGET/.claude/workflows/"
+if [ -f "$SAIYAN/scripts/super-board-wave.js" ]; then
+  cp "$SAIYAN/scripts/super-board-wave.js" "$TARGET/.claude/workflows/"
   ok "super-board-wave.js"
 else
-  fail "super-board/workflows/super-board-wave.js not found"
+  fail "scripts/super-board-wave.js not found"
 fi
 
 # ── Docs layout ───────────────────────────────────────────────────────────────

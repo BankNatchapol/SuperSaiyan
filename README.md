@@ -106,6 +106,5 @@ SuperSaiyan is self-contained — no separate tool installs required:
 ## Test without GitHub
 
 ```bash
-bash super-board/tests/test-wave-plan.sh
 ./tests/test-supersaiyan-prepare.sh
 ```
