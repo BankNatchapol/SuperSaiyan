@@ -125,6 +125,12 @@ When onboarding prompts for variant, recommend:
 - `variant: full` (Build + QA + Review) for new features
 - `human_approves_merge: true` on first run
 
+After onboarding completes, always write the active pointer:
+
+```bash
+echo "<slug>" > .claude/super-board/active
+```
+
 ---
 
 ## Step 5 — Done
