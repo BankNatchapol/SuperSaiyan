@@ -328,7 +328,14 @@ Sample issue comment (Reviewer approve + merge):
    Status: Done
 ```
 
-Block/Skip exit comments use the 🛡 / 🤷 emojis with a 1-line reason and reference the PR.
+Block/Skip exit comments use the 🛡 / 🤷 / 🔁 emojis with a 1-line reason and reference the PR. See `references/block-template.md` for the full mandatory template.
+
+**Skip types:**
+- 🤷 Deferred/out-of-scope — post skip comment, move card to Skipped, **leave issue open** (next run can retry).
+- 🔁 Superseded — same deliverable, would conflict. Post skip comment, move card to Skipped, then **close the issue**:
+  ```bash
+  gh issue close <N> --comment "Closing — superseded by #<M> which covers the same deliverable. Reopen if #<M> does not land."
+  ```
 
 ## Per-tick logic (~30s cadence)
 
