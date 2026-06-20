@@ -92,34 +92,14 @@ SuperSaiyan is self-contained — no separate tool installs required:
 | `skills/refining-spec/` | Design → technical spec |
 | `skills/writing-board-tasks/` | Spec → PR-sized task files |
 
-The upstream sources (`super-board/`, `superpowers/`, `gstack/`) are vendored
-here for reference and future updates.
-
 ---
 
-## Built on the shoulders of giants
+## Inspired by
 
-SuperSaiyan is a thin integration layer on top of four exceptional open-source projects:
-
-| Project | Author | What it contributes |
-|---------|--------|---------------------|
-| [super-board](https://github.com/EricTechPro/super-board) | Eric Tech | Autonomous GitHub Project board executor — the pipeline backbone |
-| [gstack](https://github.com/garrytan/gstack) | Garry Tan | AI builder framework — office-hours, spec, review, QA, ship skills |
-| [superpowers](https://github.com/obra/superpowers) | obra / Prime Radiant | Composable skill methodology — TDD, verification, brainstorming |
-| [get-shit-done](https://github.com/gsd-build/get-shit-done) | gsd-build | Opinionated workflow discipline used inside the autonomous loop |
-
-None of this would exist without their work.
-
----
-
-## For contributors / deep dive
-
-| Doc | Purpose |
-|-----|---------|
-| [docs/super-board-analysis/idea-to-merged-playbook.md](docs/super-board-analysis/idea-to-merged-playbook.md) | Full pipeline architecture |
-| [docs/super-board-analysis/plan-to-issues-bridge.md](docs/super-board-analysis/plan-to-issues-bridge.md) | Issue creation strategy |
-| [docs/super-board-analysis/card-lifecycle-thesis-notes.md](docs/super-board-analysis/card-lifecycle-thesis-notes.md) | One card through Build → QA → Review |
-| [AGENTS.md](AGENTS.md) | Agent handoff reference |
+- [super-board](https://github.com/EricTechPro/super-board) by Eric Tech — autonomous board executor that moves cards through Build → QA → Review
+- [gstack](https://github.com/garrytan/gstack) by Garry Tan — office-hours, spec, review, and ship discipline
+- [superpowers](https://github.com/obra/superpowers) by obra — TDD, verification, and composable skill methodology
+- [get-shit-done](https://github.com/gsd-build/get-shit-done) — opinionated workflow loop that keeps agents on track
 
 ---
 
