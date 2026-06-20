@@ -16,7 +16,8 @@ No context-switching between tools. No 20-step setup guide.
 **Plugin (recommended — global, works in any repo):**
 
 ```bash
-claude plugin install github:BankNatchapol/SuperSaiyan
+claude plugin marketplace add github:BankNatchapol/SuperSaiyan
+claude plugin install supersaiyan
 ```
 
 **Direct install into a specific repo:**
