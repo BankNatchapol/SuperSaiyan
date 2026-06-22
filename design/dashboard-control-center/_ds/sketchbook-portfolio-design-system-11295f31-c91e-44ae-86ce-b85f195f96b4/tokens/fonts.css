@@ -1,0 +1,10 @@
+/* ── Fonts ───────────────────────────────────────────────────────────────
+   Sketchbook portfolio webfonts (Google Fonts).
+   - Caveat        → handwritten display (name, hero, big numerals)
+   - Kalam         → secondary handwriting (annotations, accents)
+   - Special Elite → typewriter (eyebrows, labels, meta)
+   - Courier Prime → typewriter body + mono (running text, UI, code)
+   NOTE: served from Google Fonts CDN. Substitution flagged in readme —
+   swap these @imports for local @font-face + .ttf if self-hosting is needed.
+   ──────────────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Kalam:wght@300;400;700&family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap');

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PREPARE="$ROOT/.claude/skills/supersaiyan/scripts/prepare.sh"
+PREPARE="$ROOT/skills/supersaiyan/scripts/prepare.sh"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
@@ -163,7 +163,7 @@ new_fixture() {
   STATE="$TMP/$name-state"
   BIN="$TMP/$name-bin"
   mkdir -p "$APP/docs/superpowers/tasks/demo" "$APP/docs/superpowers/specs" \
-    "$APP/.claude/bin" "$APP/.claude/super-board/configs" \
+    "$APP/.claude/bin" "$APP/.claude/supersaiyan/configs" \
     "$STATE/issues" "$BIN"
   echo 100 > "$STATE/next"
   : > "$STATE/log"
@@ -171,7 +171,7 @@ new_fixture() {
   echo '# Demo design' > "$APP/docs/superpowers/specs/demo-design.md"
   write_task "$APP/docs/superpowers/tasks/demo/01-first.md" "First task" 1 null
   write_task "$APP/docs/superpowers/tasks/demo/02-second.md" "Second task" 2 01-first
-  cat > "$APP/.claude/super-board/configs/demo-board.json" <<'EOF'
+  cat > "$APP/.claude/supersaiyan/configs/demo-board.json" <<'EOF'
 {
   "project": {"owner": "owner", "number": 7},
   "base_branch": "main"
@@ -202,15 +202,15 @@ run_prepare --check-only | grep -q 'CHECK_OK.*config=demo-board' ||
   fail "single config check failed"
 
 # 2. Multiple configs require an active pointer.
-cp "$APP/.claude/super-board/configs/demo-board.json" \
-  "$APP/.claude/super-board/configs/other.json"
+cp "$APP/.claude/supersaiyan/configs/demo-board.json" \
+  "$APP/.claude/supersaiyan/configs/other.json"
 run_expect 75 run_prepare --check-only
-echo demo-board > "$APP/.claude/super-board/active"
+echo demo-board > "$APP/.claude/supersaiyan/active"
 run_prepare --check-only >/dev/null || fail "active config was not selected"
 
 # 3. Missing config requests inline onboarding.
 new_fixture missing-config
-rm "$APP/.claude/super-board/configs/demo-board.json"
+rm "$APP/.claude/supersaiyan/configs/demo-board.json"
 run_expect 78 run_prepare --check-only
 grep -q NEEDS_ONBOARD "$TMP/out" || fail "missing config did not signal onboarding"
 
@@ -291,10 +291,10 @@ run_prepare >/dev/null
   fail "manual card was changed"
 
 # 9. Publishable skill keeps onboarding and GSD fallback in the orchestration layer.
-grep -q 'exits `78`' "$ROOT/.claude/skills/supersaiyan/SKILL.md" ||
+grep -q 'exits `78`' "$ROOT/skills/supersaiyan/SKILL.md" ||
   fail "skill does not route missing config to inline onboarding"
 grep -q 'gsd-discuss-phase.*optional' \
-  "$ROOT/.claude/skills/supersaiyan/references/prepare.md" ||
+  "$ROOT/skills/supersaiyan/references/prepare.md" ||
   fail "skill does not document the GSD fallback"
 
 echo "PASS: test-supersaiyan-prepare.sh (9 scenarios)"

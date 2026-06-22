@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #06060b; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,214,10,0.18); border-radius: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  @keyframes auraFloat { 0%,100% { transform: translateY(0) scale(1); opacity:.55 } 50% { transform: translateY(-14px) scale(1.04); opacity:.8 } }
+  @keyframes boltFlicker { 0%,92%,100% { opacity:0 } 93% { opacity:.5 } 94% { opacity:.12 } 95% { opacity:.6 } 97% { opacity:.15 } 99% { opacity:.4 } }
+  @keyframes boltFlicker2 { 0%,40%,100% { opacity:0 } 42% { opacity:.45 } 43% { opacity:.1 } 45% { opacity:.55 } 47% { opacity:.12 } }
+  @keyframes corePulse { 0%,100% { box-shadow:0 0 0 0 rgba(255,214,10,.5), 0 0 28px -4px rgba(255,214,10,.7) } 50% { box-shadow:0 0 0 10px rgba(255,214,10,0), 0 0 44px -2px rgba(255,214,10,.9) } }
+  @keyframes blink { 0%,49% { opacity:1 } 50%,100% { opacity:0 } }
+  @keyframes scan { 0% { transform: translateY(-100%) } 100% { transform: translateY(2400%) } }
+  @keyframes spinSlow { to { transform: rotate(360deg) } }
+</style>
+</helmet>
+<div style="position:relative; min-height:100vh; width:100%; background:radial-gradient(120% 80% at 80% -10%, #1a1606 0%, #0a0a12 40%, #06060b 100%); font-family:'Space Grotesk',system-ui,sans-serif; color:#f3f3f6; overflow:hidden;">
+
+  <!-- backdrop -->
+  <div style="position:absolute; inset:0; pointer-events:none; overflow:hidden;">
+    <div style="position:absolute; top:-180px; right:-120px; width:620px; height:620px; border-radius:50%; background:radial-gradient(circle, rgba(255,214,10,.28), rgba(255,214,10,0) 65%); filter:blur(20px); animation:auraFloat 9s ease-in-out infinite;"></div>
+    <div style="position:absolute; bottom:-220px; left:-140px; width:560px; height:560px; border-radius:50%; background:radial-gradient(circle, rgba(255,170,10,.16), rgba(255,170,10,0) 65%); filter:blur(24px); animation:auraFloat 11s ease-in-out infinite reverse;"></div>
+    <svg viewBox="0 0 1440 900" preserveAspectRatio="none" style="position:absolute; inset:0; width:100%; height:100%;">
+      <g stroke="#FFE45C" stroke-width="2" fill="none" filter="url(#g)" style="animation:boltFlicker 6s linear infinite;">
+        <path d="M1180 -20 L1150 120 L1210 150 L1140 320 L1185 350 L1100 560"/>
+      </g>
+      <g stroke="#FFD60A" stroke-width="1.6" fill="none" filter="url(#g)" style="animation:boltFlicker2 7.5s linear infinite;">
+        <path d="M120 920 L160 760 L110 730 L190 560 L150 540 L230 360"/>
+      </g>
+      <defs><filter id="g"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
+    </svg>
+    <div style="position:absolute; inset:0; opacity:.05; mix-blend-mode:overlay; background-image:url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22><filter id=%22n%22><feTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%222%22/></filter><rect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23n)%22/></svg>');"></div>
+  </div>
+
+  <!-- app -->
+  <div style="position:relative; display:flex; min-height:100vh;">
+
+    <!-- SIDEBAR -->
+    <aside style="width:246px; flex:none; display:flex; flex-direction:column; padding:22px 16px; gap:6px; background:linear-gradient(180deg, rgba(20,21,30,.66), rgba(10,11,18,.6)); backdrop-filter:blur(24px) saturate(140%); -webkit-backdrop-filter:blur(24px) saturate(140%); border-right:1px solid rgba(255,255,255,.07);">
+      <div style="display:flex; align-items:center; gap:11px; padding:6px 8px 18px;">
+        <div style="width:38px; height:38px; border-radius:11px; flex:none; display:grid; place-items:center; background:linear-gradient(150deg,#FFE45C,#E0A500); box-shadow:0 0 22px -4px rgba(255,214,10,.8); position:relative;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1a1500" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg>
+        </div>
+        <div>
+          <div style="font-size:15px; font-weight:700; letter-spacing:-.3px;">Super Saiyan</div>
+          <div style="font-size:10.5px; color:#888; font-weight:500; letter-spacing:.4px; text-transform:uppercase;">Agent Orchestration</div>
+        </div>
+      </div>
+
+      <sc-for list="{{ nav }}" as="item" hint-placeholder-count="5">
+        <button onClick="{{ item.go }}" style="{{ item.style }}" style-hover="background:rgba(255,255,255,.05);">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="{{ item.iconColor }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none;"><path d="{{ item.icon }}"></path></svg>
+          <span style="flex:1; text-align:left;">{{ item.label }}</span>
+          <span style="{{ item.badgeStyle }}">{{ item.badge }}</span>
+        </button>
+      </sc-for>
+
+      <div style="flex:1;"></div>
+
+      <!-- power core -->
+      <div style="margin-top:14px; padding:16px; border-radius:16px; background:linear-gradient(160deg, rgba(255,214,10,.12), rgba(255,170,10,.04)); border:1px solid rgba(255,214,10,.28); position:relative; overflow:hidden;">
+        <div style="display:flex; align-items:center; gap:11px;">
+          <div style="width:40px; height:40px; border-radius:50%; flex:none; display:grid; place-items:center; background:radial-gradient(circle,#FFE45C,#E0A500); animation:corePulse 2.4s ease-in-out infinite; font-size:16px;">⚡</div>
+          <div style="line-height:1.15;">
+            <div style="font-size:10px; color:#c9a94e; text-transform:uppercase; letter-spacing:.6px; font-weight:600;">Power Core</div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:600; color:#FFE45C;">{{ powerStr }}</div>
+          </div>
+        </div>
+        <div style="margin-top:12px; height:6px; border-radius:6px; background:rgba(0,0,0,.4); overflow:hidden;">
+          <div style="height:100%; width:78%; border-radius:6px; background:linear-gradient(90deg,#FFE45C,#FFB200);"></div>
+        </div>
+        <div style="margin-top:7px; font-size:10.5px; color:#9a8a55; font-family:'JetBrains Mono',monospace;">78% charged · 14 queued</div>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:10px; padding:10px 6px 2px;">
+        <div style="width:30px; height:30px; border-radius:50%; flex:none; background:linear-gradient(135deg,#3a3d52,#1d1f2c); border:1px solid rgba(255,255,255,.12); display:grid; place-items:center; font-size:12px; font-weight:600;">K</div>
+        <div style="flex:1; line-height:1.2;">
+          <div style="font-size:12.5px; font-weight:600;">Kakarot</div>
+          <div style="font-size:10.5px; color:#777;">Pro · acme</div>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main style="flex:1; min-width:0; display:flex; flex-direction:column; height:100vh; overflow:hidden;">
+
+      <!-- topbar -->
+      <header style="flex:none; display:flex; align-items:center; gap:18px; padding:18px 28px; border-bottom:1px solid rgba(255,255,255,.06); background:linear-gradient(180deg, rgba(14,15,22,.5), rgba(14,15,22,.18)); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);">
+        <div style="min-width:0;">
+          <div style="font-size:20px; font-weight:700; letter-spacing:-.4px; display:flex; align-items:center; gap:10px;">{{ headerTitle }}<span style="font-size:10px; font-weight:600; color:#FFD60A; background:rgba(255,214,10,.12); border:1px solid rgba(255,214,10,.3); padding:3px 8px; border-radius:20px; letter-spacing:.4px;">{{ headerTag }}</span></div>
+          <div style="font-size:12.5px; color:#888; margin-top:2px;">{{ headerSub }}</div>
+        </div>
+        <div style="flex:1;"></div>
+        <div style="display:flex; align-items:center; gap:8px; height:38px; padding:0 13px; border-radius:10px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); color:#888; font-size:13px; min-width:210px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+          <span>Search repos, issues…</span>
+          <span style="margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:10px; color:#555; border:1px solid rgba(255,255,255,.1); border-radius:5px; padding:1px 5px;">⌘K</span>
+        </div>
+        <button style-hover="background:rgba(255,255,255,.06); color:#fff;" style="width:38px; height:38px; border-radius:10px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); color:#999; display:grid; place-items:center; cursor:pointer;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        </button>
+        <button onClick="{{ powerUp }}" style-hover="box-shadow:0 0 34px -2px rgba(255,214,10,.95); transform:translateY(-1px);" style="display:flex; align-items:center; gap:8px; height:38px; padding:0 17px; border-radius:10px; border:none; cursor:pointer; font-family:'Space Grotesk'; font-weight:600; font-size:13.5px; color:#1a1400; background:linear-gradient(150deg,#FFE45C,#FFB200); box-shadow:0 0 22px -6px rgba(255,214,10,.8); transition:box-shadow .2s, transform .2s;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="#1a1400" stroke="none"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg>
+          Power Up
+        </button>
+      </header>
+
+      <!-- scroll region -->
+      <div style="flex:1; overflow-y:auto; padding:26px 28px 40px;">
+
+        <!-- ===================== OVERVIEW ===================== -->
+        <sc-if value="{{ isOverview }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex; flex-direction:column; gap:20px;">
+
+          <!-- stat row -->
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px;">
+            <sc-for list="{{ stats }}" as="s" hint-placeholder-count="4">
+              <div style="{{ s.card }}" style-hover="border-color:rgba(255,214,10,.4); box-shadow:0 0 30px -10px rgba(255,214,10,.4), 0 20px 50px -20px rgba(0,0,0,.7);">
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                  <span style="font-size:12px; color:#8a8a96; font-weight:500;">{{ s.label }}</span>
+                  <span style="font-size:11px; font-weight:600; font-family:'JetBrains Mono',monospace; color:{{ s.deltaColor }};">{{ s.delta }}</span>
+                </div>
+                <div style="display:flex; align-items:baseline; gap:7px; margin-top:10px;">
+                  <span style="font-size:30px; font-weight:700; font-family:'JetBrains Mono',monospace; letter-spacing:-1px; color:{{ s.valColor }};">{{ s.value }}</span>
+                  <span style="font-size:12px; color:#777;">{{ s.unit }}</span>
+                </div>
+                <div style="margin-top:12px; display:flex; align-items:flex-end; gap:3px; height:26px;">
+                  <sc-for list="{{ s.bars }}" as="b" hint-placeholder-count="12">
+                    <div style="flex:1; height:{{ b.h }}; border-radius:2px; background:{{ b.c }};"></div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <!-- middle: wave + activity -->
+          <div style="display:grid; grid-template-columns:1.55fr 1fr; gap:16px;">
+
+            <!-- current wave -->
+            <div style="border-radius:18px; padding:22px; background:linear-gradient(160deg, rgba(28,30,42,.62), rgba(14,15,22,.58)); backdrop-filter:blur(22px) saturate(140%); -webkit-backdrop-filter:blur(22px) saturate(140%); border:1px solid rgba(255,214,10,.22); box-shadow:0 0 50px -22px rgba(255,214,10,.5), 0 20px 50px -20px rgba(0,0,0,.7);">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <div style="display:flex; align-items:center; gap:11px;">
+                  <span style="width:9px; height:9px; border-radius:50%; background:#FFD60A; box-shadow:0 0 12px 2px rgba(255,214,10,.9);"></span>
+                  <h3 style="margin:0; font-size:16px; font-weight:700; letter-spacing:-.3px;">Current Wave · 3 of 5</h3>
+                </div>
+                <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:#FFD60A;">4 agents powering up</span>
+              </div>
+              <div style="font-size:12.5px; color:#8a8a96; margin-bottom:18px;">Dispatching parallel workers across 3 repositories</div>
+
+              <!-- wave progress -->
+              <div style="display:flex; gap:6px; margin-bottom:22px;">
+                <div style="flex:1; height:8px; border-radius:6px; background:linear-gradient(90deg,#FFE45C,#FFB200); box-shadow:0 0 14px -2px rgba(255,214,10,.7);"></div>
+                <div style="flex:1; height:8px; border-radius:6px; background:linear-gradient(90deg,#FFE45C,#FFB200); box-shadow:0 0 14px -2px rgba(255,214,10,.7);"></div>
+                <div style="flex:1; height:8px; border-radius:6px; background:linear-gradient(90deg,#FFD60A 58%, rgba(255,214,10,.15) 58%);"></div>
+                <div style="flex:1; height:8px; border-radius:6px; background:rgba(255,255,255,.08);"></div>
+                <div style="flex:1; height:8px; border-radius:6px; background:rgba(255,255,255,.08);"></div>
+              </div>
+
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <sc-for list="{{ workers }}" as="w" hint-placeholder-count="4">
+                  <div style="display:flex; align-items:center; gap:14px; padding:13px 14px; border-radius:13px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06);" style-hover="background:rgba(255,255,255,.055);">
+                    <div style="width:34px; height:34px; flex:none; border-radius:9px; display:grid; place-items:center; background:linear-gradient(135deg, rgba(255,214,10,.18), rgba(255,214,10,.05)); border:1px solid rgba(255,214,10,.25); font-size:14px;">{{ w.emoji }}</div>
+                    <div style="min-width:0; flex:1;">
+                      <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-family:'JetBrains Mono',monospace; font-size:12.5px; font-weight:600; color:#f3f3f6;">{{ w.name }}</span>
+                        <span style="font-size:10px; color:#777; font-family:'JetBrains Mono',monospace;">{{ w.repo }} · {{ w.issue }}</span>
+                      </div>
+                      <div style="font-size:12px; color:#9a9aa6; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ w.task }}</div>
+                    </div>
+                    <div style="width:120px; flex:none;">
+                      <div style="display:flex; justify-content:space-between; font-size:10px; margin-bottom:5px;"><span style="color:{{ w.stateColor }}; font-weight:600;">{{ w.state }}</span><span style="font-family:'JetBrains Mono',monospace; color:#888;">{{ w.pct }}%</span></div>
+                      <div style="height:5px; border-radius:5px; background:rgba(0,0,0,.4); overflow:hidden;"><div style="height:100%; width:{{ w.pctStr }}; border-radius:5px; background:linear-gradient(90deg,#FFE45C,#FFB200);"></div></div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <!-- activity -->
+            <div style="border-radius:18px; padding:22px; background:linear-gradient(160deg, rgba(28,30,42,.62), rgba(14,15,22,.58)); backdrop-filter:blur(22px) saturate(140%); -webkit-backdrop-filter:blur(22px) saturate(140%); border:1px solid rgba(255,255,255,.08); box-shadow:0 20px 50px -20px rgba(0,0,0,.7);">
+              <h3 style="margin:0 0 4px; font-size:16px; font-weight:700; letter-spacing:-.3px;">Activity</h3>
+              <div style="font-size:12.5px; color:#8a8a96; margin-bottom:16px;">Live across all repositories</div>
+              <div style="display:flex; flex-direction:column;">
+                <sc-for list="{{ activity }}" as="a" hint-placeholder-count="5">
+                  <div style="display:flex; gap:12px; padding:11px 0; border-bottom:1px solid rgba(255,255,255,.05);">
+                    <div style="width:30px; height:30px; flex:none; border-radius:8px; display:grid; place-items:center; background:{{ a.bg }}; border:1px solid {{ a.bd }};">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="{{ a.ic }}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="{{ a.icon }}"></path></svg>
+                    </div>
+                    <div style="min-width:0; flex:1; line-height:1.35;">
+                      <div style="font-size:12.5px;"><span style="font-weight:600; color:#e9e9ef;">{{ a.who }}</span> <span style="color:#9a9aa6;">{{ a.action }}</span></div>
+                      <div style="font-size:11.5px; color:#777; font-family:'JetBrains Mono',monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ a.target }}</div>
+                    </div>
+                    <span style="font-size:11px; color:#666; flex:none; font-family:'JetBrains Mono',monospace;">{{ a.time }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <!-- repos strip -->
+          <div style="border-radius:18px; padding:22px; background:linear-gradient(160deg, rgba(28,30,42,.62), rgba(14,15,22,.58)); backdrop-filter:blur(22px) saturate(140%); -webkit-backdrop-filter:blur(22px) saturate(140%); border:1px solid rgba(255,255,255,.08); box-shadow:0 20px 50px -20px rgba(0,0,0,.7);">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+              <h3 style="margin:0; font-size:16px; font-weight:700; letter-spacing:-.3px;">Connected Repositories</h3>
+              <button onClick="{{ goRepos }}" style="background:none; border:none; color:#FFD60A; font-size:12.5px; font-weight:600; cursor:pointer; font-family:'Space Grotesk';">View all →</button>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px;">
+              <sc-for list="{{ repos }}" as="r" hint-placeholder-count="4">
+                <div style="padding:16px; border-radius:13px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06);" style-hover="border-color:rgba(255,214,10,.35);">
+                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                    <span style="width:9px; height:9px; border-radius:50%; background:{{ r.dot }}; flex:none;"></span>
+                    <span style="font-family:'JetBrains Mono',monospace; font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ r.name }}</span>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; font-size:11.5px; color:#888;">
+                    <span>{{ r.open }} open</span><span style="color:#FFD60A;">{{ r.agents }} agents</span>
+                  </div>
+                  <div style="margin-top:10px; font-family:'JetBrains Mono',monospace; font-size:11px; color:#666;">⚡ {{ r.powerStr }} · {{ r.last }} ago</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ===================== BOARD ===================== -->
+        <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex; gap:14px; align-items:flex-start; overflow-x:auto; padding-bottom:8px;">
+          <sc-for list="{{ lanes }}" as="lane" hint-placeholder-count="5">
+            <div style="flex:none; width:282px; display:flex; flex-direction:column; gap:11px;">
+              <div style="display:flex; align-items:center; gap:9px; padding:0 4px;">
+                <span style="width:9px; height:9px; border-radius:50%; background:{{ lane.color }}; box-shadow:0 0 10px {{ lane.glow }};"></span>
+                <span style="font-size:13px; font-weight:600;">{{ lane.title }}</span>
+                <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#777; background:rgba(255,255,255,.06); padding:1px 8px; border-radius:20px;">{{ lane.count }}</span>
+              </div>
+              <sc-for list="{{ lane.cards }}" as="c" hint-placeholder-count="3">
+                <div style="padding:14px; border-radius:13px; background:linear-gradient(160deg, rgba(28,30,42,.6), rgba(14,15,22,.55)); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); border:1px solid {{ c.border }}; box-shadow:{{ c.shadow }}; cursor:pointer;" style-hover="border-color:rgba(255,214,10,.4); transform:translateY(-2px);">
+                  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:9px;">
+                    <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#777;">{{ c.id }}</span>
+                    <span style="font-size:10px; font-weight:600; padding:2px 8px; border-radius:20px; color:{{ c.tagC }}; background:{{ c.tagBg }}; border:1px solid {{ c.tagBd }};">{{ c.tag }}</span>
+                  </div>
+                  <div style="font-size:13.5px; font-weight:500; line-height:1.35; margin-bottom:11px; color:#eaeaef;">{{ c.title }}</div>
+                  <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;">
+                    <sc-for list="{{ c.labels }}" as="l" hint-placeholder-count="2">
+                      <span style="font-size:10px; padding:2px 8px; border-radius:6px; color:{{ l.c }}; background:{{ l.bg }};">{{ l.t }}</span>
+                    </sc-for>
+                  </div>
+                  <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:#999;">{{ c.repo }}</span>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                      <span style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#FFD60A;">⚡{{ c.power }}</span>
+                      <div style="width:24px; height:24px; border-radius:7px; display:grid; place-items:center; background:linear-gradient(135deg, rgba(255,214,10,.2), rgba(255,214,10,.05)); border:1px solid rgba(255,214,10,.25); font-size:11px;">{{ c.agent }}</div>
+                    </div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+        </sc-if>
+
+        <!-- ===================== RUNS ===================== -->
+        <sc-if value="{{ isRuns }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex; flex-direction:column; gap:20px;">
+          <!-- wave timeline -->
+          <div style="border-radius:18px; padding:24px; background:linear-gradient(160deg, rgba(28,30,42,.62), rgba(14,15,22,.58)); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); border:1px solid rgba(255,255,255,.08); box-shadow:0 20px 50px -20px rgba(0,0,0,.7);">
+            <h3 style="margin:0 0 18px; font-size:16px; font-weight:700;">Wave Timeline</h3>
+            <div style="display:flex; align-items:stretch; gap:0;">
+              <sc-for list="{{ waves }}" as="wv" hint-placeholder-count="5">
+                <div style="flex:1; display:flex; flex-direction:column; align-items:center; position:relative;">
+                  <div style="position:absolute; top:17px; left:50%; right:-50%; height:3px; background:{{ wv.line }};"></div>
+                  <div style="width:36px; height:36px; border-radius:50%; display:grid; place-items:center; z-index:1; font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600; background:{{ wv.nodeBg }}; border:2px solid {{ wv.nodeBd }}; color:{{ wv.nodeC }}; box-shadow:{{ wv.nodeShadow }};">{{ wv.n }}</div>
+                  <div style="margin-top:11px; font-size:12px; font-weight:600; color:{{ wv.labelC }};">{{ wv.label }}</div>
+                  <div style="font-size:10.5px; color:#777; font-family:'JetBrains Mono',monospace; margin-top:2px;">{{ wv.meta }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- runs table -->
+          <div style="border-radius:18px; overflow:hidden; background:linear-gradient(160deg, rgba(28,30,42,.62), rgba(14,15,22,.58)); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); border:1px solid rgba(255,255,255,.08); box-shadow:0 20px 50px -20px rgba(0,0,0,.7);">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:20px 22px; border-bottom:1px solid rgba(255,255,255,.06);">
+              <h3 style="margin:0; font-size:16px; font-weight:700;">Recent Runs</h3>
+              <span style="font-family:'JetBrains Mono',monospace; font-size:11.5px; color:#777;">last 24h</span>
+            </div>
+            <div style="display:grid; grid-template-columns:1.1fr 1.3fr 1.3fr .9fr 1fr .9fr; padding:11px 22px; font-size:11px; color:#777; text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid rgba(255,255,255,.05); font-weight:600;">
+              <span>Run</span><span>Repository</span><span>Trigger</span><span>Duration</span><span>Power</span><span style="text-align:right;">Status</span>
+            </div>
+            <sc-for list="{{ runs }}" as="rn" hint-placeholder-count="6">
+              <div style="display:grid; grid-template-columns:1.1fr 1.3fr 1.3fr .9fr 1fr .9fr; padding:15px 22px; align-items:center; border-bottom:1px solid rgba(255,255,255,.04); font-size:12.5px;" style-hover="background:rgba(255,255,255,.025);">
+                <span style="font-family:'JetBrains Mono',monospace; color:#FFD60A; font-weight:500;">{{ rn.id }}</span>
+                <span style="font-family:'JetBrains Mono',monospace; color:#c9c9d2;">{{ rn.repo }}</span>
+                <span style="color:#9a9aa6;">{{ rn.trigger }}</span>
+                <span style="font-family:'JetBrains Mono',monospace; color:#9a9aa6;">{{ rn.dur }}</span>
+                <span style="font-family:'JetBrains Mono',monospace; color:#c9c9d2;">⚡ {{ rn.power }}</span>
+                <span style="justify-self:end; display:flex; align-items:center; gap:7px; font-size:11.5px; font-weight:600; color:{{ rn.statusC }};"><span style="width:7px; height:7px; border-radius:50%; background:{{ rn.statusC }}; box-shadow:0 0 8px {{ rn.statusC }};"></span>{{ rn.status }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ===================== TERMINAL ===================== -->
+        <sc-if value="{{ isTerminal }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid; grid-template-columns:230px 1fr; gap:16px; height:100%;">
+          <!-- sessions -->
+          <div style="border-radius:16px; padding:16px; background:linear-gradient(160deg, rgba(28,30,42,.6), rgba(14,15,22,.55)); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,.08); height:fit-content;">
+            <div style="font-size:11px; color:#777; text-transform:uppercase; letter-spacing:.6px; font-weight:600; margin-bottom:13px;">Sessions</div>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <sc-for list="{{ sessions }}" as="se" hint-placeholder-count="4">
+                <div style="display:flex; align-items:center; gap:10px; padding:10px 11px; border-radius:10px; background:{{ se.bg }}; border:1px solid {{ se.bd }}; cursor:pointer;">
+                  <span style="width:7px; height:7px; border-radius:50%; background:{{ se.dot }}; flex:none; box-shadow:0 0 8px {{ se.dot }};"></span>
+                  <span style="font-family:'JetBrains Mono',monospace; font-size:12px; color:{{ se.tc }}; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ se.name }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- terminal window -->
+          <div style="border-radius:16px; overflow:hidden; background:rgba(6,7,12,.82); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border:1px solid rgba(255,214,10,.18); box-shadow:0 0 50px -22px rgba(255,214,10,.45), 0 20px 50px -20px rgba(0,0,0,.8); display:flex; flex-direction:column; position:relative;">
+            <div style="position:absolute; left:0; right:0; top:0; height:24px; background:linear-gradient(180deg, rgba(255,214,10,.06), transparent); animation:scan 5s linear infinite; pointer-events:none;"></div>
+            <div style="display:flex; align-items:center; gap:9px; padding:13px 16px; border-bottom:1px solid rgba(255,255,255,.07); background:rgba(255,255,255,.02);">
+              <span style="width:11px; height:11px; border-radius:50%; background:#ff5f57;"></span>
+              <span style="width:11px; height:11px; border-radius:50%; background:#febc2e;"></span>
+              <span style="width:11px; height:11px; border-radius:50%; background:#28c840;"></span>
+              <span style="margin-left:8px; font-family:'JetBrains Mono',monospace; font-size:12px; color:#999;">agent-vegeta — refactor auth middleware — acme/payments-api</span>
+              <span style="margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:11px; color:#FFD60A;">⚡ live</span>
+            </div>
+            <div style="flex:1; padding:18px 20px; font-family:'JetBrains Mono',monospace; font-size:12.5px; line-height:1.85; overflow-y:auto; min-height:440px;">
+              <sc-for list="{{ term }}" as="t" hint-placeholder-count="16">
+                <div style="color:{{ t.c }}; white-space:pre-wrap;"><span style="color:#555;">{{ t.pre }}</span>{{ t.text }}</div>
+              </sc-for>
+              <div style="display:flex; align-items:center; gap:2px; margin-top:4px;"><span style="color:#FFD60A;">vegeta@aura</span><span style="color:#555;">:~$ </span><span style="width:8px; height:15px; background:#FFD60A; display:inline-block; animation:blink 1s steps(1) infinite;"></span></div>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ===================== REPOS ===================== -->
+        <sc-if value="{{ isRepos }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:16px;">
+          <sc-for list="{{ repos }}" as="r" hint-placeholder-count="4">
+            <div style="border-radius:16px; padding:22px; background:linear-gradient(160deg, rgba(28,30,42,.62), rgba(14,15,22,.58)); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); border:1px solid rgba(255,255,255,.08); box-shadow:0 20px 50px -20px rgba(0,0,0,.7);" style-hover="border-color:rgba(255,214,10,.35); box-shadow:0 0 40px -16px rgba(255,214,10,.5), 0 20px 50px -20px rgba(0,0,0,.7);">
+              <div style="display:flex; align-items:center; gap:12px; margin-bottom:18px;">
+                <div style="width:42px; height:42px; flex:none; border-radius:11px; display:grid; place-items:center; background:linear-gradient(135deg, rgba(255,214,10,.16), rgba(255,214,10,.04)); border:1px solid rgba(255,214,10,.22);">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFD60A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3a2 2 0 100 4 2 2 0 000-4zM6 7v8m0 0a2 2 0 100 4 2 2 0 000-4zm9-8a2 2 0 100 4 2 2 0 000-4zm0 4c0 4-9 1-9 6"/></svg>
+                </div>
+                <div style="min-width:0;">
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:600;">{{ r.name }}</div>
+                  <div style="font-size:11.5px; color:#888; margin-top:2px;">{{ r.lang }} · {{ r.last }} ago</div>
+                </div>
+                <span style="margin-left:auto; font-size:10.5px; font-weight:600; color:{{ r.statusC }}; background:{{ r.statusBg }}; border:1px solid {{ r.statusBd }}; padding:4px 10px; border-radius:20px;">{{ r.statusLabel }}</span>
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px;">
+                <div style="padding:13px; border-radius:11px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.05);">
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600;">{{ r.open }}</div>
+                  <div style="font-size:11px; color:#888; margin-top:2px;">open issues</div>
+                </div>
+                <div style="padding:13px; border-radius:11px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.05);">
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; color:#FFD60A;">{{ r.agents }}</div>
+                  <div style="font-size:11px; color:#888; margin-top:2px;">active agents</div>
+                </div>
+                <div style="padding:13px; border-radius:11px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.05);">
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; color:#FFE45C;">{{ r.powerStr }}</div>
+                  <div style="font-size:11px; color:#888; margin-top:2px;">power lvl</div>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+          <button style-hover="border-color:rgba(255,214,10,.5); color:#FFD60A;" style="border-radius:16px; padding:22px; min-height:180px; background:rgba(255,255,255,.015); border:1.5px dashed rgba(255,255,255,.14); color:#888; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; font-family:'Space Grotesk'; font-size:14px; font-weight:600;">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+            Connect a repository
+          </button>
+        </div>
+        </sc-if>
+
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1320,&quot;height&quot;:860}}">
+class Component extends DCLogic {
+  state = { screen: 'overview', power: 9001, flash: 0 };
+
+  componentDidMount() {
+    this._t = setInterval(() => {
+      this.setState(s => ({ power: s.power + Math.floor(Math.random() * 7) - 2 }));
+    }, 1600);
+  }
+  componentWillUnmount() { clearInterval(this._t); }
+
+  go(screen) { this.setState({ screen }); }
+  powerUp() { this.setState(s => ({ power: s.power + 400 + Math.floor(Math.random()*300), flash: s.flash + 1 })); }
+
+  fmt(n) { return n.toLocaleString('en-US'); }
+
+  renderVals() {
+    const screen = this.state.screen;
+    const navDef = [
+      { id:'overview', label:'Overview', icon:'M4 13h6V4H4v9zm0 7h6v-5H4v5zm10 0h6V11h-6v9zm0-16v5h6V4h-6z', badge:'' },
+      { id:'board', label:'Board', icon:'M4 5h4v14H4zM10 5h4v9h-4zM16 5h4v12h-4z', badge:'72' },
+      { id:'runs', label:'Runs', icon:'M3 12h4l2 7 4-14 2 7h6', badge:'7' },
+      { id:'terminal', label:'Terminal', icon:'M5 7l5 5-5 5M13 17h6', badge:'' },
+      { id:'repos', label:'Repositories', icon:'M6 3a2 2 0 100 4 2 2 0 000-4zM6 7v8m0 0a2 2 0 100 4 2 2 0 000-4zm9-8a2 2 0 100 4 2 2 0 000-4zm0 4c0 4-9 1-9 6', badge:'' },
+    ];
+    const nav = navDef.map(n => {
+      const active = n.id === screen;
+      return {
+        ...n,
+        go: () => this.go(n.id),
+        iconColor: active ? '#FFD60A' : '#7a7a86',
+        style: `display:flex; align-items:center; gap:12px; width:100%; padding:11px 12px; border-radius:11px; cursor:pointer; font-family:'Space Grotesk'; font-size:13.5px; font-weight:${active?600:500}; text-align:left; transition:background .15s; border:1px solid ${active?'rgba(255,214,10,.28)':'transparent'}; background:${active?'linear-gradient(120deg, rgba(255,214,10,.14), rgba(255,214,10,.04))':'transparent'}; color:${active?'#FFE45C':'#b6b6c0'}; box-shadow:${active?'0 0 24px -10px rgba(255,214,10,.7)':'none'};`,
+        badgeStyle: n.badge ? `font-family:'JetBrains Mono',monospace; font-size:10.5px; padding:1px 7px; border-radius:20px; background:${active?'rgba(255,214,10,.2)':'rgba(255,255,255,.07)'}; color:${active?'#FFE45C':'#888'};` : 'display:none;',
+      };
+    });
+
+    const headers = {
+      overview: { title:'Overview', tag:'OVER 9000', sub:'4 agents powering up · 3 waves remaining' },
+      board: { title:'Board', tag:'72 ISSUES', sub:'GitHub Projects · acme org' },
+      runs: { title:'Runs', tag:'7 LIVE', sub:'Wave-based execution timeline' },
+      terminal: { title:'Terminal', tag:'LIVE', sub:'Streaming agent output' },
+      repos: { title:'Repositories', tag:'4 CONNECTED', sub:'Connected GitHub repositories' },
+    };
+    const h = headers[screen] || headers.overview;
+
+    const mkBars = (heights, hot) => heights.map((v,i) => ({ h: v+'%', c: i>=heights.length-2 && hot ? 'linear-gradient(180deg,#FFE45C,#FFB200)' : (hot?'rgba(255,214,10,.32)':'rgba(255,255,255,.14)') }));
+    const stats = [
+      { label:'Power Level', value:this.fmt(this.state.power), unit:'⚡', delta:'+12.4%', deltaColor:'#4ADE80', valColor:'#FFE45C', bars:mkBars([30,38,34,46,52,48,60,58,70,66,82,90], true),
+        card:"border-radius:18px; padding:18px; background:linear-gradient(160deg, rgba(40,34,8,.6), rgba(16,15,10,.58)); backdrop-filter:blur(22px) saturate(140%); -webkit-backdrop-filter:blur(22px) saturate(140%); border:1px solid rgba(255,214,10,.3); box-shadow:0 0 36px -14px rgba(255,214,10,.55), 0 20px 50px -20px rgba(0,0,0,.7); transition:border-color .2s, box-shadow .2s;" },
+      { label:'Active Runs', value:'7', unit:'running', delta:'+3', deltaColor:'#4ADE80', valColor:'#f3f3f6', bars:mkBars([40,30,50,44,38,60,52,48,66,58,54,62], false),
+        card:"border-radius:18px; padding:18px; background:linear-gradient(160deg, rgba(28,30,42,.62), rgba(14,15,22,.58)); backdrop-filter:blur(22px) saturate(140%); -webkit-backdrop-filter:blur(22px) saturate(140%); border:1px solid rgba(255,255,255,.08); box-shadow:0 20px 50px -20px rgba(0,0,0,.7); transition:border-color .2s, box-shadow .2s;" },
+      { label:'Throughput', value:'248', unit:'issues/wk', delta:'+18%', deltaColor:'#4ADE80', valColor:'#f3f3f6', bars:mkBars([28,34,30,40,46,42,50,56,52,64,70,76], false),
+        card:"border-radius:18px; padding:18px; background:linear-gradient(160deg, rgba(28,30,42,.62), rgba(14,15,22,.58)); backdrop-filter:blur(22px) saturate(140%); -webkit-backdrop-filter:blur(22px) saturate(140%); border:1px solid rgba(255,255,255,.08); box-shadow:0 20px 50px -20px rgba(0,0,0,.7); transition:border-color .2s, box-shadow .2s;" },
+      { label:'Charging', value:'14', unit:'queued', delta:'−2', deltaColor:'#9a9aa6', valColor:'#f3f3f6', bars:mkBars([60,52,58,46,50,42,38,44,36,40,34,30], false),
+        card:"border-radius:18px; padding:18px; background:linear-gradient(160deg, rgba(28,30,42,.62), rgba(14,15,22,.58)); backdrop-filter:blur(22px) saturate(140%); -webkit-backdrop-filter:blur(22px) saturate(140%); border:1px solid rgba(255,255,255,.08); box-shadow:0 20px 50px -20px rgba(0,0,0,.7); transition:border-color .2s, box-shadow .2s;" },
+    ];
+
+    const workers = [
+      { name:'agent-vegeta', emoji:'🔥', task:'Refactor auth middleware to use edge sessions', repo:'payments-api', issue:'#2841', pct:72, pctStr:'72%', state:'Powering up', stateColor:'#FFD60A' },
+      { name:'agent-gohan', emoji:'⚡', task:'Add Stripe webhook retry with backoff', repo:'payments-api', issue:'#2839', pct:45, pctStr:'45%', state:'Running', stateColor:'#4ADE80' },
+      { name:'agent-piccolo', emoji:'🌀', task:'Migrate dashboard pages to React Server Components', repo:'web-dashboard', issue:'#1190', pct:88, pctStr:'88%', state:'Review', stateColor:'#60A5FA' },
+      { name:'agent-trunks', emoji:'⚔️', task:'Fix flaky e2e suite on CI', repo:'mobile-app', issue:'#564', pct:30, pctStr:'30%', state:'Running', stateColor:'#4ADE80' },
+    ];
+
+    const ICN = {
+      pr:'M6 3a2 2 0 100 4 2 2 0 000-4zM6 7v10m0 0a2 2 0 100 4 2 2 0 000-4zm12-2a2 2 0 100-4 2 2 0 000 4zm0 0v6a4 4 0 01-4 4h-3',
+      push:'M12 19V6m0 0l-6 6m6-6l6 6',
+      wave:'M3 12h4l2 7 4-14 2 7h6',
+      check:'M20 6L9 17l-5-5',
+      merge:'M6 3a2 2 0 100 4 2 2 0 000-4zM6 7v10m0 0a2 2 0 100 4 2 2 0 000-4zm12-2a2 2 0 100-4 2 2 0 000 4zm0 0c0 6-6 5-6 9',
+    };
+    const actStyle = { pr:['rgba(96,165,250,.14)','rgba(96,165,250,.3)','#60A5FA'], push:['rgba(255,255,255,.06)','rgba(255,255,255,.12)','#aaa'], wave:['rgba(255,214,10,.16)','rgba(255,214,10,.3)','#FFD60A'], check:['rgba(74,222,128,.14)','rgba(74,222,128,.3)','#4ADE80'], merge:['rgba(167,139,250,.14)','rgba(167,139,250,.3)','#A78BFA'] };
+    const activity = [
+      { who:'agent-piccolo', action:'opened a pull request', target:'#1190 · web-dashboard → main', time:'2m', kind:'pr' },
+      { who:'agent-gohan', action:'pushed 3 commits', target:'feat/webhook-retries', time:'6m', kind:'push' },
+      { who:'Wave 3', action:'powered up', target:'4 agents dispatched', time:'12m', kind:'wave' },
+      { who:'agent-vegeta', action:'passed all checks', target:'lint · types · unit', time:'18m', kind:'check' },
+      { who:'you', action:'approved & merged', target:'#1187 · web-dashboard', time:'1h', kind:'merge' },
+    ].map(a => ({ ...a, icon:ICN[a.kind], bg:actStyle[a.kind][0], bd:actStyle[a.kind][1], ic:actStyle[a.kind][2] }));
+
+    const repoData = [
+      { name:'acme/payments-api', lang:'TypeScript', open:23, agents:3, power:4200, last:'2m', dot:'#4ADE80', statusLabel:'Active', sc:'#4ADE80' },
+      { name:'acme/web-dashboard', lang:'TypeScript', open:11, agents:2, power:3100, last:'6m', dot:'#FFD60A', statusLabel:'Active', sc:'#FFD60A' },
+      { name:'acme/mobile-app', lang:'Swift', open:31, agents:1, power:1701, last:'18m', dot:'#60A5FA', statusLabel:'Active', sc:'#60A5FA' },
+      { name:'acme/infra', lang:'HCL', open:7, agents:0, power:0, last:'3h', dot:'#666', statusLabel:'Idle', sc:'#888' },
+    ];
+    const repos = repoData.map(r => ({ ...r, powerStr:this.fmt(r.power),
+      statusC:r.sc, statusBg:`rgba(${r.sc==='#888'?'150,150,166':'74,222,128'},.0)`,
+      statusBd:'rgba(255,255,255,.0)' }));
+    // status pill styling
+    repos.forEach(r => {
+      const on = r.agents > 0;
+      r.statusC = on ? '#4ADE80' : '#888';
+      r.statusBg = on ? 'rgba(74,222,128,.12)' : 'rgba(255,255,255,.05)';
+      r.statusBd = on ? 'rgba(74,222,128,.3)' : 'rgba(255,255,255,.1)';
+    });
+
+    // BOARD
+    const lab = { bug:{t:'bug',c:'#FCA5A5',bg:'rgba(248,113,113,.14)'}, feat:{t:'feature',c:'#FFE45C',bg:'rgba(255,214,10,.14)'}, perf:{t:'perf',c:'#86EFAC',bg:'rgba(74,222,128,.14)'}, infra:{t:'infra',c:'#93C5FD',bg:'rgba(96,165,250,.14)'}, chore:{t:'chore',c:'#C4B5FD',bg:'rgba(167,139,250,.14)'} };
+    const tagOf = (k) => ({ p0:{tag:'P0',tagC:'#FCA5A5',tagBg:'rgba(248,113,113,.12)',tagBd:'rgba(248,113,113,.3)'}, p1:{tag:'P1',tagC:'#FFE45C',tagBg:'rgba(255,214,10,.12)',tagBd:'rgba(255,214,10,.3)'}, p2:{tag:'P2',tagC:'#9a9aa6',tagBg:'rgba(255,255,255,.06)',tagBd:'rgba(255,255,255,.12)'} }[k]);
+    const card = (id,title,labels,repo,power,agent,prio,hot) => ({ id,title,repo,power,agent, labels:labels.map(l=>({t:lab[l].t,c:lab[l].c,bg:lab[l].bg})), ...tagOf(prio),
+      border: hot?'rgba(255,214,10,.3)':'rgba(255,255,255,.07)', shadow: hot?'0 0 30px -14px rgba(255,214,10,.5), 0 16px 40px -20px rgba(0,0,0,.7)':'0 16px 40px -22px rgba(0,0,0,.7)' });
+    const lanes = [
+      { title:'Backlog', color:'#888', glow:'rgba(150,150,166,.4)', cards:[ card('#2855','Add idempotency keys to payment intents',['feat','infra'],'payments-api',520,'🔥','p1'), card('#1204','Dark mode for settings panel',['feat'],'web-dashboard',180,'🌀','p2'), card('#578','Offline cache for transaction list',['feat','perf'],'mobile-app',240,'⚔️','p2') ] },
+      { title:'Charging', color:'#FFD60A', glow:'rgba(255,214,10,.5)', cards:[ card('#2849','Rate-limit webhook endpoints',['bug','infra'],'payments-api',640,'⚡','p0',true), card('#1198','Skeleton loaders on dashboard',['feat'],'web-dashboard',210,'🌀','p2') ] },
+      { title:'In Progress', color:'#60A5FA', glow:'rgba(96,165,250,.5)', cards:[ card('#2841','Refactor auth middleware to edge sessions',['feat','perf'],'payments-api',820,'🔥','p0',true), card('#2839','Stripe webhook retry with backoff',['bug'],'payments-api',460,'⚡','p1'), card('#564','Fix flaky e2e suite on CI',['bug','chore'],'mobile-app',300,'⚔️','p1') ] },
+      { title:'Review', color:'#A78BFA', glow:'rgba(167,139,250,.5)', cards:[ card('#1190','Migrate dashboard to RSC',['feat','perf'],'web-dashboard',910,'🌀','p0',true), card('#2820','Validate currency on checkout',['bug'],'payments-api',280,'🔥','p2') ] },
+      { title:'Shipped', color:'#4ADE80', glow:'rgba(74,222,128,.5)', cards:[ card('#1187','Optimistic UI for approvals',['feat'],'web-dashboard',390,'🌀','p1'), card('#2811','Cache pricing lookups',['perf'],'payments-api',330,'⚡','p2') ] },
+    ];
+    lanes.forEach(l => l.count = l.cards.length);
+
+    // RUNS
+    const waveDef = [
+      { n:'1', label:'Triage', meta:'done · 12 runs', st:'done' },
+      { n:'2', label:'Build', meta:'done · 9 runs', st:'done' },
+      { n:'3', label:'Execute', meta:'4 agents live', st:'active' },
+      { n:'4', label:'Review', meta:'queued', st:'queued' },
+      { n:'5', label:'Ship', meta:'queued', st:'queued' },
+    ];
+    const waves = waveDef.map((w,i) => {
+      const done = w.st==='done', active = w.st==='active';
+      return { ...w,
+        line: i===waveDef.length-1 ? 'transparent' : (done ? 'linear-gradient(90deg,#FFB200,#FFD60A)' : (active ? 'linear-gradient(90deg,#FFD60A, rgba(255,255,255,.1))' : 'rgba(255,255,255,.08)')),
+        nodeBg: done ? 'linear-gradient(135deg,#FFE45C,#FFB200)' : (active ? 'rgba(255,214,10,.16)' : 'rgba(255,255,255,.04)'),
+        nodeBd: done||active ? '#FFD60A' : 'rgba(255,255,255,.14)',
+        nodeC: done ? '#1a1400' : (active ? '#FFE45C' : '#777'),
+        nodeShadow: active ? '0 0 22px -2px rgba(255,214,10,.8)' : 'none',
+        labelC: done||active ? '#f3f3f6' : '#888',
+      };
+    });
+    const runDef = [
+      { id:'run_8f21', repo:'payments-api', trigger:'issue #2841', dur:'4m 12s', power:820, status:'running' },
+      { id:'run_8f20', repo:'web-dashboard', trigger:'wave 3 dispatch', dur:'7m 03s', power:1340, status:'success' },
+      { id:'run_8f19', repo:'mobile-app', trigger:'issue #564', dur:'2m 41s', power:610, status:'running' },
+      { id:'run_8f18', repo:'payments-api', trigger:'manual rerun', dur:'11m 22s', power:990, status:'failed' },
+      { id:'run_8f17', repo:'web-dashboard', trigger:'issue #1187', dur:'5m 50s', power:1180, status:'success' },
+      { id:'run_8f16', repo:'payments-api', trigger:'wave 2 dispatch', dur:'3m 18s', power:540, status:'success' },
+    ];
+    const stColor = { running:'#FFD60A', success:'#4ADE80', failed:'#F87171', queued:'#888' };
+    const runs = runDef.map(r => ({ ...r, statusC:stColor[r.status] }));
+
+    // TERMINAL
+    const sessDef = [
+      { name:'agent-vegeta', dot:'#FFD60A', on:true, active:true },
+      { name:'agent-gohan', dot:'#4ADE80', on:true },
+      { name:'agent-piccolo', dot:'#60A5FA', on:true },
+      { name:'agent-trunks', dot:'#4ADE80', on:true },
+    ];
+    const sessions = sessDef.map(s => ({ name:s.name, dot:s.dot,
+      bg: s.active ? 'linear-gradient(120deg, rgba(255,214,10,.14), rgba(255,214,10,.03))' : 'rgba(255,255,255,.02)',
+      bd: s.active ? 'rgba(255,214,10,.3)' : 'rgba(255,255,255,.06)',
+      tc: s.active ? '#FFE45C' : '#b6b6c0' }));
+    const tl = (pre, text, c) => ({ pre, text, c });
+    const term = [
+      tl('', '$ aura run --issue 2841 --agent vegeta', '#FFE45C'),
+      tl('[12:04:01] ', 'Powering up agent-vegeta · charge 820⚡', '#9a9aa6'),
+      tl('[12:04:02] ', 'Cloning acme/payments-api @ main', '#9a9aa6'),
+      tl('[12:04:05] ', 'Indexed 1,284 files · building context graph', '#9a9aa6'),
+      tl('[12:04:09] ', '✓ Located auth middleware (src/server/auth.ts)', '#4ADE80'),
+      tl('[12:04:11] ', 'Planning: migrate cookie sessions → edge sessions', '#c9c9d2'),
+      tl('[12:04:18] ', 'Editing src/server/auth.ts (+142 −67)', '#c9c9d2'),
+      tl('[12:04:24] ', 'Editing src/middleware.ts (+38 −12)', '#c9c9d2'),
+      tl('[12:04:31] ', '⚡ Over 9000 — context window fully charged', '#FFD60A'),
+      tl('[12:04:33] ', 'Running: pnpm typecheck', '#9a9aa6'),
+      tl('[12:04:48] ', '✓ tsc — 0 errors', '#4ADE80'),
+      tl('[12:04:49] ', 'Running: pnpm test auth', '#9a9aa6'),
+      tl('[12:05:02] ', '✓ 41 passed · 0 failed (4.1s)', '#4ADE80'),
+      tl('[12:05:03] ', '⚠ flaky: session-refresh.test.ts (retrying)', '#FFB200'),
+      tl('[12:05:08] ', '✓ retry passed', '#4ADE80'),
+      tl('[12:05:10] ', 'Committing: refactor(auth): edge sessions', '#c9c9d2'),
+      tl('[12:05:12] ', 'Pushed feat/edge-sessions · opening PR…', '#9a9aa6'),
+    ];
+
+    return {
+      nav, powerStr: this.fmt(this.state.power),
+      powerUp: () => this.powerUp(), goRepos: () => this.go('repos'),
+      headerTitle: h.title, headerTag: h.tag, headerSub: h.sub,
+      isOverview: screen==='overview', isBoard: screen==='board', isRuns: screen==='runs', isTerminal: screen==='terminal', isRepos: screen==='repos',
+      stats, workers, activity, repos, lanes, waves, runs, sessions, term,
+    };
+  }
+}
+</script>
+</body>
+</html>

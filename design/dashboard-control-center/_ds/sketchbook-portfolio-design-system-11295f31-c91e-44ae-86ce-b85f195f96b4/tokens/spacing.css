@@ -1,0 +1,43 @@
+/* ── Spacing & layout ────────────────────────────────────────────────────
+   An 8px-ish rhythm, but loosened a touch so things never feel mechanical —
+   a sketchbook breathes. Plus radii, container widths, and z-layers.
+   ──────────────────────────────────────────────────────────────────────── */
+:root {
+  --space-0:  0;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  24px;
+  --space-6:  32px;
+  --space-7:  48px;
+  --space-8:  64px;
+  --space-9:  96px;
+  --space-10: 128px;
+
+  /* Section rhythm */
+  --gutter:        clamp(20px, 5vw, 64px); /* @kind spacing */
+  --section-gap:   clamp(64px, 12vh, 140px);/* between major sections */
+  --stack-tight:   var(--space-3);
+  --stack:         var(--space-5);
+  --stack-loose:   var(--space-7);
+
+  /* Container widths */
+  --content-narrow: 640px;   /* prose column */
+  --content:        920px;   /* default content */
+  --content-wide:   1180px;  /* gallery / wide */
+
+  /* Radii — kept small; the *real* roundness comes from the hand-drawn
+     wobble in effects.css, not from uniform border-radius. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-pill: 999px;
+
+  /* Z-index ladder */
+  --z-base:    0;    /* @kind other */
+  --z-raised:  10;   /* @kind other */
+  --z-sticky:  100;  /* @kind other */
+  --z-overlay: 1000; /* @kind other */
+  --z-toast:   1100; /* @kind other */
+}

@@ -1,0 +1,70 @@
+/* ── Colors ──────────────────────────────────────────────────────────────
+   A sketchbook palette: aged paper surfaces, ink for text, and a small set
+   of watercolour / coloured-pencil accents. Quantum-blue ink is primary.
+   ──────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Paper — surfaces, lightest → deepest */
+  --paper-0:    #FDFAF2;  /* page top / lightest sheet */
+  --paper-1:    #F8F2E3;  /* base page background */
+  --paper-2:    #F1E9D5;  /* raised cards / panels */
+  --paper-3:    #E9DEC4;  /* sunken wells, code blocks */
+  --paper-edge: #D8C9A6;  /* torn / folded edge tone */
+
+  /* Ink — text, near-black navy with warm undertone */
+  --ink-900:    #1B2230;  /* primary text, full-strength ink */
+  --ink-700:    #2E3A4C;  /* headings on paper */
+  --ink-500:    #4C5668;  /* secondary text */
+  --pencil-500: #6E6857;  /* pencil graphite — captions, meta */
+  --pencil-300: #948D78;  /* faint pencil — placeholders, hints */
+  --pencil-200: #B9B19A;  /* lightest scribble — disabled */
+
+  /* Accents — watercolour washes + coloured-pencil cores */
+  --blue-700:   #2C547B;  /* deep quantum ink */
+  --blue-500:   #3B6EA5;  /* PRIMARY accent */
+  --blue-300:   #9FBBD6;  /* blue wash */
+  --blue-100:   #DCE7F1;  /* faint blue tint */
+
+  --terra-500:  #C2683E;  /* terracotta / sanguine red-pencil */
+  --terra-300:  #E0B196;
+  --terra-100:  #F2E1D5;
+
+  --sage-500:   #6E8B6E;  /* sage / green-pencil */
+  --sage-300:   #B3C5B0;
+  --sage-100:   #E1E9DD;
+
+  --amber-500:  #E0AE3C;  /* highlighter amber */
+  --amber-300:  #F0D58C;
+  --amber-100:  #F8ECCB;
+
+  --plum-500:   #8A5A7A;  /* plum / violet-pencil */
+  --plum-300:   #C3A4BA;
+
+  /* ── Semantic aliases ─────────────────────────────────────────────── */
+  --bg-page:        var(--paper-1);
+  --bg-page-alt:    var(--paper-0);
+  --surface-card:   var(--paper-0);
+  --surface-raised: var(--paper-2);
+  --surface-sunken: var(--paper-3);
+
+  --text-strong:    var(--ink-900);
+  --text-heading:   var(--ink-700);
+  --text-body:      var(--ink-700);
+  --text-muted:     var(--ink-500);
+  --text-meta:      var(--pencil-500);
+  --text-faint:     var(--pencil-300);
+  --text-on-accent: var(--paper-0);
+
+  --accent:         var(--blue-500);
+  --accent-strong:  var(--blue-700);
+  --accent-wash:    var(--blue-100);
+
+  --line:           var(--paper-edge);   /* hairline rules */
+  --ink-line:       var(--ink-900);       /* drawn strokes / borders */
+
+  /* Highlighter-marker backgrounds (used behind inline emphasis) */
+  --mark-amber:     #F6E2A0;
+  --mark-blue:      #CFE0EF;
+  --mark-sage:      #D6E4CF;
+
+  --focus-ring:     var(--terra-500);
+}

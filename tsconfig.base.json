@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "jsx": "react-jsx",
+    "noUncheckedIndexedAccess": true,
+    "baseUrl": ".",
+    "paths": {
+      "@supersaiyan/control-protocol": ["packages/control-protocol/src/index.ts"],
+      "@supersaiyan/control-core": ["packages/control-core/src/index.ts"],
+      "@supersaiyan/ui": ["packages/ui/src/index.tsx"]
+    }
+  }
+}

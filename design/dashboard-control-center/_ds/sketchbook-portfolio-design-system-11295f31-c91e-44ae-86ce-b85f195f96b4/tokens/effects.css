@@ -1,0 +1,101 @@
+/* ── Effects: the hand-drawn engine ──────────────────────────────────────
+   The sketch look is built from four cheap, dependable tricks:
+     1. Irregular border-radius  → a box that looks drawn, not generated.
+     2. Hard offset "doodle" shadow → paper lifted off the page.
+     3. An SVG turbulence paper grain (data-URI), tiled faintly.
+     4. stroke-dashoffset / opacity keyframes → "ink drawing itself".
+   These are exposed as tokens + a few utility classes so components and
+   kits stay consistent. No JS, no external deps.
+   ──────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Wobbly border-radius presets — the classic "hand-drawn box" trick.
+     Rotate which one you use to keep repeated boxes from looking cloned. */
+  --sketch-radius-1: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  --sketch-radius-2: 15px 225px 15px 255px / 255px 15px 225px 15px;
+  --sketch-radius-3: 125px 18px 200px 22px / 22px 180px 18px 220px;
+  --sketch-radius-blob: 38% 62% 63% 37% / 41% 44% 56% 59%;
+
+  /* Stroke weights for drawn borders */
+  --stroke-fine:  1.5px;
+  --stroke:       2px;
+  --stroke-bold:  3px;
+
+  /* Doodle shadows — hard, slightly transparent ink offset */
+  --shadow-sketch-sm: 2px 2px 0 rgba(27, 34, 48, 0.16);
+  --shadow-sketch:    3px 4px 0 rgba(27, 34, 48, 0.18);
+  --shadow-sketch-lg: 6px 7px 0 rgba(27, 34, 48, 0.16);
+  --shadow-lift:      3px 4px 0 rgba(27, 34, 48, 0.20), 0 10px 24px rgba(27, 34, 48, 0.08);
+
+  /* Paper grain — faint turbulence, tiled. Lay over a paper-colour base. */
+  --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"); /* @kind other */
+
+  /* Timing — organic, never linear */
+  --ease-hand:  cubic-bezier(0.34, 1.32, 0.64, 1); /* @kind other */
+  --ease-ink:   cubic-bezier(0.65, 0, 0.35, 1); /* @kind other */
+  --dur-quick:  140ms; /* @kind other */
+  --dur:        260ms; /* @kind other */
+  --dur-slow:   620ms; /* @kind other */
+}
+
+/* ── Utility: drawn box ──────────────────────────────────────────────── */
+.sketch-box {
+  border: var(--stroke) solid var(--ink-line);
+  border-radius: var(--sketch-radius-1);
+  background: var(--surface-card);
+}
+.sketch-box--alt   { border-radius: var(--sketch-radius-2); }
+.sketch-box--soft  { border-radius: var(--sketch-radius-3); }
+.sketch-box--shadow{ box-shadow: var(--shadow-sketch); }
+
+/* Double-stroke: a faint second outline, nudged, like a re-traced pencil line */
+.sketch-box--double { position: relative; }
+.sketch-box--double::after {
+  content: "";
+  position: absolute;
+  inset: -5px -4px -3px -5px;
+  border: var(--stroke-fine) solid var(--ink-line);
+  border-radius: var(--sketch-radius-2);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* ── Utility: paper surface ──────────────────────────────────────────── */
+.paper {
+  background-color: var(--bg-page);
+  background-image: var(--paper-grain);
+}
+.paper--card { background-color: var(--surface-card); background-image: var(--paper-grain); }
+
+/* ── Hand-drawn underline (for headings / links) ─────────────────────── */
+.sketch-underline {
+  position: relative;
+  display: inline;
+  background-image: linear-gradient(var(--accent), var(--accent));
+  background-repeat: no-repeat;
+  background-position: 0 92%;
+  background-size: 100% 2px;
+  padding-bottom: 1px;
+}
+
+/* ── Animations: ink drawing itself ──────────────────────────────────── */
+@keyframes ink-draw {
+  from { stroke-dashoffset: var(--draw-len, 1000); }
+  to   { stroke-dashoffset: 0; }
+}
+@keyframes sketch-in {
+  from { opacity: 0; transform: translateY(14px) rotate(-0.6deg); }
+  to   { opacity: 1; transform: translateY(0) rotate(0); }
+}
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-0.5deg); }
+  50%      { transform: rotate(0.5deg); }
+}
+
+/* Reveal helper used by kits (paired with IntersectionObserver toggling
+   [data-drawn]). Defaults to hidden ONLY when motion is allowed. */
+@media (prefers-reduced-motion: no-preference) {
+  .draw-on-scroll { opacity: 0; }
+  .draw-on-scroll[data-drawn] {
+    animation: sketch-in var(--dur-slow) var(--ease-hand) forwards;
+  }
+}

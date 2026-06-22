@@ -45,6 +45,23 @@ Full guide: [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)
 
 ---
 
+## Optional desktop control center
+
+The macOS-first Electron app provides repository diagnostics, a safe GitHub
+Project board, feature/run views, and persistent terminals. It invokes the
+same `/supersaiyan` commands; the skills remain fully usable without it.
+
+```bash
+npm install
+npm start
+```
+
+Create a local macOS package with `npm run package:mac`. The interface follows
+the extracted Aura Console design reference in
+[`design/dashboard-control-center/`](design/dashboard-control-center/).
+
+---
+
 ## How it works
 
 ```

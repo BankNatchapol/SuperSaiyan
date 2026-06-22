@@ -27,7 +27,7 @@ Cross-platform: pure Python 3 stdlib + `gh` CLI. Works on macOS, Linux,
 Windows (PowerShell / CMD / Git Bash / WSL). No bash, no jq.
 
 Usage:
-  python .claude/bin/super-board-status.py [<config-slug>]
+  python .claude/bin/super-board-status.py [<config-slug>] [--json]
 
 Exit codes:
   0  ok
@@ -330,17 +330,38 @@ def valid_slug(slug: str) -> bool:
     return bool(_SLUG_RE.match(slug))
 
 
+def config_roots() -> list[Path]:
+    """Current SuperSaiyan config root first, then legacy super-board."""
+    return [
+        Path(".claude/supersaiyan"),
+        Path(".claude/super-board"),
+    ]
+
+
 def resolve_config_slug(argv: list[str]) -> str:
-    if len(argv) > 1 and argv[1]:
-        return argv[1]
-    active = Path(".claude/supersaiyan/active")
-    if active.is_file():
-        return active.read_text().strip()
-    cfgs = sorted(Path(".claude/supersaiyan/configs").glob("*.json"))
+    positional = [arg for arg in argv[1:] if arg != "--json"]
+    if positional:
+        return positional[0]
+    for root in config_roots():
+        active = root / "active"
+        if active.is_file():
+            return active.read_text().strip()
+    cfgs: list[Path] = []
+    for root in config_roots():
+        cfgs.extend(sorted((root / "configs").glob("*.json")))
+    cfgs = list({path.stem: path for path in reversed(cfgs)}.values())
     if len(cfgs) == 1:
         return cfgs[0].stem
     print(f"usage: {argv[0]} <config-slug>  (or set .claude/supersaiyan/active)", file=sys.stderr)
     sys.exit(64)
+
+
+def resolve_config_path(slug: str) -> Path | None:
+    for root in config_roots():
+        candidate = root / "configs" / f"{slug}.json"
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def gh(*args: str, check: bool = True) -> str:
@@ -378,7 +399,13 @@ query($owner:String!, $number:Int!, $after:String) {
         items(first:100, after:$after) {
           pageInfo { endCursor hasNextPage }
           nodes {
-            content { ... on Issue { number title labels(first:20){nodes{name}} } }
+            id
+            content { ... on Issue {
+              number title url state
+              repository { nameWithOwner }
+              assignees(first:10) { nodes { login } }
+              labels(first:20){nodes{name}}
+            } }
             fieldValues(first:8) {
               nodes { ... on ProjectV2ItemFieldSingleSelectValue {
                 name field { ... on ProjectV2SingleSelectField { name } } } }
@@ -432,6 +459,7 @@ def paginate_items(
 
 
 def main() -> int:
+    json_mode = "--json" in sys.argv[1:]
     config_slug = resolve_config_slug(sys.argv)
     if not valid_slug(config_slug):
         print(
@@ -440,9 +468,9 @@ def main() -> int:
             file=sys.stderr,
         )
         return 64
-    config_path = Path(f".claude/supersaiyan/configs/{config_slug}.json")
-    if not config_path.is_file():
-        print(f"config not found: {config_path}", file=sys.stderr)
+    config_path = resolve_config_path(config_slug)
+    if config_path is None:
+        print(f"config not found: {config_slug}", file=sys.stderr)
         return 66
 
     cfg = json.loads(config_path.read_text())
@@ -486,8 +514,17 @@ def main() -> int:
         if not c.get("number"):
             continue
         items.append({
+            "id": n.get("id") or "",
             "number": c["number"],
             "title": sanitize_title(c.get("title") or ""),
+            "url": c.get("url") or "",
+            "state": c.get("state") or "OPEN",
+            "repository": (c.get("repository") or {}).get("nameWithOwner") or "",
+            "assignees": [
+                a["login"]
+                for a in (c.get("assignees", {}).get("nodes") or [])
+                if a.get("login")
+            ],
             "labels": [
                 l["name"]
                 for l in (c.get("labels", {}).get("nodes") or [])
@@ -498,7 +535,7 @@ def main() -> int:
 
     by_status: dict[str, list[dict[str, Any]]] = {
         s: sorted([i for i in items if i["status"] == s], key=lambda x: -x["number"])
-        for s in ("Ready", "Building", "QA", "Review", "Done", "Blocked", "Skipped")
+        for s in ("Backlog", "Ready", "Building", "QA", "Review", "Done", "Blocked", "Skipped")
     }
 
     # ── fetch reason-tag comments for Blocked + Skipped only ──
@@ -529,6 +566,8 @@ def main() -> int:
     start_hms = state["start_hms"]
     exited = state["exited"]
     reaped_count = state["reaped_count"]
+    active = len(inflight)
+    run_active = bool(last_tick) and not exited
 
     # ── tiny closures over items / inflight / now_epoch ──
     def item_by_number(n: int) -> dict[str, Any] | None:
@@ -585,6 +624,69 @@ def main() -> int:
         or "?"
     )
     max_workers = cfg.get("max_workers", 3)
+
+    if json_mode:
+        workers = []
+        for lane in sorted(inflight, key=LANE_ORDER.index):
+            worker = inflight[lane]
+            workers.append({
+                "lane": lane,
+                "role": LANE_ROLE[lane].strip(),
+                "issue": int(worker["issue"]),
+                "pid": int(worker["pid"]),
+                "started_at": worker["ts"],
+                "elapsed_seconds": max(
+                    0, now_epoch - hms_to_epoch(run_date, worker["ts"])
+                ),
+            })
+        blockers = []
+        for item in by_status["Blocked"] + by_status["Skipped"]:
+            emoji, reason = reason_for_issue(item["number"])
+            blockers.append({
+                "number": item["number"],
+                "status": item["status"],
+                "emoji": emoji,
+                "reason": reason,
+            })
+        payload = {
+            "version": 1,
+            "config": {
+                "slug": config_slug,
+                "path": str(config_path),
+                "variant": cfg.get("variant"),
+                "base_branch": cfg.get("base_branch", "main"),
+                "worker_backend": cfg.get("worker_backend", "workflow"),
+                "human_approves_merge": bool(cfg.get("human_approves_merge")),
+                "truth_gate": tg,
+                "truth_threshold": tt,
+                "max_workers": max_workers,
+            },
+            "project": {
+                "owner": project_owner,
+                "number": project_number,
+                "title": proj.get("title", config_slug),
+            },
+            "lanes": {
+                status: by_status[status]
+                for status in ("Backlog", "Ready", "Building", "QA", "Review", "Done", "Blocked", "Skipped")
+            },
+            "workers": workers,
+            "blockers": blockers,
+            "recent": recents,
+            "health": {
+                "run_active": run_active,
+                "last_tick": last_tick,
+                "started_at": start_hms,
+                "exited": exited,
+                "workers_active": active,
+                "workers_max": max_workers,
+                "worktrees_cleaned": reaped_count,
+            },
+            "generated_at": datetime.datetime.now().astimezone().isoformat(),
+            "truncated": hit_cap,
+        }
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0
 
     print(f"📊 super-board · {proj['title']} (#{proj['number']})")
     print("─" * 80)
@@ -662,9 +764,6 @@ def main() -> int:
 
     # ── workers ──
     print()
-    active = len(inflight)
-    run_active = bool(last_tick) and not exited
-
     if not run_active and active == 0:
         print(f"▎Workers  (claim: {bot_login})")
         print("   (no active run — `super-board run` to start)")

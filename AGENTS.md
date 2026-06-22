@@ -36,6 +36,12 @@ writing-board-tasks              → docs/superpowers/tasks/<slug>/*.md
 SuperSaiyan/
   AGENTS.md                          ← this file
   README.md
+  apps/desktop/                      optional Electron control center
+  packages/
+    control-protocol/                typed UI/main-process contract
+    control-core/                    repo, GitHub, config, and watcher services
+    ui/                              shared React renderer (no Electron imports)
+  design/dashboard-control-center/  extracted Aura Console design reference
   docs/
     GETTING-STARTED.md               ← primary human tutorial (20 steps)
     templates/                       issue.md, task-file.md, github-project-columns.md
@@ -220,6 +226,7 @@ export GH_PROJECT_OWNER=@me GH_PROJECT_NUMBER=<n>
 3. **Prefer bridge skills** over new one-off scripts for plan/spec/task decomposition.
 4. **bash 3.2** — scripts must run on macOS default bash (`mapfile` / `declare -A` break).
 5. **Upstream submodules** — `gstack/`, `superpowers/`, `super-board/` may be upstream clones; avoid drive-by edits.
+6. **Control Center stays optional** — UI code lives in `apps/` and `packages/`; never make it a prerequisite for skills or CLI use.
 
 ---
 
