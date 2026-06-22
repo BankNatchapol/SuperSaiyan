@@ -60,6 +60,9 @@ Create a local macOS package with `npm run package:mac`. The interface follows
 the extracted Aura Console design reference in
 [`design/dashboard-control-center/`](design/dashboard-control-center/).
 
+Control Center testing commands and the gated disposable GitHub sandbox are
+documented in [TESTING.md](TESTING.md).
+
 ---
 
 ## How it works
@@ -125,4 +128,10 @@ SuperSaiyan is self-contained — no separate tool installs required:
 
 ```bash
 ./tests/test-supersaiyan-prepare.sh
+```
+
+For the desktop Control Center:
+
+```bash
+npm run test:control-center
 ```

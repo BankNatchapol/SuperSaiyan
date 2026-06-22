@@ -15,6 +15,7 @@
 node_modules/
 apps/desktop/.vite/
 apps/desktop/out/
+apps/desktop/test-results/
 *.tsbuildinfo
 __pycache__/
 *.pyc

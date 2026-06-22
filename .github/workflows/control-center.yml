@@ -21,6 +21,26 @@ on:
 jobs:
   verify:
     runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run test:e2e
+      - run: npm run test:e2e:packaged
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: control-center-e2e
+          path: apps/desktop/test-results/
+
+  packages:
+    needs: verify
+    runs-on: macos-14
     strategy:
       matrix:
         arch: [arm64, x64]
@@ -31,8 +51,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
-      - run: npm run lint
       - run: npm run package:mac:${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:

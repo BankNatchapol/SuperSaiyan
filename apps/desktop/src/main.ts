@@ -37,6 +37,13 @@ import {
 
 if (started) app.quit();
 
+const e2eMode = process.env.SUPERSAIYAN_E2E === "1";
+const e2eRecordDir = process.env.SUPERSAIYAN_E2E_RECORD_DIR;
+
+if (e2eMode && process.env.SUPERSAIYAN_E2E_USER_DATA) {
+  app.setPath("userData", process.env.SUPERSAIYAN_E2E_USER_DATA);
+}
+
 if (!app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", "9223");
 
 protocol.registerSchemesAsPrivileged([
@@ -75,6 +82,16 @@ function repositoryFor(id: string): RepositoryRecord {
 
 async function persist(): Promise<void> {
   await registry.save(state);
+}
+
+async function recordE2eEvent(name: string, payload: unknown): Promise<void> {
+  if (!e2eMode || !e2eRecordDir) return;
+  const { appendFile, mkdir } = await import("node:fs/promises");
+  await mkdir(e2eRecordDir, { recursive: true });
+  await appendFile(
+    join(e2eRecordDir, "electron-events.jsonl"),
+    `${JSON.stringify({ name, payload, at: new Date().toISOString() })}\n`,
+  );
 }
 
 async function snapshotFor(repoId: string, refresh = false): Promise<RepositorySnapshot> {
@@ -148,8 +165,12 @@ function registerIpc(): void {
     assertTrusted(event);
     let selected = path;
     if (!selected) {
-      const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory"] });
-      selected = result.canceled ? undefined : result.filePaths[0];
+      if (e2eMode) {
+        selected = process.env.SUPERSAIYAN_E2E_PICKER_RESULT || undefined;
+      } else {
+        const result = await dialog.showOpenDialog(mainWindow!, { properties: ["openDirectory"] });
+        selected = result.canceled ? undefined : result.filePaths[0];
+      }
     }
     if (!selected) return null;
     repositoryPathSchema.parse(selected);
@@ -239,13 +260,15 @@ function registerIpc(): void {
     if (!isPathInside(repository, candidate)) throw new Error("Path is outside the registered repository");
     const path = await realpath(resolve(repository.path, candidate));
     if (!isPathInside(repository, path)) throw new Error("Resolved path is outside the registered repository");
-    await shell.openPath(path);
+    if (e2eMode) await recordE2eEvent("external:path", { repoId, path });
+    else await shell.openPath(path);
   });
   ipcMain.handle("external:url", async (event, url: string) => {
     assertTrusted(event);
     const parsed = new URL(url);
     if (parsed.protocol !== "https:" || !["github.com", "www.github.com"].includes(parsed.hostname)) throw new Error("Only GitHub HTTPS links may be opened");
-    await shell.openExternal(parsed.toString());
+    if (e2eMode) await recordE2eEvent("external:url", { url: parsed.toString() });
+    else await shell.openExternal(parsed.toString());
   });
   ipcMain.handle("preferences:get", (event) => {
     assertTrusted(event);
@@ -282,7 +305,10 @@ async function createWindow(): Promise<void> {
     },
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("https://github.com/")) void shell.openExternal(url);
+    if (url.startsWith("https://github.com/")) {
+      if (e2eMode) void recordE2eEvent("window-open", { url });
+      else void shell.openExternal(url);
+    }
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {

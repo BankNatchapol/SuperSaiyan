@@ -13,7 +13,10 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "npm run package -- --arch=$(node -p process.arch) && playwright test --grep-invert \"@packaged|@live\"",
+    "test:e2e:packaged": "npm run package -- --arch=$(node -p process.arch) && playwright test --grep @packaged",
+    "test:e2e:live": "playwright test --grep @live"
   },
   "dependencies": {
     "@supersaiyan/control-core": "0.1.0",
@@ -32,11 +35,13 @@
     "@electron-forge/plugin-fuses": "^7.11.2",
     "@electron-forge/plugin-vite": "^7.11.2",
     "@electron/fuses": "^1.8.0",
-    "@types/node": "^24.10.0",
+    "@playwright/test": "^1.61.0",
     "@types/electron-squirrel-startup": "^1.0.2",
+    "@types/node": "^24.10.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.1.1",
+    "axe-core": "^4.12.1",
     "electron": "^42.4.1",
     "typescript": "^5.9.3",
     "vite": "^8.0.16",
