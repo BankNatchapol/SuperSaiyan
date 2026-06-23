@@ -295,7 +295,11 @@ async function createWindow(): Promise<void> {
     minWidth: 960,
     minHeight: 680,
     titleBarStyle: "hiddenInset",
-    backgroundColor: "#06060b",
+    transparent: true,
+    backgroundColor: "#00000000",
+    vibrancy: "under-window",
+    visualEffectState: "active",
+    show: false,
     webPreferences: {
       preload: join(__dirname, "preload.js"),
       nodeIntegration: false,
@@ -304,6 +308,7 @@ async function createWindow(): Promise<void> {
       webSecurity: true,
     },
   });
+  mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://github.com/")) {
       if (e2eMode) void recordE2eEvent("window-open", { url });

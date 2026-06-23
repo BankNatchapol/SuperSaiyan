@@ -117,6 +117,7 @@ export interface AppPreferences {
   activeRefreshSeconds: number;
   shell: string;
   modelTier: "low" | "medium" | "high";
+  glassOpacity: number;
   installerPath?: string;
 }
 

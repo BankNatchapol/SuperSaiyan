@@ -14,6 +14,11 @@
   from { background-position: 200% 0; }
   to { background-position: -200% 0; }
 }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spinning { animation: spin 0.7s linear infinite; }
 .glass {
   background: linear-gradient(160deg, var(--panel), var(--panel-deep));
   border: 1px solid var(--line);
@@ -23,6 +28,7 @@
 .glass--hot { border-color: var(--line-hot); box-shadow: var(--shadow-hot); }
 .hover-lift { transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
 .hover-lift:hover { transform: translateY(-2px); border-color: rgba(255,214,10,.32); box-shadow: var(--shadow-hot); }
+.skeleton { background: linear-gradient(90deg, var(--panel) 25%, var(--panel-deep) 50%, var(--panel) 75%) !important; background-size: 400% 100% !important; animation: shimmer 1.6s ease-in-out infinite !important; border-color: transparent !important; }
 .live-dot { animation: status-pulse 2s ease-in-out infinite; }
 .aura-orb { animation: aura-float 9s ease-in-out infinite; }
 .power-core { animation: core-pulse 2.4s ease-in-out infinite; }

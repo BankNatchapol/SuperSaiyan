@@ -5,7 +5,7 @@
   height: 100%;
   min-width: 960px;
   overflow: hidden;
-  background: radial-gradient(120% 80% at 80% -10%, #1a1606 0%, #0a0a12 40%, #06060b 100%);
+  background: radial-gradient(120% 80% at 80% -10%, rgb(26 22 6 / calc(0.02 + 0.83 * var(--glass))) 0%, rgb(10 10 18 / calc(0.02 + 0.78 * var(--glass))) 40%, rgb(6 6 11 / calc(0.02 + 0.73 * var(--glass))) 100%);
 }
 .control-center::before {
   content: "";
@@ -29,7 +29,7 @@
   gap: 7px;
   padding: 20px 15px;
   border-right: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(20,21,30,.78), rgba(10,11,18,.72));
+  background: linear-gradient(180deg, rgb(20 21 30 / calc(0.08 + 0.70 * var(--glass))), rgb(10 11 18 / calc(0.06 + 0.66 * var(--glass))));
   backdrop-filter: blur(24px) saturate(140%);
 }
 .brand { display: flex; align-items: center; gap: 11px; padding: 5px 8px 15px; }
@@ -67,13 +67,14 @@
 .main { position: relative; z-index: 1; flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar {
   flex: none; display: flex; align-items: center; gap: 16px; min-height: 76px; padding: 15px 25px;
-  border-bottom: 1px solid var(--line); background: linear-gradient(180deg, rgba(14,15,22,.58), rgba(14,15,22,.2));
+  border-bottom: 1px solid var(--line); background: linear-gradient(180deg, rgb(14 15 22 / calc(0.04 + 0.54 * var(--glass))), rgb(14 15 22 / calc(0.01 + 0.19 * var(--glass))));
   backdrop-filter: blur(18px);
+  -webkit-app-region: drag;
 }
 .topbar-title { font-size: 20px; font-weight: 700; letter-spacing: -.4px; }
 .topbar-subtitle { margin-top: 2px; color: var(--muted); font-size: 12px; }
 .tag { display: inline-flex; margin-left: 9px; padding: 3px 8px; border: 1px solid rgba(255,214,10,.28); border-radius: 20px; color: var(--gold); background: rgba(255,214,10,.1); font: 600 10px var(--font-mono); vertical-align: middle; }
-.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; -webkit-app-region: no-drag; }
 .command-button, .icon-button {
   border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.04); cursor: pointer;
 }
@@ -115,7 +116,7 @@
 .lane-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lane-color); box-shadow: 0 0 10px var(--lane-color); }
 .lane-count { margin-left: auto; color: var(--muted); font: 10px var(--font-mono); }
 .lane-cards { display: flex; flex-direction: column; gap: 9px; min-height: 110px; padding: 9px; border: 1px solid rgba(255,255,255,.055); border-radius: 13px; background: rgba(0,0,0,.14); }
-.issue-card { padding: 13px; border: 1px solid rgba(255,255,255,.075); border-radius: 12px; background: linear-gradient(150deg, rgba(31,32,43,.95), rgba(18,19,27,.95)); box-shadow: 0 14px 30px -20px #000; }
+.issue-card { padding: 13px; border: 1px solid rgba(255,255,255,.075); border-radius: 12px; background: linear-gradient(150deg, rgb(31 32 43 / calc(0.12 + 0.83 * var(--glass))), rgb(18 19 27 / calc(0.12 + 0.83 * var(--glass)))); box-shadow: 0 14px 30px -20px #000; }
 .issue-card.movable { cursor: grab; }
 .issue-card:active { cursor: grabbing; }
 .issue-number { color: var(--gold); font: 600 10px var(--font-mono); }

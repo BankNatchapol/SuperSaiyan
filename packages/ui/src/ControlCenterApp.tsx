@@ -145,6 +145,8 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
   const [activeSession, setActiveSession] = useState<string>();
   const [preferences, setPreferences] = useState<AppPreferences>();
+  const [newFeatureSlug, setNewFeatureSlug] = useState<string | null>(null);
+  const [phaseInputs, setPhaseInputs] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async (force = false) => {
     if (!repoId) return;
@@ -164,7 +166,10 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
       setRepositories(items);
       setRepoId((current) => current || items[0]?.id);
     });
-    void transport.getPreferences().then(setPreferences);
+    void transport.getPreferences().then((prefs) => {
+      setPreferences(prefs);
+      document.documentElement.style.setProperty("--glass", String(prefs.glassOpacity ?? 1));
+    });
   }, [transport]);
 
   useEffect(() => {
@@ -172,6 +177,7 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
       setSnapshot(undefined);
       return;
     }
+    setSnapshot(undefined);
     void refresh(true);
     const remove = transport.onRepositoryChanged((event) => {
       if (event.repoId === repoId) void refresh();
@@ -252,7 +258,34 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
         </div>
       );
     }
-    if (!snapshot) return <div className="empty-state"><div><strong>Reading repository state…</strong></div></div>;
+    if (!snapshot) {
+      if (screen === "board") return (
+        <div style={{ display: "flex", gap: 12 }}>
+          {[...Array(5)].map((_, i) => <div key={i} className="glass skeleton" style={{ width: 278, flexShrink: 0, minHeight: 420, borderRadius: 13 }} />)}
+        </div>
+      );
+      if (screen === "features" || screen === "runs" || screen === "repositories") return (
+        <div className="grid-2">
+          <div className="panel glass skeleton" style={{ minHeight: 280 }} />
+          <div className="panel glass skeleton" style={{ minHeight: 280 }} />
+        </div>
+      );
+      if (screen === "settings") return (
+        <div className="panel glass skeleton" style={{ minHeight: 260 }} />
+      );
+      if (screen === "terminal") return (
+        <div className="glass skeleton" style={{ height: "calc(100vh - 145px)", borderRadius: 16 }} />
+      );
+      return (
+        <div className="stack">
+          <div className="grid-4">{[...Array(4)].map((_, i) => <div key={i} className="metric glass skeleton" />)}</div>
+          <div className="grid-2">
+            <div className="panel glass skeleton" style={{ minHeight: 220 }} />
+            <div className="panel glass skeleton" style={{ minHeight: 220 }} />
+          </div>
+        </div>
+      );
+    }
 
     if (screen === "board") {
       return <BoardView snapshot={snapshot} onOpen={(url) => url && void transport.openExternal(url)} onMove={(card, target) => {
@@ -278,10 +311,16 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
                     </div>
                   </div>
                   <div className="topbar-actions">
-                    {feature.phases?.length ? <button className="command-button" onClick={() => {
-                      const phase = window.prompt(`Phase to unlock (${feature.phases?.join(", ")})`);
-                      if (phase && /^\d+$/.test(phase)) void startCommand({ verb: "prepare", args: [feature.slug, "--phase", phase] });
-                    }}>Unlock phase</button> : null}
+                    {feature.phases?.length ? (
+                      phaseInputs[feature.slug] !== undefined ? (
+                        <form style={{ display: "flex", gap: 6 }} onSubmit={(e) => { e.preventDefault(); const v = phaseInputs[feature.slug]; if (v && /^\d+$/.test(v)) void startCommand({ verb: "prepare", args: [feature.slug, "--phase", v] }); setPhaseInputs((p) => { const n = { ...p }; delete n[feature.slug]; return n; }); }}>
+                          <input className="field" autoFocus placeholder={feature.phases?.join(", ")} value={phaseInputs[feature.slug]} onChange={(e) => setPhaseInputs((p) => ({ ...p, [feature.slug]: e.target.value }))} style={{ height: 34, width: 80 }} onKeyDown={(e) => { if (e.key === "Escape") setPhaseInputs((p) => { const n = { ...p }; delete n[feature.slug]; return n; }); }} />
+                          <button type="submit" className="command-button">Unlock</button>
+                        </form>
+                      ) : (
+                        <button className="command-button" onClick={() => setPhaseInputs((p) => ({ ...p, [feature.slug]: "" }))}>Unlock phase</button>
+                      )
+                    ) : null}
                     <button className="command-button" onClick={() => void startCommand({ verb: "prepare", args: [feature.slug] })}>Prepare</button>
                   </div>
                 </div>
@@ -405,6 +444,16 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
             }}>
               <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
             </select>
+            <label htmlFor="glass-opacity">Transparency</label>
+            <input id="glass-opacity" className="field" type="range" min="0" max="1" step="0.05"
+              value={preferences.glassOpacity ?? 1}
+              onChange={(event) => {
+                const v = Number(event.target.value);
+                document.documentElement.style.setProperty("--glass", String(v));
+                const next = { ...preferences, glassOpacity: v };
+                setPreferences(next); void transport.updatePreferences(next);
+              }}
+            />
           </div>
         </div>
       ) : null;
@@ -482,12 +531,17 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
             <div className="topbar-subtitle">{repo ? `${repo.name} · ${snapshot?.branch || "…"}` : "Connect a repository"}{snapshot?.config ? ` · ${snapshot.config.projectOwner}#${snapshot.config.projectNumber}` : ""}</div>
           </div>
           <div className="topbar-actions">
-            <button className="icon-button" onClick={() => void refresh(true)} title="Refresh"><RefreshCw size={16} className={loading ? "live-dot" : ""} /></button>
+            <button className="icon-button" onClick={() => void refresh(true)} title="Refresh" disabled={loading}><RefreshCw size={16} className={loading ? "spinning" : ""} /></button>
             <button className="command-button" disabled={!repoId} onClick={() => void startCommand({ verb: "setup", args: [] })}><Wrench size={14} /> Setup</button>
-            <button className="command-button" disabled={!repoId} onClick={() => {
-              const slug = window.prompt("Feature slug");
-              if (slug) void startCommand({ verb: "new", args: [slug] });
-            }}><Plus size={14} /> New Feature</button>
+            {newFeatureSlug !== null ? (
+              <form style={{ display: "flex", gap: 6 }} onSubmit={(e) => { e.preventDefault(); if (newFeatureSlug.trim()) void startCommand({ verb: "new", args: [newFeatureSlug.trim()] }); setNewFeatureSlug(null); }}>
+                <input className="field" autoFocus placeholder="feature-slug" value={newFeatureSlug} onChange={(e) => setNewFeatureSlug(e.target.value)} style={{ height: 38, width: 160 }} onKeyDown={(e) => { if (e.key === "Escape") setNewFeatureSlug(null); }} />
+                <button type="submit" className="command-button primary" disabled={!newFeatureSlug.trim()}><Plus size={14} /> Create</button>
+                <button type="button" className="icon-button" onClick={() => setNewFeatureSlug(null)}><X size={14} /></button>
+              </form>
+            ) : (
+              <button className="command-button" disabled={!repoId} onClick={() => setNewFeatureSlug("")}><Plus size={14} /> New Feature</button>
+            )}
             {snapshot?.runActive ?
               <button className="command-button danger" onClick={() => void startCommand({ verb: "stop", args: [] })}><CircleStop size={14} /> Stop</button> :
               <button className="command-button primary" disabled={!repoId} onClick={() => void startCommand({ verb: "run", args: preferences?.modelTier && preferences.modelTier !== "medium" ? [`--${preferences.modelTier}`] : [] })}><Play size={14} fill="currentColor" /> Run</button>}

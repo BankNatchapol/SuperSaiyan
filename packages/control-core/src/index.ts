@@ -80,6 +80,7 @@ export class RepositoryRegistry {
         activeRefreshSeconds: 10,
         shell: process.env.SHELL || "/bin/zsh",
         modelTier: "medium" as const,
+        glassOpacity: 1,
       },
     };
     if (!(await exists(this.file))) return defaults;
