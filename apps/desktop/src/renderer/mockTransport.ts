@@ -83,6 +83,7 @@ const preferences: AppPreferences = {
   activeRefreshSeconds: 10,
   shell: "/bin/zsh",
   modelTier: "medium",
+  glassOpacity: 1,
 };
 
 const unavailable = async (): Promise<never> => {
