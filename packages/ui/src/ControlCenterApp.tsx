@@ -28,6 +28,7 @@ import {
   type ControlTransport,
   type RepositoryRecord,
   type RepositorySnapshot,
+  type RunnerSession,
   type Screen,
   type TerminalSession,
 } from "@supersaiyan/control-protocol";
@@ -159,7 +160,7 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
   const [newFeatureSlug, setNewFeatureSlug] = useState<string | null>(null);
   const [phaseInputs, setPhaseInputs] = useState<Record<string, string>>({});
   const [expandedDiag, setExpandedDiag] = useState<string | null>(null);
-  const [runnerSessionId, setRunnerSessionId] = useState<string | undefined>();
+  const [runnerSession, setRunnerSession] = useState<RunnerSession | undefined>();
 
   const refresh = useCallback(async (force = false) => {
     if (!repoId) return;
@@ -258,7 +259,7 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
     { id: "features" as const, label: "Features", icon: ListTodo, badge: snapshot?.features.length ? String(snapshot.features.length) : "" },
     { id: "runs" as const, label: "Runs", icon: Activity, badge: snapshot?.workers.length ? String(snapshot.workers.length) : "" },
     { id: "terminal" as const, label: "Terminal", icon: SquareTerminal, badge: sessions.length ? String(sessions.length) : "" },
-    { id: "runner" as const, label: "Runner", icon: Zap, badge: runnerSessionId ? "1" : "" },
+    { id: "runner" as const, label: "Runner", icon: Zap, badge: runnerSession ? "1" : "" },
     { id: "repositories" as const, label: "Repositories", icon: FolderGit2, badge: "" },
     { id: "settings" as const, label: "Settings", icon: Settings, badge: "" },
   ];
@@ -279,19 +280,14 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
         <SmartRunnerView
           transport={transport}
           repoId={repoId}
-          sessions={sessions}
-          runnerSessionId={runnerSessionId}
-          setRunnerSessionId={setRunnerSessionId}
-          onStartCommand={(request) => startCommand(request, false)}
-          onSessionCreated={(session) => {
-            setSessions((current) =>
-              current.some((item) => item.id === session.id) ? current : [...current, session]
-            );
-            setActiveSession(session.id);
-          }}
-          onSwitchToTerminal={() => {
-            setActiveSession(runnerSessionId);
-            setScreen("terminal");
+          runnerSession={runnerSession}
+          setRunnerSession={setRunnerSession}
+          onOpenRawTerminal={() => {
+            void transport.createTerminal(repoId, "supersaiyan").then((session) => {
+              setSessions((current) => current.some((item) => item.id === session.id) ? current : [...current, session]);
+              setActiveSession(session.id);
+              setScreen("terminal");
+            });
           }}
         />
       );
