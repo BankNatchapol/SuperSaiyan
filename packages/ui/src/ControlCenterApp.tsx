@@ -294,9 +294,16 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
               setSessions((current) => current.some((item) => item.id === session.id) ? current : [...current, session]);
               setActiveSession(session.id);
               setScreen("terminal");
-              // Shell sends its initial prompt before xterm.js mounts — send \r after
-              // a short delay to force it to reprint once the terminal is attached.
+              // Show a shell prompt first (shell may send its initial prompt before
+              // xterm.js mounts, so \r forces it to reprint once the terminal attaches).
               setTimeout(() => void transport.writeTerminal(session.id, "\r"), 150);
+              // Pre-type the equivalent claude command so the user can press Enter to
+              // run interactively, or edit it first.
+              if (runnerSession) {
+                const { verb, args } = runnerSession.command;
+                const cmd = `claude '/supersaiyan ${verb}${args.length ? ` ${args.join(" ")}` : ""}'`;
+                setTimeout(() => void transport.writeTerminal(session.id, cmd), 400);
+              }
             });
           }}
         />
