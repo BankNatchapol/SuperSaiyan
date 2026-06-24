@@ -20,14 +20,17 @@ function stripAnsi(str: string): string {
 const BOX_CHARS = /[▐▛▜▝▘▙▟▚▞░▒▓│─┤├┼┬┴┐└┘┌█▀▄■◆◇▸▾]/g;
 
 const CHROME_PATTERNS = [
-  /^[─┄═\s]+$/, // separator / blank lines made of box chars
+  /^[─┄═\s]+$/,                           // separator / blank lines of box chars
   /^\?\s*for shortcuts/i,
   /^←\s*for agents/i,
   /^esc\s+to interrupt/i,
-  /^●\s*(low|medium|high)\s*·/i,         // model tier status bar
+  /^●\s*(low|medium|high)\s*·/i,          // model tier status bar
   /^·\s*(low|medium|high)\s*·/i,
-  /^ctrl\+[a-z]/i,                        // keyboard hint lines
+  /^ctrl\+[a-z]/i,
   /^resume this session with:/i,
+  /thinking with (high|medium|low) effort/i, // extended thinking status bar fragment
+  // Lines starting with spinner/braille chars are status-bar leakage
+  /^[✶✻✽⊕✢✳⠂⠃⠇⠏⠋⠙⠹⠸⠼⠴⠦⠧]\s/,
 ];
 
 function isChromeLine(line: string): boolean {
@@ -46,32 +49,37 @@ const SPINNER_PREFIX = /[ \t]*[✶✻⏺✽⊕✢✳·⠂⠃⠇⠏⠋⠙⠹⠸�
 function extractReadable(raw: string): { lines: string[]; spinnerText: string | null } {
   let spinnerText: string | null = null;
 
-  // Capture the last spinner text from bare \r sequences (in-place overwrites)
+  // Capture spinner from bare \r in-place overwrites
   const spinRe = /\r(?!\n)([^\r\n]*)/g;
   let sm: RegExpExecArray | null;
   while ((sm = spinRe.exec(raw)) !== null) {
     const candidate = stripAnsi(sm[1]).trim();
-    if (candidate.length > 0 && SPINNER_PREFIX.test(candidate)) {
-      spinnerText = candidate;
-    }
+    if (candidate.length > 0 && SPINNER_PREFIX.test(candidate)) spinnerText = candidate;
   }
 
-  // Convert cursor-position ANSI codes → \n BEFORE stripping so the line
-  // structure from Ink's position-based rendering is preserved.
+  // Convert cursor-position ANSI codes BEFORE stripping to preserve line structure.
+  // KEY FIX: ESC[N;1H (col 1) → \n (new line), ESC[N;MH (col M>1) → space (same line).
+  // Previously ALL cursor positions became \n, which split mid-row text into fake lines
+  // (e.g. "✳ Sm" + "\n" + "thinking with high effort" from one status-bar row).
   const withBreaks = raw
-    .replace(/\x1B\[2J/g, "\n")             // clear screen
-    .replace(/\x1B\[\d*;\d*[Hf]/g, "\n")   // absolute position ESC[N;MH
-    .replace(/\x1B\[\d*H/g, "\n")           // cursor home ESC[H
-    .replace(/\x1B\[\d*[BE]/g, "\n");       // cursor down (B) / next line (E)
+    .replace(/\x1B\[2J/g, "\n")                    // clear screen
+    .replace(/\x1B\[H/g, "\n")                     // cursor home (no params)
+    .replace(/\x1B\[\d+;1[Hf]/g, "\n")             // ESC[N;1H → col 1 → new line
+    .replace(/\x1B\[\d+;[2-9][Hf]/g, " ")          // ESC[N;2–9H → col 2-9 → space
+    .replace(/\x1B\[\d+;\d{2,}[Hf]/g, " ")         // ESC[N;10+H → space
+    .replace(/\x1B\[\d*[BE]/g, "\n");              // cursor down / next line
 
   const stripped = stripAnsi(withBreaks);
   const normalized = stripped.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const allLines = normalized.split("\n").map((l) => l.trimEnd()).filter((l) => l.length > 0);
 
-  const lines = normalized
-    .split("\n")
-    .map((l) => l.trimEnd())
-    .filter((l) => l.length > 0 && !isChromeLine(l));
+  // Also capture spinner from status-bar lines that become committed lines
+  for (const l of allLines) {
+    const t = l.trim();
+    if (SPINNER_PREFIX.test(t) && /\d+[sm]/.test(t)) spinnerText = t;
+  }
 
+  const lines = allLines.filter((l) => !isChromeLine(l));
   return { lines, spinnerText };
 }
 
