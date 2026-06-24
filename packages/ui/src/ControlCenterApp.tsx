@@ -164,6 +164,9 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
   const [runnerSession, setRunnerSession] = useState<RunnerSession | undefined>();
   const [runnerEvents, setRunnerEvents] = useState<RunnerEvent[]>([]);
   const [runnerExitCode, setRunnerExitCode] = useState<number | undefined>();
+  // Terminal session created for the current runner session via "Raw terminal".
+  // Stored so repeated clicks reuse the same tab instead of creating a new one.
+  const [runnerTerminalId, setRunnerTerminalId] = useState<string | undefined>();
 
   const refresh = useCallback(async (force = false) => {
     if (!repoId) return;
@@ -208,6 +211,12 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
     const timer = window.setInterval(() => void refresh(), Math.max(5, seconds) * 1000);
     return () => window.clearInterval(timer);
   }, [preferences, refresh, repoId, snapshot?.runActive]);
+
+  // When a runner session is cleared ("New command"), forget its linked terminal
+  // so the next "Raw terminal" click opens a fresh tab.
+  useEffect(() => {
+    if (!runnerSession) setRunnerTerminalId(undefined);
+  }, [runnerSession]);
 
   const startCommand = async (request: CommandRequest, navigate = true) => {
     if (!repoId) return undefined;
@@ -290,20 +299,21 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
           exitCode={runnerExitCode}
           setExitCode={setRunnerExitCode}
           onOpenRawTerminal={() => {
+            // Reuse the terminal we opened for this runner session if it still exists.
+            const existing = runnerTerminalId ? sessions.find((s) => s.id === runnerTerminalId) : undefined;
+            if (existing) {
+              setActiveSession(existing.id);
+              setScreen("terminal");
+              return;
+            }
             void transport.createTerminal(repoId, "supersaiyan").then((session) => {
               setSessions((current) => current.some((item) => item.id === session.id) ? current : [...current, session]);
               setActiveSession(session.id);
               setScreen("terminal");
-              // Show a shell prompt first (shell may send its initial prompt before
-              // xterm.js mounts, so \r forces it to reprint once the terminal attaches).
-              setTimeout(() => void transport.writeTerminal(session.id, "\r"), 150);
-              // Pre-type the equivalent claude command so the user can press Enter to
-              // run interactively, or edit it first.
-              if (runnerSession) {
-                const { verb, args } = runnerSession.command;
-                const cmd = `claude '/supersaiyan ${verb}${args.length ? ` ${args.join(" ")}` : ""}'`;
-                setTimeout(() => void transport.writeTerminal(session.id, cmd), 400);
-              }
+              setRunnerTerminalId(session.id);
+              // Shell may emit its initial prompt before xterm.js subscribes to
+              // onTerminalData — send \r after a short delay to force a clean repaint.
+              setTimeout(() => void transport.writeTerminal(session.id, "\r"), 300);
             });
           }}
         />
