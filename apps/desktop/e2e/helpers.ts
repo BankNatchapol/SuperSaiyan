@@ -159,6 +159,15 @@ mkdir -p "$record_dir"
 printf '{"tool":"claude","args":%s,"cwd":"%s"}\\n' "$(node -e 'console.log(JSON.stringify(process.argv.slice(1)))' "$@")" "$PWD" >> "$record_dir/commands.jsonl"
 if [ "\${1:-}" = "--version" ]; then echo "2.1.153 (Claude Code)"; exit 0; fi
 if [ "\${1:-}" = "plugin" ] && [ "\${2:-}" = "list" ]; then echo "supersaiyan"; exit 0; fi
+if printf '%s\n' "$@" | grep -qx -- "-p"; then
+  prompt="\${@: -1}"
+  printf '{"tool":"claude-print","line":%s,"cwd":"%s"}\n' "$(node -e 'console.log(JSON.stringify(process.argv[1]))' "$prompt")" "$PWD" >> "$record_dir/commands.jsonl"
+  printf '{"type":"assistant","message":{"content":[{"type":"text","text":"Running %s"}]}}\n' "$prompt"
+  printf '{"type":"tool_use","name":"Bash","input":{"command":"git status --short"}}\n'
+  printf '{"type":"tool_result","content":[{"type":"text","text":"clean"}]}\n'
+  if [ "$prompt" = "/supersaiyan run" ]; then sleep 20; fi
+  exit 0
+fi
 echo "Fake Claude ready"
 while IFS= read -r line; do
   printf '{"tool":"claude-stdin","line":%s,"cwd":"%s"}\\n' "$(node -e 'console.log(JSON.stringify(process.argv[1]))' "$line")" "$PWD" >> "$record_dir/commands.jsonl"

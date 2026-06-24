@@ -139,6 +139,38 @@ test("runs commands through fake Claude, enforces exclusivity, and stops active 
   }
 });
 
+test("streams Smart Runner output from Claude stream-json and opens raw terminal fallback", async () => {
+  const workspace = await createTestWorkspace();
+  await seedRegistry(workspace, [workspace.repoA]);
+  const { app, page, errors } = await launchControlCenter(workspace);
+  try {
+    await page.getByRole("button", { name: /^Runner/ }).click();
+    const runner = page.locator(".runner-shell");
+    await runner.getByRole("button", { name: /Setup/ }).click();
+    await waitForCommand(workspace, (entry) => entry.tool === "claude-print" && entry.line === "/supersaiyan setup");
+    await expect(runner).toContainText("Running /supersaiyan setup");
+    await expect(runner).toContainText("Bash");
+    await expect(runner).toContainText("clean");
+    await expect(runner).not.toContainText("Moonwalking");
+    await expect(runner).not.toContainText("?forshortcuts");
+
+    await runner.getByRole("button", { name: "Raw terminal" }).click();
+    await expect(page.locator(".topbar-title")).toContainText("Terminal");
+    await expect(page.locator(".terminal-tab", { hasText: "SuperSaiyan" })).toBeVisible();
+
+    await page.getByRole("button", { name: /^Runner/ }).click();
+    await runner.getByRole("button", { name: "New command" }).click();
+    await runner.getByRole("button", { name: /Run/ }).click();
+    await waitForCommand(workspace, (entry) => entry.tool === "claude-print" && entry.line === "/supersaiyan run");
+    await runner.getByRole("button", { name: "Stop" }).click();
+    await waitForCommand(workspace, (entry) => entry.tool === "claude-print" && entry.line === "/supersaiyan stop");
+    await expectNoRendererErrors(errors);
+  } finally {
+    await app.close();
+    await workspace.cleanup();
+  }
+});
+
 test("routes feature, phase, model-tier, and concurrent repository commands", async () => {
   const workspace = await createTestWorkspace();
   const today = new Date().toISOString().slice(0, 10);

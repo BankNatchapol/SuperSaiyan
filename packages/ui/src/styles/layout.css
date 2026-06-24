@@ -168,9 +168,14 @@
 .runner-line { white-space: pre-wrap; word-break: break-word; padding: 1px 0; }
 .runner-line--tool-call { color: #4ade80; }
 .runner-line--tool-result { color: var(--muted); padding-left: 14px; }
+.runner-line--tool { color: #4ade80; }
+.runner-line--tool_result { color: var(--muted); padding-left: 14px; }
+.runner-line--system { color: var(--faint); }
+.runner-line--error { color: #ffb0b0; }
 .runner-line--progress { color: var(--gold-soft); }
 .runner-line--command { color: var(--text); font-weight: 600; opacity: 0.8; }
 .runner-line--text { color: var(--text); }
+.runner-raw-fallback { margin-bottom: 12px; padding: 12px 14px; border: 1px solid rgba(255,214,10,.25); border-radius: 10px; color: var(--gold-soft); background: rgba(255,214,10,.07); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .runner-choices { flex: none; padding: 12px 14px; border-top: 1px solid var(--line); background: rgba(0,0,0,.1); }
 .runner-choices-label { font-size: 11px; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
 .runner-choices-grid { display: flex; flex-wrap: wrap; gap: 8px; }

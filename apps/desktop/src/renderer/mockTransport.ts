@@ -98,6 +98,8 @@ export const mockTransport: ControlTransport = {
   installOrRepair: unavailable,
   startCommand: unavailable,
   interruptCommand: async () => undefined,
+  startRunnerCommand: unavailable,
+  interruptRunner: async () => undefined,
   createTerminal: async () => ({ id: "preview-terminal", repoId: repository.id, title: "Preview terminal", kind: "shell", active: true } satisfies TerminalSession),
   writeTerminal: async () => undefined,
   resizeTerminal: async () => undefined,
@@ -109,5 +111,6 @@ export const mockTransport: ControlTransport = {
   updatePreferences: async (update) => Object.assign(preferences, update),
   onTerminalData: () => () => undefined,
   onTerminalExit: () => () => undefined,
+  onRunnerEvent: () => () => undefined,
   onRepositoryChanged: () => () => undefined,
 };

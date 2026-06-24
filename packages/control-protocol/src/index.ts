@@ -106,6 +106,23 @@ export interface TerminalSession {
   active: boolean;
 }
 
+export interface RunnerSession {
+  id: string;
+  repoId: string;
+  title: string;
+  command: CommandRequest;
+  active: boolean;
+}
+
+export type RunnerEvent =
+  | { type: "init"; sessionId: string }
+  | { type: "assistant"; sessionId: string; text: string; partial?: boolean }
+  | { type: "tool"; sessionId: string; name: string; input?: unknown }
+  | { type: "tool_result"; sessionId: string; text?: string; error?: boolean }
+  | { type: "system"; sessionId: string; text: string }
+  | { type: "error"; sessionId: string; message: string }
+  | { type: "exit"; sessionId: string; exitCode: number };
+
 export interface CommandRequest {
   verb: CommandVerb;
   args: string[];
@@ -142,6 +159,8 @@ export interface ControlTransport {
   installOrRepair(repoId: string): Promise<TerminalSession>;
   startCommand(repoId: string, request: CommandRequest): Promise<TerminalSession>;
   interruptCommand(sessionId: string): Promise<void>;
+  startRunnerCommand(repoId: string, request: CommandRequest): Promise<RunnerSession>;
+  interruptRunner(sessionId: string): Promise<void>;
   createTerminal(repoId: string, kind: TerminalSession["kind"]): Promise<TerminalSession>;
   writeTerminal(sessionId: string, data: string): Promise<void>;
   resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void>;
@@ -153,6 +172,7 @@ export interface ControlTransport {
   updatePreferences(preferences: Partial<AppPreferences>): Promise<AppPreferences>;
   onTerminalData(listener: (event: { sessionId: string; data: string }) => void): () => void;
   onTerminalExit(listener: (event: { sessionId: string; exitCode: number }) => void): () => void;
+  onRunnerEvent(listener: (event: RunnerEvent) => void): () => void;
   onRepositoryChanged(listener: (event: { repoId: string }) => void): () => void;
 }
 

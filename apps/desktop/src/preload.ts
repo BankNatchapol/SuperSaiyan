@@ -15,6 +15,8 @@ const transport: ControlTransport = {
   installOrRepair: (repoId) => ipcRenderer.invoke("workspace:repair", repoId),
   startCommand: (repoId, request: CommandRequest) => ipcRenderer.invoke("command:start", repoId, request),
   interruptCommand: (sessionId) => ipcRenderer.invoke("command:interrupt", sessionId),
+  startRunnerCommand: (repoId, request: CommandRequest) => ipcRenderer.invoke("runner:start", repoId, request),
+  interruptRunner: (sessionId) => ipcRenderer.invoke("runner:interrupt", sessionId),
   createTerminal: (repoId, kind) => ipcRenderer.invoke("terminal:create", repoId, kind),
   writeTerminal: (sessionId, data) => ipcRenderer.invoke("terminal:write", sessionId, data),
   resizeTerminal: (sessionId, cols, rows) => ipcRenderer.invoke("terminal:resize", sessionId, cols, rows),
@@ -26,6 +28,7 @@ const transport: ControlTransport = {
   updatePreferences: (preferences: Partial<AppPreferences>) => ipcRenderer.invoke("preferences:update", preferences),
   onTerminalData: (listener) => subscribe("terminal:data", listener),
   onTerminalExit: (listener) => subscribe("terminal:exit", listener),
+  onRunnerEvent: (listener) => subscribe("runner:event", listener),
   onRepositoryChanged: (listener) => subscribe("workspace:changed", listener),
 };
 

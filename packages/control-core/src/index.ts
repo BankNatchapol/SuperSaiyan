@@ -501,3 +501,4 @@ export function isPathInside(repository: RepositoryRecord, candidate: string): b
 }
 
 export const createSessionId = (): string => `session-${randomUUID()}`;
+export { runnerEventsFromClaudeJson, runnerEventsFromClaudeJsonLine } from "./runner-events";
