@@ -164,8 +164,7 @@
 .runner-live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); display: inline-block; }
 .runner-exit-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
 .runner-output { flex: 1; overflow-y: auto; padding: 14px 16px; font: 12px/1.55 var(--font-mono); color: var(--text); background: rgba(0,0,0,.18); min-height: 0; }
-.runner-line { white-space: pre-wrap; word-break: break-all; }
-.runner-line--muted { color: var(--muted); }
+.runner-pre { margin: 0; font: inherit; white-space: pre-wrap; word-break: break-all; color: inherit; }
 .runner-choices { flex: none; padding: 12px 14px; border-top: 1px solid var(--line); background: rgba(0,0,0,.1); }
 .runner-choices-label { font-size: 11px; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
 .runner-choices-grid { display: flex; flex-wrap: wrap; gap: 8px; }

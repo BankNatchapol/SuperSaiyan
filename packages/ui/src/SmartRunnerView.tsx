@@ -41,8 +41,10 @@ export function SmartRunnerView({
   onSessionCreated,
   onSwitchToTerminal,
 }: SmartRunnerViewProps) {
-  const [lines, setLines] = useState<string[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
+  // Use a flat string instead of lines[] — simpler, no line-split bugs
+  const [output, setOutput] = useState("");
+  // Assume running if we already have a session (handles remount after switching screens)
+  const [isRunning, setIsRunning] = useState(runnerSessionId !== undefined);
   const [exited, setExited] = useState(false);
   const [exitCode, setExitCode] = useState<number>();
   const [inputText, setInputText] = useState("");
@@ -50,13 +52,14 @@ export function SmartRunnerView({
   const [choices, setChoices] = useState<string[]>([]);
   const [newFeatureSlug, setNewFeatureSlug] = useState<string | null>(null);
 
-  const pendingLineRef = useRef<string>("");
   const rollingBufferRef = useRef<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string | undefined>(runnerSessionId);
 
   useEffect(() => {
     sessionIdRef.current = runnerSessionId;
+    // If a session is active when we mount/remount, treat it as running
+    if (runnerSessionId) setIsRunning(true);
   }, [runnerSessionId]);
 
   useEffect(() => {
@@ -66,31 +69,23 @@ export function SmartRunnerView({
       const stripped = stripAnsi(event.data);
       rollingBufferRef.current = (rollingBufferRef.current + stripped).slice(-2000);
 
-      // Normalize \r\n → \n so line commits aren't eaten by the \r reset.
-      // Remaining standalone \r (in-place overwrite) → take last sub-segment.
-      const normalized = stripped.replace(/\r\n/g, "\n");
-      const segments = normalized.split("\n");
-      const committed: string[] = [];
-      for (let i = 0; i < segments.length - 1; i++) {
-        let seg = pendingLineRef.current + segments[i];
-        if (seg.includes("\r")) seg = seg.split("\r").at(-1) ?? "";
-        committed.push(seg);
-        pendingLineRef.current = "";
-      }
-      const last = segments[segments.length - 1];
-      if (last.includes("\r")) {
-        pendingLineRef.current = last.split("\r").at(-1) ?? "";
-      } else {
-        pendingLineRef.current += last;
-      }
+      // Normalize line endings:
+      // \r\n → \n (Windows-style newline)
+      // \r alone → \n (carriage return becomes visible newline; avoids spinner overwrite
+      //                 eating real content when Ink redraws the same line)
+      const cleaned = stripped
+        .replace(/\r\n/g, "\n")
+        .replace(/\r(?!\n)/g, "\n");
 
-      if (committed.length > 0) {
-        setLines((prev) => {
-          const next = [...prev, ...committed];
-          return next.length > 500 ? next.slice(next.length - 500) : next;
+      if (cleaned.length > 0) {
+        setOutput((prev) => {
+          const combined = prev + cleaned;
+          // Keep at most 50 KB to avoid unbounded growth
+          return combined.length > 50_000 ? combined.slice(-50_000) : combined;
         });
       }
 
+      // Prompt detection on rolling buffer
       const buf = rollingBufferRef.current;
       if (/Enter to select.*↑\/↓ to navigate/i.test(buf) || /\(Use arrow keys\)/i.test(buf)) {
         const parsed = parseNumberedOptions(buf);
@@ -122,18 +117,18 @@ export function SmartRunnerView({
     };
   }, [transport]);
 
+  // Auto-scroll when output grows
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [lines]);
+  }, [output]);
 
   const startRunner = async (request: CommandRequest) => {
     if (!repoId) return;
-    setLines([]);
+    setOutput("");
     setExited(false);
     setExitCode(undefined);
     setUiMode("normal");
     setChoices([]);
-    pendingLineRef.current = "";
     rollingBufferRef.current = "";
     setIsRunning(true);
 
@@ -254,7 +249,7 @@ export function SmartRunnerView({
           {!isRunning && (
             <button className="command-button" onClick={() => {
               setRunnerSessionId(undefined);
-              setLines([]);
+              setOutput("");
               setExited(false);
               setExitCode(undefined);
             }}>
@@ -265,9 +260,7 @@ export function SmartRunnerView({
       </div>
 
       <div className="runner-output">
-        {lines.map((line, i) => (
-          <div key={i} className="runner-line">{line || " "}</div>
-        ))}
+        <pre className="runner-pre">{output}</pre>
         <div ref={scrollRef} />
       </div>
 
@@ -288,8 +281,8 @@ export function SmartRunnerView({
       {uiMode === "permission" && (
         <div className="runner-permission">
           <div className="runner-permission-title">Permission required</div>
-          <div className="runner-permission-context">
-            {lines.slice(-3).map((l, i) => <div key={i} className="runner-line runner-line--muted">{l}</div>)}
+          <div className="runner-permission-context runner-pre">
+            {output.slice(-300)}
           </div>
           <div className="runner-permission-actions">
             <button className="command-button primary" onClick={() => { sendInput("y\n"); setUiMode("normal"); }}>
