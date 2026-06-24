@@ -138,7 +138,7 @@ function spawnTerminal(repository: RepositoryRecord, title: string, kind: Termin
     send("terminal:exit", { sessionId: id, exitCode });
     send("workspace:changed", { repoId: repository.id });
   });
-  if (command?.initialInput) setTimeout(() => term.write(`${command.initialInput}\r`), 900);
+  if (command?.initialInput) setTimeout(() => term.write(`${command.initialInput}\r`), 2000);
   return session;
 }
 
