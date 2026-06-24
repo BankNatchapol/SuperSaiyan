@@ -14,6 +14,10 @@ interface SmartRunnerViewProps {
   repoId: string | undefined;
   runnerSession: RunnerSession | undefined;
   setRunnerSession: (session: RunnerSession | undefined) => void;
+  events: RunnerEvent[];
+  setEvents: (events: RunnerEvent[] | ((prev: RunnerEvent[]) => RunnerEvent[])) => void;
+  exitCode: number | undefined;
+  setExitCode: (code: number | undefined) => void;
   onOpenRawTerminal: () => void;
 }
 
@@ -39,7 +43,7 @@ function formatRunnerEvent(event: RunnerEvent, index: number): RunnerLine | unde
   if (event.type === "error") {
     return { id: `${event.sessionId}-${index}`, kind: "error", text: event.message };
   }
-  return { id: `${event.sessionId}-${index}`, kind: "system", text: event.text };
+  return undefined;
 }
 
 export function SmartRunnerView({
@@ -47,11 +51,13 @@ export function SmartRunnerView({
   repoId,
   runnerSession,
   setRunnerSession,
+  events,
+  setEvents,
+  exitCode,
+  setExitCode,
   onOpenRawTerminal,
 }: SmartRunnerViewProps) {
-  const [events, setEvents] = useState<RunnerEvent[]>([]);
   const [isRunning, setIsRunning] = useState(Boolean(runnerSession?.active));
-  const [exitCode, setExitCode] = useState<number>();
   const [newFeatureSlug, setNewFeatureSlug] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>();
   const scrollRef = useRef<HTMLDivElement>(null);

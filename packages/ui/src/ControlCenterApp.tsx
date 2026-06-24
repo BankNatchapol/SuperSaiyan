@@ -28,6 +28,7 @@ import {
   type ControlTransport,
   type RepositoryRecord,
   type RepositorySnapshot,
+  type RunnerEvent,
   type RunnerSession,
   type Screen,
   type TerminalSession,
@@ -161,6 +162,8 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
   const [phaseInputs, setPhaseInputs] = useState<Record<string, string>>({});
   const [expandedDiag, setExpandedDiag] = useState<string | null>(null);
   const [runnerSession, setRunnerSession] = useState<RunnerSession | undefined>();
+  const [runnerEvents, setRunnerEvents] = useState<RunnerEvent[]>([]);
+  const [runnerExitCode, setRunnerExitCode] = useState<number | undefined>();
 
   const refresh = useCallback(async (force = false) => {
     if (!repoId) return;
@@ -282,11 +285,18 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
           repoId={repoId}
           runnerSession={runnerSession}
           setRunnerSession={setRunnerSession}
+          events={runnerEvents}
+          setEvents={setRunnerEvents}
+          exitCode={runnerExitCode}
+          setExitCode={setRunnerExitCode}
           onOpenRawTerminal={() => {
             void transport.createTerminal(repoId, "supersaiyan").then((session) => {
               setSessions((current) => current.some((item) => item.id === session.id) ? current : [...current, session]);
               setActiveSession(session.id);
               setScreen("terminal");
+              // Shell sends its initial prompt before xterm.js mounts — send \r after
+              // a short delay to force it to reprint once the terminal is attached.
+              setTimeout(() => void transport.writeTerminal(session.id, "\r"), 150);
             });
           }}
         />
