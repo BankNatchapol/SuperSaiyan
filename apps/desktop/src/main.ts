@@ -8,6 +8,7 @@ import {
   type IpcMainInvokeEvent,
 } from "electron";
 import started from "electron-squirrel-startup";
+import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -21,6 +22,7 @@ import {
   isPathInside,
   moveBoardCard,
   registerRepository,
+  runnerEventsFromClaudeJsonLine,
 } from "@supersaiyan/control-core";
 import {
   boardMoveSchema,
@@ -32,6 +34,7 @@ import {
   type CommandRequest,
   type RepositoryRecord,
   type RepositorySnapshot,
+  type RunnerSession,
   type TerminalSession,
 } from "@supersaiyan/control-protocol";
 
@@ -56,6 +59,7 @@ let state: { repositories: RepositoryRecord[]; preferences: AppPreferences };
 const snapshots = new Map<string, RepositorySnapshot>();
 const watchers = new RepositoryWatchService();
 const terminals = new Map<string, { session: TerminalSession; process: NodePty.IPty }>();
+const runners = new Map<string, { session: RunnerSession; process: ChildProcess; repoId: string }>();
 const mutatingSessions = new Map<string, string>();
 const require = createRequire(__filename);
 
@@ -67,6 +71,10 @@ function ptyRuntime(): typeof NodePty {
 
 function send(channel: string, payload: unknown): void {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+}
+
+function sendRunnerEvent(event: import("@supersaiyan/control-protocol").RunnerEvent): void {
+  send("runner:event", event);
 }
 
 function assertTrusted(event: IpcMainInvokeEvent): void {
@@ -151,6 +159,66 @@ function supersaiyanCommand(request: CommandRequest): string {
   return `/supersaiyan ${request.verb}${cleanArgs.length ? ` ${cleanArgs.join(" ")}` : ""}`;
 }
 
+function processRunnerLine(sessionId: string, line: string): void {
+  for (const event of runnerEventsFromClaudeJsonLine(sessionId, line)) sendRunnerEvent(event);
+}
+
+function spawnRunner(repository: RepositoryRecord, request: CommandRequest): RunnerSession {
+  const id = createSessionId();
+  const command = supersaiyanCommand(request);
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+  delete environment.npm_config_prefix;
+  delete environment.NPM_CONFIG_PREFIX;
+  const child = spawn("claude", [
+    "-p",
+    "--verbose",
+    "--output-format", "stream-json",
+    "--include-partial-messages",
+    "--name", `supersaiyan-ui-${repository.name}-${request.verb}`,
+    command,
+  ], {
+    cwd: repository.path,
+    env: environment,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const session: RunnerSession = { id, repoId: repository.id, title: `SuperSaiyan · ${request.verb}`, command: request, active: true };
+  runners.set(id, { session, process: child, repoId: repository.id });
+  sendRunnerEvent({ type: "init", sessionId: id });
+
+  let stdoutBuffer = "";
+  let stderrBuffer = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (data: string) => {
+    stdoutBuffer += data;
+    const lines = stdoutBuffer.split(/\r?\n/);
+    stdoutBuffer = lines.pop() ?? "";
+    for (const line of lines) processRunnerLine(id, line);
+  });
+  child.stderr.on("data", (data: string) => {
+    stderrBuffer += data;
+    const lines = stderrBuffer.split(/\r?\n/);
+    stderrBuffer = lines.pop() ?? "";
+    for (const line of lines) if (line.trim()) sendRunnerEvent({ type: "error", sessionId: id, message: line.trim() });
+  });
+  child.on("error", (error) => {
+    sendRunnerEvent({ type: "error", sessionId: id, message: error.message });
+  });
+  child.on("exit", (exitCode) => {
+    if (stdoutBuffer.trim()) processRunnerLine(id, stdoutBuffer);
+    if (stderrBuffer.trim()) sendRunnerEvent({ type: "error", sessionId: id, message: stderrBuffer.trim() });
+    session.active = false;
+    runners.delete(id);
+    if (mutatingSessions.get(repository.id) === id) mutatingSessions.delete(repository.id);
+    snapshots.delete(repository.id);
+    sendRunnerEvent({ type: "exit", sessionId: id, exitCode: exitCode ?? 0 });
+    send("workspace:changed", { repoId: repository.id });
+  });
+  return session;
+}
+
 function toolkitInstallerPath(): string {
   if (app.isPackaged) return join(process.resourcesPath, "install.sh");
   return resolve(app.getAppPath(), "../../install.sh");
@@ -207,6 +275,7 @@ function registerIpc(): void {
     if (activeSessionId && request.verb !== "stop") throw new Error("A SuperSaiyan command is already active for this repository");
     if (activeSessionId && request.verb === "stop") {
       terminals.get(activeSessionId)?.process.write("\x03");
+      runners.get(activeSessionId)?.process.kill("SIGINT");
       mutatingSessions.delete(repoId);
     }
     const command = supersaiyanCommand(request);
@@ -218,10 +287,33 @@ function registerIpc(): void {
     mutatingSessions.set(repoId, session.id);
     return session;
   });
+  ipcMain.handle("runner:start", (event, repoId: string, input: unknown) => {
+    assertTrusted(event);
+    const repository = repositoryFor(repoId);
+    const request = commandRequestSchema.parse(input);
+    const activeSessionId = mutatingSessions.get(repoId);
+    if (activeSessionId && request.verb !== "stop") throw new Error("A SuperSaiyan command is already active for this repository");
+    if (activeSessionId && request.verb === "stop") {
+      terminals.get(activeSessionId)?.process.write("\x03");
+      runners.get(activeSessionId)?.process.kill("SIGINT");
+      mutatingSessions.delete(repoId);
+    }
+    const session = spawnRunner(repository, request);
+    mutatingSessions.set(repoId, session.id);
+    return session;
+  });
   ipcMain.handle("command:interrupt", (event, sessionId: string) => {
     assertTrusted(event);
     terminalIdSchema.parse(sessionId);
     terminals.get(sessionId)?.process.write("\x03");
+  });
+  ipcMain.handle("runner:interrupt", (event, sessionId: string) => {
+    assertTrusted(event);
+    terminalIdSchema.parse(sessionId);
+    const runner = runners.get(sessionId);
+    if (!runner) return;
+    runner.process.kill("SIGINT");
+    mutatingSessions.delete(runner.repoId);
   });
   ipcMain.handle("terminal:create", (event, repoId: string, kind: TerminalSession["kind"]) => {
     assertTrusted(event);
@@ -352,5 +444,6 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   for (const terminal of terminals.values()) terminal.process.kill();
+  for (const runner of runners.values()) runner.process.kill("SIGTERM");
   void watchers.close();
 });
