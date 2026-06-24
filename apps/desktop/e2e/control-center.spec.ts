@@ -50,7 +50,7 @@ test("renders all screens, diagnostics, workers, features, and accessibility evi
   try {
     await expect(page.getByText("E2E Project · full · main")).toBeVisible();
     await expect(page.getByText("Current wave")).toBeVisible();
-    for (const screen of ["Overview", "Board", "Features", "Runs", "Terminal", "Repositories", "Settings"]) {
+    for (const screen of ["Overview", "Board", "Features", "Runs", "Terminal", "Runner", "Repositories", "Settings"]) {
       await page.getByRole("button", { name: new RegExp(`^${screen}`) }).click();
       await expect(page.locator(".topbar-title")).toContainText(screen);
       await attachScreenshot(page, testInfo, `screen-${screen.toLowerCase()}`);

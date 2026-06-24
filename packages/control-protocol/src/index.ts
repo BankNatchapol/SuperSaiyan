@@ -13,7 +13,7 @@ export const laneNames = [
 
 export type LaneName = (typeof laneNames)[number];
 export type CommandVerb = "setup" | "new" | "prepare" | "lint" | "run" | "stop";
-export type Screen = "overview" | "board" | "features" | "runs" | "terminal" | "repositories" | "settings";
+export type Screen = "overview" | "board" | "features" | "runs" | "terminal" | "runner" | "repositories" | "settings";
 
 export interface RepositoryRecord {
   id: string;

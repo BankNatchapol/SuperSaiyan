@@ -17,6 +17,7 @@ import {
   SquareTerminal,
   Wrench,
   X,
+  Zap,
 } from "lucide-react";
 import {
   emptyLanes,
@@ -31,6 +32,7 @@ import {
   type TerminalSession,
 } from "@supersaiyan/control-protocol";
 import { TerminalView } from "./TerminalView";
+import { SmartRunnerView } from "./SmartRunnerView";
 
 export interface ControlCenterAppProps {
   transport: ControlTransport;
@@ -157,6 +159,7 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
   const [newFeatureSlug, setNewFeatureSlug] = useState<string | null>(null);
   const [phaseInputs, setPhaseInputs] = useState<Record<string, string>>({});
   const [expandedDiag, setExpandedDiag] = useState<string | null>(null);
+  const [runnerSessionId, setRunnerSessionId] = useState<string | undefined>();
 
   const refresh = useCallback(async (force = false) => {
     if (!repoId) return;
@@ -202,15 +205,17 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
     return () => window.clearInterval(timer);
   }, [preferences, refresh, repoId, snapshot?.runActive]);
 
-  const startCommand = async (request: CommandRequest) => {
-    if (!repoId) return;
+  const startCommand = async (request: CommandRequest, navigate = true) => {
+    if (!repoId) return undefined;
     try {
       const session = await transport.startCommand(repoId, request);
       setSessions((current) => current.some((item) => item.id === session.id) ? current : [...current, session]);
       setActiveSession(session.id);
-      setScreen("terminal");
+      if (navigate) setScreen("terminal");
+      return session;
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
+      return undefined;
     }
   };
 
@@ -253,6 +258,7 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
     { id: "features" as const, label: "Features", icon: ListTodo, badge: snapshot?.features.length ? String(snapshot.features.length) : "" },
     { id: "runs" as const, label: "Runs", icon: Activity, badge: snapshot?.workers.length ? String(snapshot.workers.length) : "" },
     { id: "terminal" as const, label: "Terminal", icon: SquareTerminal, badge: sessions.length ? String(sessions.length) : "" },
+    { id: "runner" as const, label: "Runner", icon: Zap, badge: runnerSessionId ? "1" : "" },
     { id: "repositories" as const, label: "Repositories", icon: FolderGit2, badge: "" },
     { id: "settings" as const, label: "Settings", icon: Settings, badge: "" },
   ];
@@ -268,6 +274,29 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
         </div>
       );
     }
+    if (screen === "runner") {
+      return (
+        <SmartRunnerView
+          transport={transport}
+          repoId={repoId}
+          sessions={sessions}
+          runnerSessionId={runnerSessionId}
+          setRunnerSessionId={setRunnerSessionId}
+          onStartCommand={(request) => startCommand(request, false)}
+          onSessionCreated={(session) => {
+            setSessions((current) =>
+              current.some((item) => item.id === session.id) ? current : [...current, session]
+            );
+            setActiveSession(session.id);
+          }}
+          onSwitchToTerminal={() => {
+            setActiveSession(runnerSessionId);
+            setScreen("terminal");
+          }}
+        />
+      );
+    }
+
     if (!snapshot) {
       if (screen === "board") return (
         <div style={{ display: "flex", gap: 12 }}>
