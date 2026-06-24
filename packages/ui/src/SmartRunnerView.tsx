@@ -66,16 +66,22 @@ export function SmartRunnerView({
       const stripped = stripAnsi(event.data);
       rollingBufferRef.current = (rollingBufferRef.current + stripped).slice(-2000);
 
+      // Normalize \r\n → \n so line commits aren't eaten by the \r reset.
+      // Remaining standalone \r (in-place overwrite) → take last sub-segment.
+      const normalized = stripped.replace(/\r\n/g, "\n");
+      const segments = normalized.split("\n");
       const committed: string[] = [];
-      for (const ch of stripped) {
-        if (ch === "\r") {
-          pendingLineRef.current = "";
-        } else if (ch === "\n") {
-          committed.push(pendingLineRef.current);
-          pendingLineRef.current = "";
-        } else {
-          pendingLineRef.current += ch;
-        }
+      for (let i = 0; i < segments.length - 1; i++) {
+        let seg = pendingLineRef.current + segments[i];
+        if (seg.includes("\r")) seg = seg.split("\r").at(-1) ?? "";
+        committed.push(seg);
+        pendingLineRef.current = "";
+      }
+      const last = segments[segments.length - 1];
+      if (last.includes("\r")) {
+        pendingLineRef.current = last.split("\r").at(-1) ?? "";
+      } else {
+        pendingLineRef.current += last;
       }
 
       if (committed.length > 0) {
