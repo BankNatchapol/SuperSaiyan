@@ -411,8 +411,19 @@ async function createWindow(): Promise<void> {
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (!url.startsWith("supersaiyan://") && !url.startsWith("http://localhost:")) event.preventDefault();
   });
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) await mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-  else await mainWindow.loadURL(`supersaiyan://bundle/index.html`);
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    // Retry until the Vite dev server is ready (cold-start race condition)
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        await mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+        break;
+      } catch {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+  } else {
+    await mainWindow.loadURL(`supersaiyan://bundle/index.html`);
+  }
 }
 
 app.whenReady().then(async () => {

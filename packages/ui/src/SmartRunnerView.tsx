@@ -1,254 +1,128 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CircleStop, Play, Plus, RefreshCw, Search, SquareTerminal, Wrench, X, Zap } from "lucide-react";
-import type { CommandRequest, ControlTransport, TerminalSession } from "@supersaiyan/control-protocol";
+import type { CommandRequest, ControlTransport, RunnerEvent, RunnerSession } from "@supersaiyan/control-protocol";
 
-// ─── ANSI / escape stripping ──────────────────────────────────────────────────
-
-function stripAnsi(str: string): string {
-  return str
-    .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, "") // OSC: \x1b]...\x07
-    .replace(/\x1BP[^]*?\x1B\\/g, "")               // DCS
-    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")        // CSI
-    .replace(/\x1B[@-_]/g, "")                       // Fe 2-char
-    .replace(/\x1B./g, "")                           // remaining ESC+char
-    .replace(/\x07/g, "")                            // BEL
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ""); // control chars (keep \r \n \t)
-}
-
-// ─── Chrome line detection ────────────────────────────────────────────────────
-
-const BOX_CHARS = /[▐▛▜▝▘▙▟▚▞░▒▓│─┤├┼┬┴┐└┘┌█▀▄■◆◇▸▾]/g;
-
-const CHROME_PATTERNS = [
-  /^[─┄═\s]+$/,                           // separator / blank lines of box chars
-  /^\?\s*for shortcuts/i,
-  /^←\s*for agents/i,
-  /^esc\s+to interrupt/i,
-  /^●\s*(low|medium|high)\s*·/i,          // model tier status bar
-  /^·\s*(low|medium|high)\s*·/i,
-  /^ctrl\+[a-z]/i,
-  /^resume this session with:/i,
-  /thinking with (high|medium|low) effort/i, // extended thinking status bar fragment
-  // Lines starting with spinner/braille chars are status-bar leakage
-  /^[✶✻✽⊕✢✳⠂⠃⠇⠏⠋⠙⠹⠸⠼⠴⠦⠧]\s/,
-];
-
-function isChromeLine(line: string): boolean {
-  const t = line.trim();
-  if (!t) return true;
-  for (const p of CHROME_PATTERNS) if (p.test(t)) return true;
-  const chromeCount = (t.match(BOX_CHARS) || []).length;
-  return chromeCount > t.length * 0.2;
-}
-
-// ─── Extraction ───────────────────────────────────────────────────────────────
-
-// Spinner character prefixes used by Ink / Claude Code
-const SPINNER_PREFIX = /[ \t]*[✶✻⏺✽⊕✢✳·⠂⠃⠇⠏⠋⠙⠹⠸⠼⠴⠦⠧]/;
-
-function extractReadable(raw: string): { lines: string[]; spinnerText: string | null } {
-  let spinnerText: string | null = null;
-
-  // Capture spinner from bare \r in-place overwrites
-  const spinRe = /\r(?!\n)([^\r\n]*)/g;
-  let sm: RegExpExecArray | null;
-  while ((sm = spinRe.exec(raw)) !== null) {
-    const candidate = stripAnsi(sm[1]).trim();
-    if (candidate.length > 0 && SPINNER_PREFIX.test(candidate)) spinnerText = candidate;
-  }
-
-  // Convert cursor-position ANSI codes BEFORE stripping to preserve line structure.
-  // KEY FIX: ESC[N;1H (col 1) → \n (new line), ESC[N;MH (col M>1) → space (same line).
-  // Previously ALL cursor positions became \n, which split mid-row text into fake lines
-  // (e.g. "✳ Sm" + "\n" + "thinking with high effort" from one status-bar row).
-  const withBreaks = raw
-    .replace(/\x1B\[2J/g, "\n")                    // clear screen
-    .replace(/\x1B\[H/g, "\n")                     // cursor home (no params)
-    .replace(/\x1B\[\d+;1[Hf]/g, "\n")             // ESC[N;1H → col 1 → new line
-    .replace(/\x1B\[\d+;[2-9][Hf]/g, " ")          // ESC[N;2–9H → col 2-9 → space
-    .replace(/\x1B\[\d+;\d{2,}[Hf]/g, " ")         // ESC[N;10+H → space
-    .replace(/\x1B\[\d*[BE]/g, "\n");              // cursor down / next line
-
-  const stripped = stripAnsi(withBreaks);
-  const normalized = stripped.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const allLines = normalized.split("\n").map((l) => l.trimEnd()).filter((l) => l.length > 0);
-
-  // Also capture spinner from status-bar lines that become committed lines
-  for (const l of allLines) {
-    const t = l.trim();
-    if (SPINNER_PREFIX.test(t) && /\d+[sm]/.test(t)) spinnerText = t;
-  }
-
-  const lines = allLines.filter((l) => !isChromeLine(l));
-  return { lines, spinnerText };
-}
-
-// ─── Line classification (for styled display) ────────────────────────────────
-
-type LineKind = "tool-call" | "tool-result" | "progress" | "command" | "text";
-
-function classifyLine(line: string): LineKind {
-  const t = line.trimStart();
-  if (/^[●⏺✢]\s/.test(t)) return "tool-call";
-  if (/^[└├]\s/.test(t) || /^\s+[└├]/.test(line)) return "tool-result";
-  if (/^\+\s/.test(t)) return "progress";
-  if (/^[❯>]\s/.test(t)) return "command";
-  return "text";
-}
-
-// ─── Option parser (for choice menus) ────────────────────────────────────────
-
-function parseNumberedOptions(buffer: string): string[] {
-  const pattern = /^\s*(?:❯\s*)?\d+\.\s+(.+)/gm;
-  const results: string[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(buffer)) !== null) {
-    const label = match[1].trim();
-    if (label.length > 0 && label.length < 120) results.push(label);
-  }
-  return [...new Set(results)];
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
+type RunnerLine = {
+  id: string;
+  kind: "assistant" | "tool" | "tool_result" | "system" | "error";
+  text: string;
+  partial?: boolean;
+};
 
 interface SmartRunnerViewProps {
   transport: ControlTransport;
   repoId: string | undefined;
-  sessions: TerminalSession[];
-  runnerSessionId: string | undefined;
-  setRunnerSessionId: (id: string | undefined) => void;
-  onStartCommand: (request: CommandRequest) => Promise<TerminalSession | undefined>;
-  onSessionCreated: (session: TerminalSession) => void;
-  onSwitchToTerminal: () => void;
+  runnerSession: RunnerSession | undefined;
+  setRunnerSession: (session: RunnerSession | undefined) => void;
+  onOpenRawTerminal: () => void;
+}
+
+function formatRunnerEvent(event: RunnerEvent, index: number): RunnerLine | undefined {
+  if (event.type === "init" || event.type === "exit" || event.type === "system") return undefined;
+  if (event.type === "assistant") {
+    return { id: `${event.sessionId}-${index}`, kind: "assistant", text: event.text, partial: event.partial };
+  }
+  if (event.type === "tool") {
+    return {
+      id: `${event.sessionId}-${index}`,
+      kind: "tool",
+      text: event.input === undefined ? event.name : `${event.name} ${JSON.stringify(event.input)}`,
+    };
+  }
+  if (event.type === "tool_result") {
+    return {
+      id: `${event.sessionId}-${index}`,
+      kind: "tool_result",
+      text: event.text || (event.error ? "(error)" : "(no output)"),
+    };
+  }
+  if (event.type === "error") {
+    return { id: `${event.sessionId}-${index}`, kind: "error", text: event.message };
+  }
+  return { id: `${event.sessionId}-${index}`, kind: "system", text: event.text };
 }
 
 export function SmartRunnerView({
   transport,
   repoId,
-  sessions,
-  runnerSessionId,
-  setRunnerSessionId,
-  onStartCommand,
-  onSessionCreated,
-  onSwitchToTerminal,
+  runnerSession,
+  setRunnerSession,
+  onOpenRawTerminal,
 }: SmartRunnerViewProps) {
-  const [lines, setLines] = useState<{ text: string; kind: LineKind }[]>([]);
-  const [spinnerText, setSpinnerText] = useState<string | null>(null);
-  const [isRunning, setIsRunning] = useState(runnerSessionId !== undefined);
-  const [exited, setExited] = useState(false);
+  const [events, setEvents] = useState<RunnerEvent[]>([]);
+  const [isRunning, setIsRunning] = useState(Boolean(runnerSession?.active));
   const [exitCode, setExitCode] = useState<number>();
-  const [inputText, setInputText] = useState("");
-  const [uiMode, setUiMode] = useState<"normal" | "choice" | "permission">("normal");
-  const [choices, setChoices] = useState<string[]>([]);
   const [newFeatureSlug, setNewFeatureSlug] = useState<string | null>(null);
-
-  // Ring buffer for dedup: don't re-add a line we showed in the last 40 lines
-  const shownRef = useRef<string[]>([]);
-  const rollingBufferRef = useRef<string>("");
+  const [notice, setNotice] = useState<string>();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const sessionIdRef = useRef<string | undefined>(runnerSessionId);
+  const sessionIdRef = useRef<string | undefined>(runnerSession?.id);
 
   useEffect(() => {
-    sessionIdRef.current = runnerSessionId;
-    if (runnerSessionId) setIsRunning(true);
-  }, [runnerSessionId]);
+    sessionIdRef.current = runnerSession?.id;
+    setIsRunning(Boolean(runnerSession?.active));
+  }, [runnerSession]);
 
   useEffect(() => {
-    const removeData = transport.onTerminalData((event) => {
+    const remove = transport.onRunnerEvent((event) => {
       if (event.sessionId !== sessionIdRef.current) return;
-
-      const { lines: newRaw, spinnerText: spin } = extractReadable(event.data);
-
-      // Raw stripped text for prompt detection
-      const rawStripped = stripAnsi(event.data);
-      rollingBufferRef.current = (rollingBufferRef.current + rawStripped).slice(-2000);
-
-      if (spin !== null) setSpinnerText(spin);
-
-      // Dedup against the last 40 shown lines
-      const recent = shownRef.current.slice(-40);
-      const fresh = newRaw.filter((l) => !recent.includes(l));
-
-      if (fresh.length > 0) {
-        fresh.forEach((l) => {
-          shownRef.current.push(l);
-          if (shownRef.current.length > 400) shownRef.current.shift();
-        });
-        setSpinnerText(null);
-        setLines((prev) => {
-          const next = [...prev, ...fresh.map((text) => ({ text, kind: classifyLine(text) }))];
-          return next.length > 800 ? next.slice(-800) : next;
-        });
-      }
-
-      // Prompt detection
-      const buf = rollingBufferRef.current;
-      if (/Enter to select.*↑\/↓ to navigate/i.test(buf) || /\(Use arrow keys\)/i.test(buf)) {
-        const parsed = parseNumberedOptions(buf);
-        if (parsed.length >= 2) { setChoices(parsed); setUiMode("choice"); }
-      } else if (/Esc to cancel.*Tab to amend/i.test(buf) || /Do you want to proceed/i.test(buf)) {
-        setUiMode("permission"); setChoices([]);
-      } else {
-        setUiMode("normal"); setChoices([]);
+      setEvents((current) => [...current, event]);
+      if (event.type === "exit") {
+        setIsRunning(false);
+        setExitCode(event.exitCode);
+        setRunnerSession(runnerSession ? { ...runnerSession, active: false } : undefined);
       }
     });
-
-    const removeExit = transport.onTerminalExit((event) => {
-      if (event.sessionId !== sessionIdRef.current) return;
-      setIsRunning(false); setExited(true); setExitCode(event.exitCode);
-      setSpinnerText(null); setUiMode("normal"); setChoices([]);
-    });
-
-    return () => { removeData(); removeExit(); };
-  }, [transport]);
+    return remove;
+  }, [runnerSession, setRunnerSession, transport]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [lines]);
+  }, [events]);
+
+  const lines = useMemo(() => events.flatMap((event, index) => {
+    const line = formatRunnerEvent(event, index);
+    return line ? [line] : [];
+  }), [events]);
 
   const startRunner = async (request: CommandRequest) => {
     if (!repoId) return;
-    setLines([]); setSpinnerText(null); setExited(false); setExitCode(undefined);
-    setUiMode("normal"); setChoices([]);
-    shownRef.current = [];
-    rollingBufferRef.current = "";
+    setEvents([]);
+    setExitCode(undefined);
+    setNotice(undefined);
     setIsRunning(true);
-
-    const session = await onStartCommand(request);
-    if (!session) { setIsRunning(false); return; }
-    sessionIdRef.current = session.id;
-    setRunnerSessionId(session.id);
-    onSessionCreated(session);
+    try {
+      const session = await transport.startRunnerCommand(repoId, request);
+      sessionIdRef.current = session.id;
+      setRunnerSession(session);
+    } catch (error) {
+      setIsRunning(false);
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
   };
 
-  const sendInput = (text: string) => {
-    const id = sessionIdRef.current;
-    if (!id) return;
-    void transport.writeTerminal(id, text);
+  const stopRunner = async () => {
+    if (!runnerSession) return;
+    setNotice(undefined);
+    await transport.interruptRunner(runnerSession.id);
+    if (repoId) {
+      try {
+        await transport.startRunnerCommand(repoId, { verb: "stop", args: [] });
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : String(error));
+      }
+    }
   };
 
-  const handleChoiceSelect = (index: number) => {
-    sendInput(String(index + 1) + "\n");
-    setUiMode("normal"); setChoices([]);
-  };
-
-  const handleFreeFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText) return;
-    sendInput(inputText + "\n");
-    setInputText("");
-  };
-
-  // ── Idle splash ─────────────────────────────────────────────────────────────
-  if (!runnerSessionId) {
+  if (!runnerSession) {
     return (
       <div className="runner-shell glass">
         <div className="runner-idle">
           <Zap size={40} className="runner-idle-icon" />
           <div className="runner-idle-title">Smart Runner</div>
           <div className="runner-idle-subtitle">
-            Launch SuperSaiyan commands and interact with Claude through native UI
+            Launch SuperSaiyan commands through Claude Code stream-json output
           </div>
+          {notice && <div className="notice">{notice}</div>}
           <div className="runner-command-grid">
             <button className="runner-cmd-btn" disabled={!repoId} onClick={() => void startRunner({ verb: "setup", args: [] })}>
               <Wrench size={20} />
@@ -258,8 +132,8 @@ export function SmartRunnerView({
             {newFeatureSlug !== null ? (
               <form
                 className="runner-cmd-btn runner-cmd-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
+                onSubmit={(event) => {
+                  event.preventDefault();
                   if (newFeatureSlug.trim()) void startRunner({ verb: "new", args: [newFeatureSlug.trim()] });
                   setNewFeatureSlug(null);
                 }}
@@ -269,9 +143,9 @@ export function SmartRunnerView({
                   autoFocus
                   placeholder="feature-slug"
                   value={newFeatureSlug}
-                  onChange={(e) => setNewFeatureSlug(e.target.value)}
+                  onChange={(event) => setNewFeatureSlug(event.target.value)}
                   style={{ height: 34 }}
-                  onKeyDown={(e) => { if (e.key === "Escape") setNewFeatureSlug(null); }}
+                  onKeyDown={(event) => { if (event.key === "Escape") setNewFeatureSlug(null); }}
                 />
                 <button type="submit" className="command-button primary" disabled={!newFeatureSlug.trim()}>
                   <Plus size={14} />
@@ -303,39 +177,34 @@ export function SmartRunnerView({
     );
   }
 
-  const session = sessions.find((s) => s.id === runnerSessionId);
-  const lastToolResult = lines.length > 0 ? lines[lines.length - 1].text.slice(0, 80) : "";
+  const requiresRawTerminal = lines.some((line) => /interactive|tty|terminal/i.test(line.text));
 
   return (
     <div className="runner-shell glass">
       <div className="runner-header">
         <div className="runner-header-left">
           {isRunning ? <span className="runner-live-dot" /> : <span className="runner-exit-dot" />}
-          <span className="runner-session-title">{session?.title ?? "Runner"}</span>
-          {spinnerText && isRunning && (
-            <span className="runner-spinner-pill" title={spinnerText}>{spinnerText}</span>
-          )}
-          {!spinnerText && isRunning && lines.length > 0 && (
-            <span className="runner-spinner-pill runner-spinner-pill--muted" title={lastToolResult}>{lastToolResult}</span>
-          )}
-          {exited && exitCode !== undefined && (
+          <span className="runner-session-title">{runnerSession.title}</span>
+          {isRunning && <span className="runner-spinner-pill">streaming structured output</span>}
+          {exitCode !== undefined && (
             <span className={`status-pill ${exitCode === 0 ? "ok" : "bad"}`}>exit {exitCode}</span>
           )}
         </div>
         <div className="topbar-actions">
-          <button className="command-button" onClick={onSwitchToTerminal}>
+          <button className="command-button" onClick={onOpenRawTerminal}>
             <SquareTerminal size={14} /> Raw terminal
           </button>
-          {isRunning && runnerSessionId && (
-            <button className="command-button danger" onClick={() => void transport.closeTerminal(runnerSessionId)}>
+          {isRunning && (
+            <button className="command-button danger" onClick={() => void stopRunner()}>
               <CircleStop size={14} /> Stop
             </button>
           )}
           {!isRunning && (
             <button className="command-button" onClick={() => {
-              setRunnerSessionId(undefined);
-              setLines([]); setSpinnerText(null);
-              setExited(false); setExitCode(undefined);
+              setRunnerSession(undefined);
+              setEvents([]);
+              setExitCode(undefined);
+              setNotice(undefined);
             }}>
               <RefreshCw size={14} /> New command
             </button>
@@ -344,6 +213,13 @@ export function SmartRunnerView({
       </div>
 
       <div className="runner-output">
+        {notice && <div className="notice">{notice}</div>}
+        {requiresRawTerminal && (
+          <div className="runner-raw-fallback">
+            This command appears to need interactive terminal mode.
+            <button className="command-button" onClick={onOpenRawTerminal}>Open Raw Terminal</button>
+          </div>
+        )}
         {lines.length === 0 && isRunning ? (
           <div className="runner-waiting">
             <span className="runner-waiting-dot" />
@@ -351,62 +227,14 @@ export function SmartRunnerView({
             <span className="runner-waiting-dot" />
           </div>
         ) : (
-          lines.map((line, i) => (
-            <div key={i} className={`runner-line runner-line--${line.kind}`}>
+          lines.map((line) => (
+            <div key={line.id} className={`runner-line runner-line--${line.kind}`}>
               {line.text}
             </div>
           ))
         )}
         <div ref={scrollRef} />
       </div>
-
-      {uiMode === "choice" && choices.length > 0 && (
-        <div className="runner-choices">
-          <div className="runner-choices-label">Select an option</div>
-          <div className="runner-choices-grid">
-            {choices.map((label, i) => (
-              <button key={i} className="runner-choice-btn" onClick={() => handleChoiceSelect(i)}>
-                <span className="runner-choice-num">{i + 1}</span>
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {uiMode === "permission" && (
-        <div className="runner-permission">
-          <div className="runner-permission-title">Permission required</div>
-          <div className="runner-permission-context runner-pre">
-            {lines.slice(-5).map((l) => l.text).join("\n")}
-          </div>
-          <div className="runner-permission-actions">
-            <button className="command-button primary" onClick={() => { sendInput("y\n"); setUiMode("normal"); }}>
-              <Play size={14} fill="currentColor" /> Yes / Allow
-            </button>
-            <button className="command-button danger" onClick={() => { sendInput("n\n"); setUiMode("normal"); }}>
-              <X size={14} /> No / Deny
-            </button>
-            <button className="command-button" onClick={() => { sendInput("\x1b"); setUiMode("normal"); }}>
-              Esc / Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      <form className="runner-input-bar" onSubmit={handleFreeFormSubmit}>
-        <input
-          className="field runner-input"
-          placeholder={isRunning ? "Type a response and press Enter…" : "Start a new command above"}
-          value={inputText}
-          disabled={!isRunning}
-          onChange={(e) => setInputText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Escape") sendInput("\x1b"); }}
-        />
-        <button type="submit" className="command-button primary" disabled={!isRunning || !inputText}>
-          Send
-        </button>
-      </form>
     </div>
   );
 }
