@@ -59,6 +59,10 @@ let state: { repositories: RepositoryRecord[]; preferences: AppPreferences };
 const snapshots = new Map<string, RepositorySnapshot>();
 const watchers = new RepositoryWatchService();
 const terminals = new Map<string, { session: TerminalSession; process: NodePty.IPty }>();
+// Ring-buffer per terminal: keeps the last 50 KB so xterm.js can replay data
+// that arrived before the renderer had a chance to subscribe.
+const terminalBuffers = new Map<string, string>();
+const TERMINAL_BUFFER_LIMIT = 50 * 1024;
 const runners = new Map<string, { session: RunnerSession; process: ChildProcess; repoId: string }>();
 const mutatingSessions = new Map<string, string>();
 const require = createRequire(__filename);
@@ -137,10 +141,16 @@ function spawnTerminal(repository: RepositoryRecord, title: string, kind: Termin
   });
   const session: TerminalSession = { id, repoId: repository.id, title, kind, active: true };
   terminals.set(id, { session, process: term });
-  term.onData((data) => send("terminal:data", { sessionId: id, data }));
+  term.onData((data) => {
+    const prev = terminalBuffers.get(id) ?? "";
+    const next = prev + data;
+    terminalBuffers.set(id, next.length > TERMINAL_BUFFER_LIMIT ? next.slice(-TERMINAL_BUFFER_LIMIT) : next);
+    send("terminal:data", { sessionId: id, data });
+  });
   term.onExit(({ exitCode }) => {
     session.active = false;
     terminals.delete(id);
+    terminalBuffers.delete(id);
     if (mutatingSessions.get(repository.id) === id) mutatingSessions.delete(repository.id);
     snapshots.delete(repository.id);
     send("terminal:exit", { sessionId: id, exitCode });
@@ -333,6 +343,11 @@ function registerIpc(): void {
     terminalIdSchema.parse(sessionId);
     if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 20 || rows < 5 || cols > 500 || rows > 200) return;
     terminals.get(sessionId)?.process.resize(cols, rows);
+  });
+  ipcMain.handle("terminal:replay", (event, sessionId: string) => {
+    assertTrusted(event);
+    terminalIdSchema.parse(sessionId);
+    return terminalBuffers.get(sessionId) ?? "";
   });
   ipcMain.handle("terminal:close", (event, sessionId: string) => {
     assertTrusted(event);

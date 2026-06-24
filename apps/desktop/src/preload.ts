@@ -18,6 +18,7 @@ const transport: ControlTransport = {
   startRunnerCommand: (repoId, request: CommandRequest) => ipcRenderer.invoke("runner:start", repoId, request),
   interruptRunner: (sessionId) => ipcRenderer.invoke("runner:interrupt", sessionId),
   createTerminal: (repoId, kind) => ipcRenderer.invoke("terminal:create", repoId, kind),
+  replayTerminal: (sessionId) => ipcRenderer.invoke("terminal:replay", sessionId),
   writeTerminal: (sessionId, data) => ipcRenderer.invoke("terminal:write", sessionId, data),
   resizeTerminal: (sessionId, cols, rows) => ipcRenderer.invoke("terminal:resize", sessionId, cols, rows),
   closeTerminal: (sessionId) => ipcRenderer.invoke("terminal:close", sessionId),

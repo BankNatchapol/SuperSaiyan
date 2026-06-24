@@ -101,6 +101,7 @@ export const mockTransport: ControlTransport = {
   startRunnerCommand: unavailable,
   interruptRunner: async () => undefined,
   createTerminal: async () => ({ id: "preview-terminal", repoId: repository.id, title: "Preview terminal", kind: "shell", active: true } satisfies TerminalSession),
+  replayTerminal: async () => "",
   writeTerminal: async () => undefined,
   resizeTerminal: async () => undefined,
   closeTerminal: async () => undefined,

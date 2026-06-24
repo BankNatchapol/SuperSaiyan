@@ -311,9 +311,6 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
               setActiveSession(session.id);
               setScreen("terminal");
               setRunnerTerminalId(session.id);
-              // Shell may emit its initial prompt before xterm.js subscribes to
-              // onTerminalData — send \r after a short delay to force a clean repaint.
-              setTimeout(() => void transport.writeTerminal(session.id, "\r"), 300);
             });
           }}
         />

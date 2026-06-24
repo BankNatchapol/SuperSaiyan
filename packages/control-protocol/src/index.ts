@@ -162,6 +162,7 @@ export interface ControlTransport {
   startRunnerCommand(repoId: string, request: CommandRequest): Promise<RunnerSession>;
   interruptRunner(sessionId: string): Promise<void>;
   createTerminal(repoId: string, kind: TerminalSession["kind"]): Promise<TerminalSession>;
+  replayTerminal(sessionId: string): Promise<string>;
   writeTerminal(sessionId: string, data: string): Promise<void>;
   resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void>;
   closeTerminal(sessionId: string): Promise<void>;

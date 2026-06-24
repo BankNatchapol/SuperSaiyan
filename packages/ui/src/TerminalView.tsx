@@ -37,8 +37,13 @@ export function TerminalView({ transport, session }: { transport: ControlTranspo
     fit.fit();
     void transport.resizeTerminal(session.id, terminal.cols, terminal.rows);
     const input = terminal.onData((data) => void transport.writeTerminal(session.id, data));
+    // Subscribe before replaying so we don't miss data that arrives during the replay IPC call.
     const removeData = transport.onTerminalData((event) => {
       if (event.sessionId === session.id) terminal.write(event.data);
+    });
+    // Replay buffered output that the PTY emitted before this xterm instance subscribed.
+    void transport.replayTerminal(session.id).then((buffered) => {
+      if (buffered) terminal.write(buffered);
     });
     const observer = new ResizeObserver(() => {
       fit.fit();
