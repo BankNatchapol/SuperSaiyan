@@ -2,79 +2,93 @@ import { useEffect, useRef, useState } from "react";
 import { CircleStop, Play, Plus, RefreshCw, Search, SquareTerminal, Wrench, X, Zap } from "lucide-react";
 import type { CommandRequest, ControlTransport, TerminalSession } from "@supersaiyan/control-protocol";
 
-// Strip all escape sequences: CSI, OSC (terminal title), DCS, Fe, BEL, stray control chars
+// ─── ANSI / escape stripping ──────────────────────────────────────────────────
+
 function stripAnsi(str: string): string {
   return str
-    .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, "") // OSC: \x1b]...\x07 or \x1b]...\x1b\
-    .replace(/\x1BP[^]*?\x1B\\/g, "")               // DCS sequences
-    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")        // CSI sequences
-    .replace(/\x1B[@-_]/g, "")                       // Fe 2-char sequences
-    .replace(/\x1B./g, "")                           // remaining ESC + char
-    .replace(/\x07/g, "")                            // stray BEL
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ""); // other control chars (keep \r \n \t)
+    .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, "") // OSC: \x1b]...\x07
+    .replace(/\x1BP[^]*?\x1B\\/g, "")               // DCS
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")        // CSI
+    .replace(/\x1B[@-_]/g, "")                       // Fe 2-char
+    .replace(/\x1B./g, "")                           // remaining ESC+char
+    .replace(/\x07/g, "")                            // BEL
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ""); // control chars (keep \r \n \t)
 }
 
-// Box-drawing / block-element chars used in Claude Code's Ink TUI chrome
+// ─── Chrome line detection ────────────────────────────────────────────────────
+
 const BOX_CHARS = /[▐▛▜▝▘▙▟▚▞░▒▓│─┤├┼┬┴┐└┘┌█▀▄■◆◇▸▾]/g;
 
-// Known Claude Code status-bar / chrome line patterns
 const CHROME_PATTERNS = [
-  /^[─┄═]+(\s+\S.*\S\s+[─┄═]+)?$/, // separator lines (────── title ──────)
+  /^[─┄═\s]+$/, // separator / blank lines made of box chars
   /^\?\s*for shortcuts/i,
   /^←\s*for agents/i,
   /^esc\s+to interrupt/i,
-  /^●\s*(low|medium|high)\s*·\s*\/effort/i, // model tier status bar
+  /^●\s*(low|medium|high)\s*·/i,         // model tier status bar
   /^·\s*(low|medium|high)\s*·/i,
+  /^ctrl\+[a-z]/i,                        // keyboard hint lines
+  /^resume this session with:/i,
 ];
 
 function isChromeLine(line: string): boolean {
   const t = line.trim();
-  if (!t) return false;
+  if (!t) return true;
   for (const p of CHROME_PATTERNS) if (p.test(t)) return true;
-  // High density of box-drawing chars → UI chrome
   const chromeCount = (t.match(BOX_CHARS) || []).length;
   return chromeCount > t.length * 0.2;
 }
 
-// Characters that begin a spinner / thinking update from Ink
-const SPINNER_START = /^[✶✻⏺✽⊕✢✳⧉·⠂⠃⠇⠏⠋⠙⠹⠸⠼⠴⠦⠧]/;
+// ─── Extraction ───────────────────────────────────────────────────────────────
 
-// Process one raw PTY chunk using a proper \r-overwrite model.
-// pendingRef holds the current incomplete line across chunks.
-// Returns committed full lines and optional spinner text captured from bare \r resets.
-function processChunk(
-  text: string,
-  pendingRef: { current: string },
-): { committed: string[]; spinnerText: string | null } {
-  const committed: string[] = [];
+// Spinner character prefixes used by Ink / Claude Code
+const SPINNER_PREFIX = /[ \t]*[✶✻⏺✽⊕✢✳·⠂⠃⠇⠏⠋⠙⠹⠸⠼⠴⠦⠧]/;
+
+function extractReadable(raw: string): { lines: string[]; spinnerText: string | null } {
   let spinnerText: string | null = null;
 
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === "\r") {
-      if (text[i + 1] === "\n") {
-        // \r\n → Windows newline, commit
-        committed.push(pendingRef.current);
-        pendingRef.current = "";
-        i++;
-      } else {
-        // bare \r → in-place overwrite (spinner tick); capture text before reset
-        const pending = pendingRef.current.trimStart();
-        if (SPINNER_START.test(pending)) {
-          spinnerText = pending.replace(/\s+/g, " ").trim();
-        }
-        pendingRef.current = "";
-      }
-    } else if (ch === "\n") {
-      committed.push(pendingRef.current);
-      pendingRef.current = "";
-    } else {
-      pendingRef.current += ch;
+  // Capture the last spinner text from bare \r sequences (in-place overwrites)
+  const spinRe = /\r(?!\n)([^\r\n]*)/g;
+  let sm: RegExpExecArray | null;
+  while ((sm = spinRe.exec(raw)) !== null) {
+    const candidate = stripAnsi(sm[1]).trim();
+    if (candidate.length > 0 && SPINNER_PREFIX.test(candidate)) {
+      spinnerText = candidate;
     }
   }
 
-  return { committed, spinnerText };
+  // Convert cursor-position ANSI codes → \n BEFORE stripping so the line
+  // structure from Ink's position-based rendering is preserved.
+  const withBreaks = raw
+    .replace(/\x1B\[2J/g, "\n")             // clear screen
+    .replace(/\x1B\[\d*;\d*[Hf]/g, "\n")   // absolute position ESC[N;MH
+    .replace(/\x1B\[\d*H/g, "\n")           // cursor home ESC[H
+    .replace(/\x1B\[\d*[BE]/g, "\n");       // cursor down (B) / next line (E)
+
+  const stripped = stripAnsi(withBreaks);
+  const normalized = stripped.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+  const lines = normalized
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .filter((l) => l.length > 0 && !isChromeLine(l));
+
+  return { lines, spinnerText };
 }
+
+// ─── Line classification (for styled display) ────────────────────────────────
+
+type LineKind = "tool-call" | "tool-result" | "progress" | "command" | "text";
+
+function classifyLine(line: string): LineKind {
+  const t = line.trimStart();
+  if (/^[●⏺✢]\s/.test(t)) return "tool-call";
+  if (/^[└├]\s/.test(t) || /^\s+[└├]/.test(line)) return "tool-result";
+  if (/^\+\s/.test(t)) return "progress";
+  if (/^[❯>]\s/.test(t)) return "command";
+  return "text";
+}
+
+// ─── Option parser (for choice menus) ────────────────────────────────────────
 
 function parseNumberedOptions(buffer: string): string[] {
   const pattern = /^\s*(?:❯\s*)?\d+\.\s+(.+)/gm;
@@ -86,6 +100,8 @@ function parseNumberedOptions(buffer: string): string[] {
   }
   return [...new Set(results)];
 }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 interface SmartRunnerViewProps {
   transport: ControlTransport;
@@ -108,7 +124,7 @@ export function SmartRunnerView({
   onSessionCreated,
   onSwitchToTerminal,
 }: SmartRunnerViewProps) {
-  const [output, setOutput] = useState("");
+  const [lines, setLines] = useState<{ text: string; kind: LineKind }[]>([]);
   const [spinnerText, setSpinnerText] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(runnerSessionId !== undefined);
   const [exited, setExited] = useState(false);
@@ -118,7 +134,8 @@ export function SmartRunnerView({
   const [choices, setChoices] = useState<string[]>([]);
   const [newFeatureSlug, setNewFeatureSlug] = useState<string | null>(null);
 
-  const pendingRef = useRef<string>("");   // current incomplete line across chunks
+  // Ring buffer for dedup: don't re-add a line we showed in the last 40 lines
+  const shownRef = useRef<string[]>([]);
   const rollingBufferRef = useRef<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string | undefined>(runnerSessionId);
@@ -132,31 +149,31 @@ export function SmartRunnerView({
     const removeData = transport.onTerminalData((event) => {
       if (event.sessionId !== sessionIdRef.current) return;
 
-      const stripped = stripAnsi(event.data);
+      const { lines: newRaw, spinnerText: spin } = extractReadable(event.data);
 
-      // Use rolling buffer (raw stripped) for prompt detection — unfiltered
-      rollingBufferRef.current = (rollingBufferRef.current + stripped).slice(-2000);
-
-      const { committed, spinnerText: spin } = processChunk(stripped, pendingRef);
+      // Raw stripped text for prompt detection
+      const rawStripped = stripAnsi(event.data);
+      rollingBufferRef.current = (rollingBufferRef.current + rawStripped).slice(-2000);
 
       if (spin !== null) setSpinnerText(spin);
 
-      if (committed.length > 0) {
-        // Keep only non-chrome content lines
-        const clean = committed
-          .map((l) => l.trimEnd())
-          .filter((l) => l.length > 0 && !isChromeLine(l));
+      // Dedup against the last 40 shown lines
+      const recent = shownRef.current.slice(-40);
+      const fresh = newRaw.filter((l) => !recent.includes(l));
 
-        if (clean.length > 0) {
-          setSpinnerText(null); // real output arrived → clear thinking indicator
-          setOutput((prev) => {
-            const next = prev + clean.join("\n") + "\n";
-            return next.length > 50_000 ? next.slice(-50_000) : next;
-          });
-        }
+      if (fresh.length > 0) {
+        fresh.forEach((l) => {
+          shownRef.current.push(l);
+          if (shownRef.current.length > 400) shownRef.current.shift();
+        });
+        setSpinnerText(null);
+        setLines((prev) => {
+          const next = [...prev, ...fresh.map((text) => ({ text, kind: classifyLine(text) }))];
+          return next.length > 800 ? next.slice(-800) : next;
+        });
       }
 
-      // Prompt detection on rolling buffer
+      // Prompt detection
       const buf = rollingBufferRef.current;
       if (/Enter to select.*↑\/↓ to navigate/i.test(buf) || /\(Use arrow keys\)/i.test(buf)) {
         const parsed = parseNumberedOptions(buf);
@@ -179,13 +196,13 @@ export function SmartRunnerView({
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [output]);
+  }, [lines]);
 
   const startRunner = async (request: CommandRequest) => {
     if (!repoId) return;
-    setOutput(""); setSpinnerText(null); setExited(false); setExitCode(undefined);
+    setLines([]); setSpinnerText(null); setExited(false); setExitCode(undefined);
     setUiMode("normal"); setChoices([]);
-    pendingRef.current = "";
+    shownRef.current = [];
     rollingBufferRef.current = "";
     setIsRunning(true);
 
@@ -214,7 +231,7 @@ export function SmartRunnerView({
     setInputText("");
   };
 
-  // Idle splash
+  // ── Idle splash ─────────────────────────────────────────────────────────────
   if (!runnerSessionId) {
     return (
       <div className="runner-shell glass">
@@ -279,6 +296,7 @@ export function SmartRunnerView({
   }
 
   const session = sessions.find((s) => s.id === runnerSessionId);
+  const lastToolResult = lines.length > 0 ? lines[lines.length - 1].text.slice(0, 80) : "";
 
   return (
     <div className="runner-shell glass">
@@ -287,7 +305,10 @@ export function SmartRunnerView({
           {isRunning ? <span className="runner-live-dot" /> : <span className="runner-exit-dot" />}
           <span className="runner-session-title">{session?.title ?? "Runner"}</span>
           {spinnerText && isRunning && (
-            <span className="runner-spinner-pill">{spinnerText}</span>
+            <span className="runner-spinner-pill" title={spinnerText}>{spinnerText}</span>
+          )}
+          {!spinnerText && isRunning && lines.length > 0 && (
+            <span className="runner-spinner-pill runner-spinner-pill--muted" title={lastToolResult}>{lastToolResult}</span>
           )}
           {exited && exitCode !== undefined && (
             <span className={`status-pill ${exitCode === 0 ? "ok" : "bad"}`}>exit {exitCode}</span>
@@ -305,7 +326,7 @@ export function SmartRunnerView({
           {!isRunning && (
             <button className="command-button" onClick={() => {
               setRunnerSessionId(undefined);
-              setOutput(""); setSpinnerText(null);
+              setLines([]); setSpinnerText(null);
               setExited(false); setExitCode(undefined);
             }}>
               <RefreshCw size={14} /> New command
@@ -315,15 +336,19 @@ export function SmartRunnerView({
       </div>
 
       <div className="runner-output">
-        {output ? (
-          <pre className="runner-pre">{output}</pre>
-        ) : isRunning ? (
+        {lines.length === 0 && isRunning ? (
           <div className="runner-waiting">
             <span className="runner-waiting-dot" />
             <span className="runner-waiting-dot" />
             <span className="runner-waiting-dot" />
           </div>
-        ) : null}
+        ) : (
+          lines.map((line, i) => (
+            <div key={i} className={`runner-line runner-line--${line.kind}`}>
+              {line.text}
+            </div>
+          ))
+        )}
         <div ref={scrollRef} />
       </div>
 
@@ -345,7 +370,7 @@ export function SmartRunnerView({
         <div className="runner-permission">
           <div className="runner-permission-title">Permission required</div>
           <div className="runner-permission-context runner-pre">
-            {output.slice(-300)}
+            {lines.slice(-5).map((l) => l.text).join("\n")}
           </div>
           <div className="runner-permission-actions">
             <button className="command-button primary" onClick={() => { sendInput("y\n"); setUiMode("normal"); }}>
