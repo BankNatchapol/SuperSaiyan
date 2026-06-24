@@ -134,6 +134,8 @@
 .settings-grid label { color: var(--muted); font-size: 12px; }
 .field { width: 100%; padding: 9px 11px; color: var(--text); border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.04); }
 .notice { padding: 11px 13px; border: 1px solid rgba(248,113,113,.25); border-radius: 10px; color: #ffb0b0; background: rgba(248,113,113,.07); font-size: 12px; }
+.diag-guide { margin: -4px 0 6px; padding: 13px 15px; border-radius: 11px; display: flex; flex-direction: column; gap: 10px; font-size: 12px; color: var(--muted); }
+.diag-code { display: block; padding: 8px 11px; border-radius: 8px; background: rgba(0,0,0,.35); color: var(--gold-soft); font: 12px var(--font-mono); white-space: pre; }
 @media (max-width: 1180px) {
   .sidebar { width: 78px; }
   .brand-copy, .repo-select, .nav-button span, .nav-badge, .health-copy, .health-bar { display: none; }

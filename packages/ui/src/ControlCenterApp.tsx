@@ -36,6 +36,15 @@ export interface ControlCenterAppProps {
   transport: ControlTransport;
 }
 
+const DIAG_GUIDE: Record<string, { body: string; code?: string; action?: { label: string; verb: "setup" | "install" } }> = {
+  config:    { body: "Connect your GitHub Project board to enable the SuperSaiyan pipeline.", action: { label: "Run Setup", verb: "setup" } },
+  installed: { body: "SuperSaiyan skills are not installed in this repository.", action: { label: "Repair / Install", verb: "install" } },
+  git:       { body: "Initialise a Git repository in this directory:", code: "git init" },
+  remote:    { body: "Add a GitHub remote so the pipeline can push issues:", code: "git remote add origin <your-repo-url>" },
+  gh:        { body: "Authenticate the GitHub CLI:", code: "gh auth login" },
+  claude:    { body: "Install Claude Code:", code: "npm install -g @anthropic-ai/claude-code" },
+};
+
 const laneColors: Record<string, string> = {
   Backlog: "#888895",
   Ready: "#ffd60a",
@@ -147,6 +156,7 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
   const [preferences, setPreferences] = useState<AppPreferences>();
   const [newFeatureSlug, setNewFeatureSlug] = useState<string | null>(null);
   const [phaseInputs, setPhaseInputs] = useState<Record<string, string>>({});
+  const [expandedDiag, setExpandedDiag] = useState<string | null>(null);
 
   const refresh = useCallback(async (force = false) => {
     if (!repoId) return;
@@ -478,13 +488,45 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
                   <div className="row-main"><div className="row-title">{worker.lane} · #{worker.issue}</div><div className="row-subtitle">Working in {snapshot.repository.name}</div></div>
                   <span className="status-pill warn">Powering up</span>
                 </div>
-              )) : snapshot.diagnostics.map((item) => (
-                <div className="worker-row" key={item.key}>
-                  <div className="worker-icon">{item.ok ? "✓" : "!"}</div>
-                  <div className="row-main"><div className="row-title">{item.label}</div><div className="row-subtitle">{item.detail}</div></div>
-                  <span className={`status-pill ${item.ok ? "ok" : "bad"}`}>{item.ok ? "Ready" : "Action"}</span>
-                </div>
-              ))}
+              )) : snapshot.diagnostics.map((item) => {
+                const guide = DIAG_GUIDE[item.key];
+                const expanded = expandedDiag === item.key;
+                return (
+                  <div key={item.key}>
+                    <div
+                      className={`worker-row${!item.ok ? " hover-lift" : ""}`}
+                      style={!item.ok ? { cursor: "pointer" } : undefined}
+                      onClick={!item.ok ? () => setExpandedDiag(expanded ? null : item.key) : undefined}
+                    >
+                      <div className="worker-icon">{item.ok ? "✓" : "!"}</div>
+                      <div className="row-main"><div className="row-title">{item.label}</div><div className="row-subtitle">{item.detail}</div></div>
+                      <span className={`status-pill ${item.ok ? "ok" : "bad"}`}>{item.ok ? "Ready" : "Action"}</span>
+                    </div>
+                    {expanded && guide && (
+                      <div className="diag-guide glass">
+                        <span>{guide.body}</span>
+                        {guide.code && <code className="diag-code">{guide.code}</code>}
+                        {guide.action && (
+                          <div>
+                            <button className="command-button primary" onClick={() => {
+                              if (guide.action!.verb === "install") {
+                                void transport.installOrRepair(repoId!).then((session) => {
+                                  setSessions((c) => c.some((s) => s.id === session.id) ? c : [...c, session]);
+                                  setActiveSession(session.id);
+                                  setScreen("terminal");
+                                });
+                              } else {
+                                void startCommand({ verb: "setup", args: [] });
+                              }
+                              setExpandedDiag(null);
+                            }}>{guide.action.label}</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
           <div className="panel glass">
