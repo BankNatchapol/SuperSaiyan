@@ -112,6 +112,8 @@ export interface RunnerSession {
   title: string;
   command: CommandRequest;
   active: boolean;
+  /** Claude Code session name used for --continue on follow-up turns. */
+  sessionName: string;
 }
 
 export type RunnerEvent =
@@ -161,6 +163,7 @@ export interface ControlTransport {
   interruptCommand(sessionId: string): Promise<void>;
   startRunnerCommand(repoId: string, request: CommandRequest): Promise<RunnerSession>;
   interruptRunner(sessionId: string): Promise<void>;
+  continueRunner(repoId: string, sessionName: string, userText: string): Promise<RunnerSession>;
   createTerminal(repoId: string, kind: TerminalSession["kind"]): Promise<TerminalSession>;
   replayTerminal(sessionId: string): Promise<string>;
   writeTerminal(sessionId: string, data: string): Promise<void>;

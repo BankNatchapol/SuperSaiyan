@@ -164,9 +164,6 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
   const [runnerSession, setRunnerSession] = useState<RunnerSession | undefined>();
   const [runnerEvents, setRunnerEvents] = useState<RunnerEvent[]>([]);
   const [runnerExitCode, setRunnerExitCode] = useState<number | undefined>();
-  // Terminal session created for the current runner session via "Raw terminal".
-  // Stored so repeated clicks reuse the same tab instead of creating a new one.
-  const [runnerTerminalId, setRunnerTerminalId] = useState<string | undefined>();
 
   const refresh = useCallback(async (force = false) => {
     if (!repoId) return;
@@ -211,12 +208,6 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
     const timer = window.setInterval(() => void refresh(), Math.max(5, seconds) * 1000);
     return () => window.clearInterval(timer);
   }, [preferences, refresh, repoId, snapshot?.runActive]);
-
-  // When a runner session is cleared ("New command"), forget its linked terminal
-  // so the next "Raw terminal" click opens a fresh tab.
-  useEffect(() => {
-    if (!runnerSession) setRunnerTerminalId(undefined);
-  }, [runnerSession]);
 
   const startCommand = async (request: CommandRequest, navigate = true) => {
     if (!repoId) return undefined;
@@ -298,21 +289,6 @@ export function ControlCenterApp({ transport }: ControlCenterAppProps) {
           setEvents={setRunnerEvents}
           exitCode={runnerExitCode}
           setExitCode={setRunnerExitCode}
-          onOpenRawTerminal={() => {
-            // Reuse the terminal we opened for this runner session if it still exists.
-            const existing = runnerTerminalId ? sessions.find((s) => s.id === runnerTerminalId) : undefined;
-            if (existing) {
-              setActiveSession(existing.id);
-              setScreen("terminal");
-              return;
-            }
-            void transport.createTerminal(repoId, "supersaiyan").then((session) => {
-              setSessions((current) => current.some((item) => item.id === session.id) ? current : [...current, session]);
-              setActiveSession(session.id);
-              setScreen("terminal");
-              setRunnerTerminalId(session.id);
-            });
-          }}
         />
       );
     }

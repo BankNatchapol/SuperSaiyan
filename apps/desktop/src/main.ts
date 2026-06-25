@@ -175,6 +175,7 @@ function processRunnerLine(sessionId: string, line: string): void {
 
 function spawnRunner(repository: RepositoryRecord, request: CommandRequest): RunnerSession {
   const id = createSessionId();
+  const sessionName = `supersaiyan-ui-${id}`;
   const command = supersaiyanCommand(request);
   const environment = Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
@@ -186,14 +187,70 @@ function spawnRunner(repository: RepositoryRecord, request: CommandRequest): Run
     "--verbose",
     "--output-format", "stream-json",
     "--include-partial-messages",
-    "--name", `supersaiyan-ui-${repository.name}-${request.verb}`,
+    "--name", sessionName,
     command,
   ], {
     cwd: repository.path,
     env: environment,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const session: RunnerSession = { id, repoId: repository.id, title: `SuperSaiyan · ${request.verb}`, command: request, active: true };
+  const session: RunnerSession = { id, repoId: repository.id, title: `SuperSaiyan · ${request.verb}`, command: request, active: true, sessionName };
+  runners.set(id, { session, process: child, repoId: repository.id });
+  sendRunnerEvent({ type: "init", sessionId: id });
+
+  let stdoutBuffer = "";
+  let stderrBuffer = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (data: string) => {
+    stdoutBuffer += data;
+    const lines = stdoutBuffer.split(/\r?\n/);
+    stdoutBuffer = lines.pop() ?? "";
+    for (const line of lines) processRunnerLine(id, line);
+  });
+  child.stderr.on("data", (data: string) => {
+    stderrBuffer += data;
+    const lines = stderrBuffer.split(/\r?\n/);
+    stderrBuffer = lines.pop() ?? "";
+    for (const line of lines) if (line.trim()) sendRunnerEvent({ type: "error", sessionId: id, message: line.trim() });
+  });
+  child.on("error", (error) => {
+    sendRunnerEvent({ type: "error", sessionId: id, message: error.message });
+  });
+  child.on("exit", (exitCode) => {
+    if (stdoutBuffer.trim()) processRunnerLine(id, stdoutBuffer);
+    if (stderrBuffer.trim()) sendRunnerEvent({ type: "error", sessionId: id, message: stderrBuffer.trim() });
+    session.active = false;
+    runners.delete(id);
+    if (mutatingSessions.get(repository.id) === id) mutatingSessions.delete(repository.id);
+    snapshots.delete(repository.id);
+    sendRunnerEvent({ type: "exit", sessionId: id, exitCode: exitCode ?? 0 });
+    send("workspace:changed", { repoId: repository.id });
+  });
+  return session;
+}
+
+function spawnContinueRunner(repository: RepositoryRecord, sessionName: string, userText: string): RunnerSession {
+  const id = createSessionId();
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+  delete environment.npm_config_prefix;
+  delete environment.NPM_CONFIG_PREFIX;
+  const child = spawn("claude", [
+    "-p",
+    "--verbose",
+    "--output-format", "stream-json",
+    "--include-partial-messages",
+    "--continue",
+    "--name", sessionName,
+    userText,
+  ], {
+    cwd: repository.path,
+    env: environment,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const session: RunnerSession = { id, repoId: repository.id, title: "SuperSaiyan · reply", command: { verb: "run", args: [] }, active: true, sessionName };
   runners.set(id, { session, process: child, repoId: repository.id });
   sendRunnerEvent({ type: "init", sessionId: id });
 
@@ -302,8 +359,7 @@ function registerIpc(): void {
     const repository = repositoryFor(repoId);
     const request = commandRequestSchema.parse(input);
     const activeSessionId = mutatingSessions.get(repoId);
-    if (activeSessionId && request.verb !== "stop") throw new Error("A SuperSaiyan command is already active for this repository");
-    if (activeSessionId && request.verb === "stop") {
+    if (activeSessionId) {
       terminals.get(activeSessionId)?.process.write("\x03");
       runners.get(activeSessionId)?.process.kill("SIGINT");
       mutatingSessions.delete(repoId);
@@ -324,6 +380,20 @@ function registerIpc(): void {
     if (!runner) return;
     runner.process.kill("SIGINT");
     mutatingSessions.delete(runner.repoId);
+  });
+  ipcMain.handle("runner:continue", (event, repoId: string, sessionName: string, userText: string) => {
+    assertTrusted(event);
+    repoIdSchema.parse(repoId);
+    const repository = repositoryFor(repoId);
+    const activeSessionId = mutatingSessions.get(repoId);
+    if (activeSessionId) {
+      terminals.get(activeSessionId)?.process.write("\x03");
+      runners.get(activeSessionId)?.process.kill("SIGINT");
+      mutatingSessions.delete(repoId);
+    }
+    const session = spawnContinueRunner(repository, sessionName, userText);
+    mutatingSessions.set(repoId, session.id);
+    return session;
   });
   ipcMain.handle("terminal:create", (event, repoId: string, kind: TerminalSession["kind"]) => {
     assertTrusted(event);

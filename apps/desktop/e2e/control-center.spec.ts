@@ -139,7 +139,7 @@ test("runs commands through fake Claude, enforces exclusivity, and stops active 
   }
 });
 
-test("streams Smart Runner output from Claude stream-json and opens raw terminal fallback", async () => {
+test("streams Smart Runner output from Claude stream-json", async () => {
   const workspace = await createTestWorkspace();
   await seedRegistry(workspace, [workspace.repoA]);
   const { app, page, errors } = await launchControlCenter(workspace);
@@ -153,12 +153,8 @@ test("streams Smart Runner output from Claude stream-json and opens raw terminal
     await expect(runner).toContainText("clean");
     await expect(runner).not.toContainText("Moonwalking");
     await expect(runner).not.toContainText("?forshortcuts");
+    await expect(runner.getByRole("button", { name: "Raw terminal" })).toHaveCount(0);
 
-    await runner.getByRole("button", { name: "Raw terminal" }).click();
-    await expect(page.locator(".topbar-title")).toContainText("Terminal");
-    await expect(page.locator(".terminal-tab", { hasText: "SuperSaiyan" })).toBeVisible();
-
-    await page.getByRole("button", { name: /^Runner/ }).click();
     await runner.getByRole("button", { name: "New command" }).click();
     await runner.getByRole("button", { name: /Run/ }).click();
     await waitForCommand(workspace, (entry) => entry.tool === "claude-print" && entry.line === "/supersaiyan run");
