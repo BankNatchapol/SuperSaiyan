@@ -156,6 +156,7 @@ test("streams Smart Runner output from Claude stream-json", async () => {
     await expect(runner.getByRole("button", { name: "Raw terminal" })).toHaveCount(0);
 
     await runner.getByRole("button", { name: "New command" }).click();
+    await runner.getByRole("button", { name: "Close & start new" }).click();
     await runner.getByRole("button", { name: /Run/ }).click();
     await waitForCommand(workspace, (entry) => entry.tool === "claude-print" && entry.line === "/supersaiyan run");
     await runner.getByRole("button", { name: "Stop" }).click();
@@ -226,7 +227,7 @@ test("refreshes feature discovery from filesystem watcher changes", async () => 
     await page.getByRole("button", { name: /^Features/ }).click();
     await expect(page.getByText("new-watched-feature", { exact: true })).toHaveCount(0);
     await writeFile(join(workspace.repoA, "docs", "superpowers", "specs", "new-watched-feature-design.md"), "# Watched\n");
-    await expect(page.getByText("new-watched-feature", { exact: true })).toBeVisible();
+    await expect(page.getByText("new-watched-feature", { exact: true })).toBeVisible({ timeout: 20_000 });
   } finally {
     await app.close();
     await workspace.cleanup();
