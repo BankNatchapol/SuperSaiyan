@@ -262,7 +262,7 @@ If a screenshot file is >5MB, downscale to ≤1920px wide before committing; Git
    - **Code-side new finding** → open new `[builder]`-prefixed PR thread, comment, move card Review → Ready (label `loop:rebuild-N`).
    - **Test-side new finding** → open new `[QA]`-prefixed PR thread, comment, move card Review → QA (label `loop:rebuild-N`).
    - **CI-budget block (💳, added 2026-05-22)** — if remote CI jobs `failed_to_start` due to `Actions budget` AND `config.auto_merge_on_ci_budget_block` is true AND local-evidence is strong (truth ≥ threshold, Tester suite green on rerun in step 5, all `[builder]`/`[QA]` threads clean) → **squash-merge anyway** on local evidence; do NOT move to Blocked. Add a `🛡 → ✅ CI-budget bypass` comment to both the PR and the issue citing: (a) the failed CI run ID, (b) the Tester pass-count, (c) the truth-gate score. Reason: CI failure-to-start ≠ test failure; with strong local evidence, parking the card wastes pipeline time. This bypass is ONLY for `💳` — never for `🛡` truth-fail, `🔐` missing creds, or `🧑` human-only decisions.
-   - **Human-gate / Blocker (schema, API contract, money, auth, migration) / rebuild cap hit (config.rebuild_cap)** → write the full Block template (see §4), move card Review → Blocked.
+   - **Human-gate / Blocker (schema, API contract, money, auth, migration) / rebuild cap hit (config.rebuild_cap)** — before blocking on the cap specifically, compare this finding's root-cause-hash against the prior failure's hash (see "Root-cause hash" below). Different hash = progress, not repetition — do not block on the cap for a genuinely new finding, only on a repeat of the identical hash. → write the full Block template (see §4), move card Review → Blocked.
 8. Clean up worktree.
 
 ## Commenting cadence (issue + PR, every lane)
@@ -395,7 +395,7 @@ The three locks (assignee, in-flight file, lane PID) are defense in depth: any o
 
 | Gate | Action |
 |---|---|
-| `config.rebuild_cap` reached on same card + same root-cause hash | Move card to Blocked with full §4 template (reason 🛡), continue run |
+| `config.rebuild_cap` reached on same card + same root-cause hash (a different hash, or a human moving the card out of Blocked, resets the count — see below) | Move card to Blocked with full §4 template (reason 🛡), continue run |
 | No card progresses for 3 ticks AND no lane is idle | Halt, dump state |
 | Auth expires mid-run | Halt, ping user with refresh instruction |
 | Pre-flight check fails on re-validation | Halt with the specific missing item |
@@ -421,6 +421,24 @@ The hash inputs (joined with `|`):
 Two consecutive failures on the same card with **identical hash** AND **same lane** count as the same root cause. Hits `rebuild_cap` → Blocked.
 
 Different hash on the same card resets the counter — the bot recognizes that progress has been made even if the card hasn't reached Review yet.
+
+**Enforce this at the moment of the cap check, not just conceptually.** Before blocking on
+`rebuild_cap`, explicitly compare this failure's hash against the immediately prior failure's
+hash on the same card. If they differ, this is progress, not repetition — do not block. Post
+the finding and bounce normally (Ready or QA as usual). Only block when the hash is
+**identical to the prior failure**, confirming the same root cause is recurring unfixed.
+
+**Human re-authorization resets the counter too, even on an unchanged hash.** No lane moves a
+card out of Blocked on its own — only a human does that (dragging the card back to an active
+column, or commenting explicit authorization). That action *is* the human review the cap
+exists to require: `rebuild_cap`'s purpose is forcing a human to look before more automated
+attempts happen, not capping the lifetime number of attempts an issue may ever receive. Once a
+human has looked, the next automated cycle should get a full, fresh budget.
+
+Concretely: the first lane to claim a card that was most recently seen in Blocked must remove
+every existing `loop:rebuild-N` label from the issue before doing anything else, so the card's
+attempt count restarts at a clean 1 of `rebuild_cap + 1` — both for the cap-check logic above
+and for anything (dashboards, status renderers) that displays the attempt count from the label.
 
 ## Done conditions
 
