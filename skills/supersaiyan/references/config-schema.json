@@ -90,8 +90,16 @@
 
   // Max consecutive failures in the same lane on the same root-cause hash
   // before the card auto-moves to Blocked. Default `2`. Root-cause hash
-  // defined in §7 Halt gates.
+  // defined in §7 Halt gates. Resets to a fresh count on a different hash
+  // (real progress) or when a human moves the card out of Blocked.
   "rebuild_cap": 2,
+
+  // Hard backstop, independent of root-cause hash: once a card's total
+  // rebuild count (the loop:rebuild-N label) reaches this number, block it
+  // regardless of whether each rebuild was genuine distinct progress.
+  // Default `4`. Exists so a card that keeps finding real-but-different
+  // problems still cannot run unattended forever with no human checkpoint.
+  "absolute_rebuild_ceiling": 4,
 
   // When the count of Blocked cards exceeds this percent of the initial Ready
   // count, send a mid-run breakdown notification. Default `30`. Set to `0`
