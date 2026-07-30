@@ -262,7 +262,7 @@ If a screenshot file is >5MB, downscale to ≤1920px wide before committing; Git
    - **Code-side new finding** → open new `[builder]`-prefixed PR thread, comment, move card Review → Ready (label `loop:rebuild-N`).
    - **Test-side new finding** → open new `[QA]`-prefixed PR thread, comment, move card Review → QA (label `loop:rebuild-N`).
    - **CI-budget block (💳, added 2026-05-22)** — if remote CI jobs `failed_to_start` due to `Actions budget` AND `config.auto_merge_on_ci_budget_block` is true AND local-evidence is strong (truth ≥ threshold, Tester suite green on rerun in step 5, all `[builder]`/`[QA]` threads clean) → **squash-merge anyway** on local evidence; do NOT move to Blocked. Add a `🛡 → ✅ CI-budget bypass` comment to both the PR and the issue citing: (a) the failed CI run ID, (b) the Tester pass-count, (c) the truth-gate score. Reason: CI failure-to-start ≠ test failure; with strong local evidence, parking the card wastes pipeline time. This bypass is ONLY for `💳` — never for `🛡` truth-fail, `🔐` missing creds, or `🧑` human-only decisions.
-   - **Human-gate / Blocker (schema, API contract, money, auth, migration) / rebuild cap hit (config.rebuild_cap)** — before blocking on the cap specifically, compare this finding's root-cause-hash against the prior failure's hash (see "Root-cause hash" below). Different hash = progress, not repetition — do not block on the cap for a genuinely new finding, only on a repeat of the identical hash. Separately, regardless of hash, check `config.absolute_rebuild_ceiling`: if this card's `loop:rebuild-N` has reached it, block anyway (reason 🛡 rebuild ceiling) even though this finding is real progress. → write the full Block template (see §4), move card Review → Blocked.
+   - **Human-gate / Blocker (schema, API contract, money, auth, migration) / rebuild cap hit (config.rebuild_cap)** — if `config.rebuild_cap` is `null` (unlimited), never block on the cap; skip straight to the code-side/test-side routing above. Otherwise, before blocking on the cap, compare this finding's root-cause-hash against the prior failure's hash (see "Root-cause hash" below). Different hash = progress, not repetition — do not block on the cap for a genuinely new finding, only on a repeat of the identical hash. → write the full Block template (see §4), move card Review → Blocked.
 8. Clean up worktree.
 
 ## Commenting cadence (issue + PR, every lane)
@@ -395,8 +395,7 @@ The three locks (assignee, in-flight file, lane PID) are defense in depth: any o
 
 | Gate | Action |
 |---|---|
-| `config.rebuild_cap` reached on same card + same root-cause hash (a different hash, or a human moving the card out of Blocked, resets the count — see below) | Move card to Blocked with full §4 template (reason 🛡), continue run |
-| `config.absolute_rebuild_ceiling` reached — total rebuild count on this card (the `loop:rebuild-N` label), **regardless of root-cause hash** | Move card to Blocked with full §4 template (reason 🛡 rebuild ceiling), continue run |
+| `config.rebuild_cap` reached on same card + same root-cause hash (a different hash, or a human moving the card out of Blocked, resets the count — see below). Never fires if `config.rebuild_cap` is `null` (unlimited). | Move card to Blocked with full §4 template (reason 🛡), continue run |
 | No card progresses for 3 ticks AND no lane is idle | Halt, dump state |
 | Auth expires mid-run | Halt, ping user with refresh instruction |
 | Pre-flight check fails on re-validation | Halt with the specific missing item |
@@ -441,17 +440,13 @@ every existing `loop:rebuild-N` label from the issue before doing anything else,
 attempt count restarts at a clean 1 of `rebuild_cap + 1` — both for the cap-check logic above
 and for anything (dashboards, status renderers) that displays the attempt count from the label.
 
-**This hash-based reset only bounds "stuck repeating the identical failure" — it does not
-bound total unattended rebuild count.** A card that keeps producing genuinely different
-failures could otherwise rebuild indefinitely with no human ever looking, spending real
-subscription-backed model calls the whole time. `config.absolute_rebuild_ceiling` (default 4)
-is the independent hard backstop for exactly this: check it on every rebuild dispatch,
-regardless of root-cause hash. If the card's current `loop:rebuild-N` label's `N` has reached
-`absolute_rebuild_ceiling`, block it — reason 🛡 rebuild ceiling — even though every individual
-rebuild along the way may have been genuine, real progress. The hash comparison governs
-whether one rebuild counts as "the same problem recurring"; the ceiling governs how many
-total rebuilds are allowed before a human must look, no matter how many distinct real
-problems were found and fixed along the way.
+**`rebuild_cap: null` means unlimited.** The card is never auto-blocked on the cap, no matter
+how many times the identical root-cause hash recurs on the same lane — every rebuild dispatch
+skips the cap check entirely (see step 7 above). Dashboards and status renderers must render
+this as an open-ended attempt count (e.g. `attempt N`), never `attempt N/null` or a false
+numeric denominator. This is a deliberate per-project choice to remove the auto-block
+safety net in exchange for never pausing a card on repeated identical failures — set it
+knowingly.
 
 ## Done conditions
 

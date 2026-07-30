@@ -164,7 +164,7 @@ def parse_manifest(text: str, today_iso: str) -> dict[str, Any]:
             recents.append({
                 "epoch": ep, "verb": "dispatch", "glyph": LANE_GLYPH[lane],
                 "issue": f"#{issue}", "target": LANE_LABEL[lane],
-                # `attempt N/3` is filled in at render time from current
+                # `attempt N/X` is filled in at render time from current
                 # labels — the manifest doesn't encode it at dispatch time.
                 "detail": "",
             })
@@ -271,14 +271,28 @@ def rebuild_count(item: dict[str, Any] | None) -> int:
     return 0
 
 
-def attempt_str(item: dict[str, Any] | None) -> str:
-    """`attempt N/3` derived from the issue's current `loop:rebuild-N` label."""
-    return f"{min(rebuild_count(item) + 1, 3)}/3"
+def attempt_str(item: dict[str, Any] | None, rebuild_cap: int | None) -> str:
+    """`attempt N/X` derived from the issue's current `loop:rebuild-N` label.
+
+    `X` is `rebuild_cap + 1` (the total attempt budget the cap gate allows —
+    the initial attempt plus `rebuild_cap` rebuilds). `rebuild_cap: null` in
+    config means unlimited: no denominator, just the raw attempt count.
+    """
+    n = rebuild_count(item) + 1
+    if rebuild_cap is None:
+        return str(n)
+    budget = rebuild_cap + 1
+    return f"{min(n, budget)}/{budget}"
 
 
-def rebuild_suffix(item: dict[str, Any]) -> str:
+def rebuild_suffix(item: dict[str, Any], rebuild_cap: int | None) -> str:
     k = rebuild_count(item)
-    return f"↻ {min(k + 1, 3)}/3" if k else ""
+    if not k:
+        return ""
+    if rebuild_cap is None:
+        return f"↻ {k + 1}"
+    budget = rebuild_cap + 1
+    return f"↻ {min(k + 1, budget)}/{budget}"
 
 
 REASON_TABLE: list[tuple[str, str]] = [
@@ -476,6 +490,11 @@ def main() -> int:
     cfg = json.loads(config_path.read_text())
     project_owner: str = cfg["project"]["owner"]
     project_number: int = int(cfg["project"]["number"])
+    # `null`/absent key both mean "use the documented default of 2"; an
+    # explicit `null` for *unlimited* is only distinguishable by checking the
+    # key is present — callers that want unlimited must still see None here,
+    # so only fall back to 2 when the key is missing entirely.
+    rebuild_cap: int | None = cfg["rebuild_cap"] if "rebuild_cap" in cfg else 2
     runs_dir = cfg.get("paths", {}).get("runs_dir", "docs/supersaiyan/runs")
     run_date = datetime.date.today().isoformat()
     manifest_path = Path(runs_dir) / f"{run_date}-{config_slug}.md"
@@ -704,7 +723,7 @@ def main() -> int:
                 n = it["number"]
                 glyph = glyph_for_issue(n)
                 left = f"{glyph} #{n}  {it['title']}"
-                suffix = rebuild_suffix(it)
+                suffix = rebuild_suffix(it, rebuild_cap)
                 if suffix:
                     budget = 76 - visual_width(suffix) - 1
                     if visual_width(left) > budget:
@@ -785,7 +804,7 @@ def main() -> int:
                     ]
                 extra = (" · " + ", ".join(extras)) if extras else ""
                 print(
-                    f"   {glyph} {role}  #{v['issue']}  attempt {attempt_str(item)} · "
+                    f"   {glyph} {role}  #{v['issue']}  attempt {attempt_str(item, rebuild_cap)} · "
                     f"{worker_dur(v['ts'])}{extra}"
                 )
 
@@ -813,7 +832,7 @@ def main() -> int:
     else:
         for r in recents:
             t = t_minus(r["epoch"])
-            # Dispatch detail (`attempt N/3`) is filled in at render time
+            # Dispatch detail (`attempt N/X`) is filled in at render time
             # because the manifest doesn't encode the rebuild count at
             # dispatch time — the number shown reflects the issue's *current*
             # label. Live workers in the §Workers block above use the same
@@ -821,7 +840,7 @@ def main() -> int:
             detail = r["detail"]
             if r["verb"] == "dispatch" and not detail:
                 issue_num = int(r["issue"].lstrip("#"))
-                detail = f"attempt {attempt_str(item_by_number(issue_num))}"
+                detail = f"attempt {attempt_str(item_by_number(issue_num), rebuild_cap)}"
             if r["target"]:
                 print(
                     f"   {t:<7} {r['glyph']} {r['verb']:<9} {r['issue']:<4} → "
