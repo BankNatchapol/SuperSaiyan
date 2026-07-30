@@ -13,7 +13,10 @@ the layout as a single Python pass.
 What it does:
   1. Resolve config slug: arg | `.claude/supersaiyan/active` | sole config.
   2. ONE GraphQL call for project items (number, title, labels, Status).
-  3. ONE `gh issue view` per Blocked/Skipped card for reason-tag extraction.
+  3. ONE `gh issue view` per card that needs it: Blocked/Skipped cards (for
+     reason-tag extraction) and any card with a `loop:rebuild-N` label (for
+     the same-issue root-cause-hash streak). One fetch serves both when a
+     card needs both.
   4. Read today's manifest and pipe everything to the locked-template
      renderer that prints the 80-col snapshot matching the spec in
      references/status.md.
@@ -83,6 +86,11 @@ DISPATCH_RE = re.compile(r"dispatch lane=(build|qa|review) issue=#(\d+) pid=(\d+
 REAP_RE = re.compile(r"reaped stale lock\b[^#]*#(\d+) \(pid=(\d+|empty)\)")
 ZOMBIE_RE = re.compile(r"zombie [a-z]+ worker on #(\d+) \(pid=(\d+)\)(.*)$")
 ALERT_RE = re.compile(r"block-rate alert: (.+)$")
+# Lanes post `root-cause-hash: <hex>` in their failure handoff comments (see
+# run.md's "Root-cause hash" section) — this is what the rebuild-cap gate
+# actually compares, one consecutive pair at a time. Not a manifest line, so
+# it's parsed from `gh issue view --json comments`, not the log.
+HASH_RE = re.compile(r"root-cause-hash:\s*([0-9a-f]{8,16})")
 
 
 # ───────────────────────────── pure helpers ─────────────────────────────
@@ -164,7 +172,7 @@ def parse_manifest(text: str, today_iso: str) -> dict[str, Any]:
             recents.append({
                 "epoch": ep, "verb": "dispatch", "glyph": LANE_GLYPH[lane],
                 "issue": f"#{issue}", "target": LANE_LABEL[lane],
-                # `attempt N/X` is filled in at render time from current
+                # attempt detail is filled in at render time from current
                 # labels — the manifest doesn't encode it at dispatch time.
                 "detail": "",
             })
@@ -271,28 +279,70 @@ def rebuild_count(item: dict[str, Any] | None) -> int:
     return 0
 
 
-def attempt_str(item: dict[str, Any] | None, rebuild_cap: int | None) -> str:
-    """`attempt N/X` derived from the issue's current `loop:rebuild-N` label.
+def trailing_hash_streak(comments: list[dict[str, Any]]) -> int:
+    """Count consecutive trailing `root-cause-hash` comments sharing the latest hash.
 
-    `X` is `rebuild_cap + 1` (the total attempt budget the cap gate allows —
-    the initial attempt plus `rebuild_cap` rebuilds). `rebuild_cap: null` in
-    config means unlimited: no denominator, just the raw attempt count.
+    This is the number `rebuild_cap` actually gates on — the SAME root cause
+    recurring on consecutive attempts — not the total rebuild count. Pure
+    function (no I/O) so it can be unit-tested against hand-built comment
+    fixtures; the caller is responsible for fetching `comments` via `gh`.
     """
-    n = rebuild_count(item) + 1
+    ordered = sorted(comments, key=lambda c: c.get("createdAt", ""))
+    hashes = [m.group(1) for c in ordered if (m := HASH_RE.search(c.get("body") or ""))]
+    if not hashes:
+        return 0
+    latest = hashes[-1]
+    streak = 0
+    for h in reversed(hashes):
+        if h != latest:
+            break
+        streak += 1
+    return streak
+
+
+def attempt_str(
+    item: dict[str, Any] | None,
+    rebuild_cap: int | None,
+    same_issue: int | None,
+) -> str:
+    """Attempt detail for the Workers/Recent sections.
+
+    A fresh card (no `loop:rebuild-N` label yet) renders a bare number —
+    there's nothing to compare against yet. Once at least one rebuild has
+    happened, renders the true, uncapped total attempt count AND the
+    same-issue streak (`same_issue`, `None` if it couldn't be fetched):
+    how many consecutive attempts have shared the CURRENT root-cause-hash,
+    which is what `rebuild_cap` actually blocks on. The total is never
+    capped at `rebuild_cap` — a card can run well past its nominal budget
+    if every failure is a genuinely different root cause, and the display
+    must show that instead of freezing.
+    """
+    k = rebuild_count(item)
+    total = k + 1
+    if k == 0:
+        return str(total)
+    if same_issue is None:
+        return f"{total} total"
     if rebuild_cap is None:
-        return str(n)
-    budget = rebuild_cap + 1
-    return f"{min(n, budget)}/{budget}"
+        return f"{total} total · {same_issue} same-issue"
+    return f"{total} total · {same_issue}/{rebuild_cap} same-issue"
 
 
-def rebuild_suffix(item: dict[str, Any], rebuild_cap: int | None) -> str:
+def rebuild_suffix(
+    item: dict[str, Any],
+    rebuild_cap: int | None,
+    same_issue: int | None,
+) -> str:
+    """Compact `↻` badge appended to a Kanban title. Empty for a fresh card."""
     k = rebuild_count(item)
     if not k:
         return ""
+    total = k + 1
+    if same_issue is None:
+        return f"↻ {total}"
     if rebuild_cap is None:
-        return f"↻ {k + 1}"
-    budget = rebuild_cap + 1
-    return f"↻ {min(k + 1, budget)}/{budget}"
+        return f"↻ {total}·{same_issue}"
+    return f"↻ {total}·{same_issue}/{rebuild_cap}"
 
 
 REASON_TABLE: list[tuple[str, str]] = [
@@ -557,13 +607,24 @@ def main() -> int:
         for s in ("Backlog", "Ready", "Building", "QA", "Review", "Done", "Blocked", "Skipped")
     }
 
-    # ── fetch reason-tag comments for Blocked + Skipped only ──
-    # Skip silently on error so a stale token doesn't break the rest of the
-    # snapshot. The body is capped at 4000 chars; emojis in the locked
+    # ── fetch per-issue comments once, for whichever of two purposes apply ──
+    # Blocked/Skipped cards need their latest comment for reason-tag
+    # extraction; any card with a `loop:rebuild-N` label (rebuild_count >= 1)
+    # needs its root-cause-hash history for the same-issue streak. A single
+    # card is very often both (it's usually a repeated hash that got it
+    # blocked) — fetch once per issue, reuse for both, instead of hitting
+    # `gh` twice. Fresh cards with no rebuild yet cost nothing here. Skip
+    # silently on error so a stale token doesn't break the rest of the
+    # snapshot. Reason bodies are capped at 4000 chars; emojis in the locked
     # vocabulary land at the top of any well-formed reason-tag comment.
     reasons: dict[int, str] = {}
-    for it in by_status["Blocked"] + by_status["Skipped"]:
-        n = it["number"]
+    streaks: dict[int, int] = {}
+    needs_comments = {
+        it["number"]: it
+        for it in items
+        if it["status"] in ("Blocked", "Skipped") or rebuild_count(it) >= 1
+    }
+    for n, it in needs_comments.items():
         out = gh("issue", "view", str(n), "--json", "comments", check=False)
         if not out:
             continue
@@ -571,9 +632,12 @@ def main() -> int:
             comments = json.loads(out).get("comments") or []
         except json.JSONDecodeError:
             continue
-        comments.sort(key=lambda c: c.get("createdAt", ""))
-        body = (comments[-1].get("body") if comments else "") or ""
-        reasons[n] = body[:4000]
+        if it["status"] in ("Blocked", "Skipped"):
+            ordered = sorted(comments, key=lambda c: c.get("createdAt", ""))
+            body = (ordered[-1].get("body") if ordered else "") or ""
+            reasons[n] = body[:4000]
+        if rebuild_count(it) >= 1:
+            streaks[n] = trailing_hash_streak(comments)
 
     # ── parse manifest ──
     manifest_text = manifest_path.read_text() if manifest_path.is_file() else ""
@@ -723,7 +787,7 @@ def main() -> int:
                 n = it["number"]
                 glyph = glyph_for_issue(n)
                 left = f"{glyph} #{n}  {it['title']}"
-                suffix = rebuild_suffix(it, rebuild_cap)
+                suffix = rebuild_suffix(it, rebuild_cap, streaks.get(n))
                 if suffix:
                     budget = 76 - visual_width(suffix) - 1
                     if visual_width(left) > budget:
@@ -803,8 +867,9 @@ def main() -> int:
                         if l.startswith("loop:") and not l.startswith("loop:in-")
                     ]
                 extra = (" · " + ", ".join(extras)) if extras else ""
+                attempt = attempt_str(item, rebuild_cap, streaks.get(int(v["issue"])))
                 print(
-                    f"   {glyph} {role}  #{v['issue']}  attempt {attempt_str(item, rebuild_cap)} · "
+                    f"   {glyph} {role}  #{v['issue']}  attempt {attempt} · "
                     f"{worker_dur(v['ts'])}{extra}"
                 )
 
@@ -832,7 +897,7 @@ def main() -> int:
     else:
         for r in recents:
             t = t_minus(r["epoch"])
-            # Dispatch detail (`attempt N/X`) is filled in at render time
+            # Dispatch detail (`attempt N total · S/cap same-issue`) is filled in at render time
             # because the manifest doesn't encode the rebuild count at
             # dispatch time — the number shown reflects the issue's *current*
             # label. Live workers in the §Workers block above use the same
@@ -840,7 +905,8 @@ def main() -> int:
             detail = r["detail"]
             if r["verb"] == "dispatch" and not detail:
                 issue_num = int(r["issue"].lstrip("#"))
-                detail = f"attempt {attempt_str(item_by_number(issue_num), rebuild_cap)}"
+                attempt = attempt_str(item_by_number(issue_num), rebuild_cap, streaks.get(issue_num))
+                detail = f"attempt {attempt}"
             if r["target"]:
                 print(
                     f"   {t:<7} {r['glyph']} {r['verb']:<9} {r['issue']:<4} → "

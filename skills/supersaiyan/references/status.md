@@ -164,18 +164,18 @@ mode:   auto-merge                 truth gate: non-trivial (≥70)
 └──────────────────────────────────────────────────────────────────────────────┘
 
 ▎Workers  (claim: LucariusWest · 2/3 active)
-   🔨 Builder  #26  attempt 2/3 · 6m · loop:rebuild-1
-   🔍 Tester   #29  attempt 1/3 · 6m
+   🔨 Builder  #26  attempt 2 total · 1/2 same-issue · 6m · loop:rebuild-1
+   🔍 Tester   #29  attempt 1 · 6m
 
 ▎Block reasons
    🛡 ×1  dependency gate    #25 → waiting on #24
 
 ▎Recent  (last 5 manifest events)
-   T-6m    🔨 dispatch  #26 → Builder  attempt 2/3
-   T-6m    🔍 dispatch  #29 → Tester   attempt 1/3
+   T-6m    🔨 dispatch  #26 → Builder  attempt 2 total · 1/2 same-issue
+   T-6m    🔍 dispatch  #29 → Tester   attempt 1
    T-6m    ♻ reap      #29 stale lock + assignee swept
    T-16m   ♻ reap      #26 stale lock + assignee swept
-   T-22m   🔨 dispatch  #29 → Builder  attempt 1/3
+   T-22m   🔨 dispatch  #29 → Builder  attempt 1
 
 ▎Health
    last tick: 93s ago    run started: 67m ago    workers: 2/3    worktrees cleaned: 5
@@ -225,7 +225,12 @@ Inside a Kanban box, one line per issue:
 - **#NNN**: issue number, left-padded to keep title column aligned.
 - **title**: truncated to `…` to fit the remaining budget after the suffix.
 - **suffix** (right-justified):
-  - In-flight rebuild: `↻ N/3` (from `loop:rebuild-N` label)
+  - In-flight rebuild: `↻ <total>·<same-issue>/<rebuild_cap>` (`<total>` is the
+    true, uncapped `loop:rebuild-N` + 1; `<same-issue>` is how many
+    consecutive attempts share the CURRENT root-cause-hash — the number
+    `rebuild_cap` actually blocks on. `<total>` alone, no `·<same-issue>/…`,
+    if the streak couldn't be fetched. No `/<rebuild_cap>` at all when
+    `rebuild_cap` is `null` (unlimited).)
   - Blocked: `— <reason glyph> <short reason>` or `— gated on #N`
   - Skipped: `— ⏭ <short reason>`
   - Otherwise: empty
@@ -241,12 +246,16 @@ than ~12 issues at 80-col width, truncate with `… +N more` at the end.
 One line per in-flight worker, sorted by lane (Builder, Tester, Reviewer):
 
 ```
-   <glyph> <Role-padded-to-8>  #<NNN>  attempt <a>/3 · <Nm> · <extra-labels>
+   <glyph> <Role-padded-to-8>  #<NNN>  attempt <detail> · <Nm> · <extra-labels>
 ```
 
-Where `<Nm>` is "minutes since the most recent `dispatch lane=…` line for that
-issue in the run manifest". `<extra-labels>` lists any other meaningful
-`loop:*` labels (e.g. `loop:rebuild-1`), comma-separated, omitted when none.
+`<detail>` is a bare number (e.g. `1`) for a fresh card with no rebuild yet, or
+`<total> total · <same-issue>/<rebuild_cap> same-issue` once at least one
+rebuild has happened (see §C's suffix rule — same total/same-issue values,
+spelled out instead of compacted). `<Nm>` is "minutes since the most recent
+`dispatch lane=…` line for that issue in the run manifest". `<extra-labels>`
+lists any other meaningful `loop:*` labels (e.g. `loop:rebuild-1`),
+comma-separated, omitted when none.
 
 ### §F — Block-reasons section format
 
@@ -312,7 +321,7 @@ Pick from this set only. If a runtime situation doesn't match, fall back to
 
 | Glyph | Meaning                                  |
 | ----- | ---------------------------------------- |
-| ↻     | rebuild iteration (`attempt N/3`)        |
+| ↻     | rebuild iteration (`attempt <total> total · <same-issue>/<cap>`) |
 | ✅    | pass / merged / lane-complete            |
 | ⛔    | blocked transition (Ready → Blocked)     |
 | ⏭    | skipped transition (Ready → Skipped)     |
@@ -375,10 +384,16 @@ the script is missing.
   `title`, `labels{nodes{name}}`, and the `Status` single-select field —
   ≈3 KB total. Group locally by Status for column counts; filter the same
   `labels` array for `loop:in-{builder,tester,reviewer}` to identify
-  in-flight workers per lane; `loop:rebuild-N` feeds the `↻ N/3` suffix.
+  in-flight workers per lane; `loop:rebuild-N` feeds the `↻` suffix's total.
   Deliberately avoids `gh project item-list --format json` (≈100 KB — it
   slurps every issue body) and any separate `gh issue list --assignee` call.
   Do **not** call `gh project item-edit` or any mutation in this verb.
+- **Same-issue streak:** for any card with `loop:rebuild-N` (N ≥ 1), fetch its
+  comments (`gh issue view --json comments`) and count how many trailing
+  comments share the latest `root-cause-hash` — this is what `rebuild_cap`
+  actually gates on, not the total rebuild count. Shares the same fetch as
+  block-reason parsing below when a card needs both (usually true for a
+  Blocked card), so this never doubles the `gh` call count for that card.
 - **Block-reason parsing:** for each issue in `Blocked` or `Skipped`, read the
   latest §4 reason-tag comment via `gh issue view <N> --json comments` and
   match the leading emoji against §I. Cache results during the snapshot — do
