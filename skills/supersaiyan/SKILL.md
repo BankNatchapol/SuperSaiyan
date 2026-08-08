@@ -1,6 +1,6 @@
 ---
 name: supersaiyan
-description: End-to-end AI development pipeline — idea to merged PR with one command set. Handles brainstorming, spec writing, task decomposition, issue filing, and autonomous Build → QA → Review execution. Use when the user types "/supersaiyan", "supersaiyan", or any supersaiyan verb (new, setup, prepare, run, status, lint, stop).
+description: End-to-end AI development pipeline — idea to merged PR with one command set. Handles brainstorming, spec writing, task decomposition, issue filing, and autonomous Build → QA → Review execution. Default entry point for GitHub-issue / board-task work in this toolkit — prefer this over calling super-build, super-qa, super-review, or super-board directly. Use when the user types "/supersaiyan", "supersaiyan", any supersaiyan verb (new, setup, prepare, run, status, lint, stop), or plain-English asks like "fix the issue", "implement issue #N", "solve the Ready card", "work the board task", or "do the next issue".
 ---
 
 # SuperSaiyan

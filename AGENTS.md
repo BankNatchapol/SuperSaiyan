@@ -224,23 +224,26 @@ export GH_PROJECT_OWNER=@me GH_PROJECT_NUMBER=<n>
 
 ```text
 /supersaiyan prepare <feature-slug>
-/super-board run <slug>
+/supersaiyan run
 ```
 
 ---
 
 ## Skill routing for agents (read this)
 
-When the user asks to **fix / implement / solve a GitHub issue**, a **board task**, or a **Ready card** — in this repo or an app repo — **read and follow `skills/super-build/SKILL.md` first** (or the installed `super-build` skill). Do not freestyle from `gh issue view` alone.
+**Default entry point is always `supersaiyan`.** Do not freestyle from `gh issue view`, and do not jump straight to `super-build` / `super-board` / `super-qa` / `super-review` as the top-level skill — those are lanes inside the supersaiyan pipeline.
 
-| User ask | Skill to use |
+When the user asks to **fix / implement / solve a GitHub issue**, work a **board task** / **Ready card**, drain the board, or otherwise make pipeline progress: **read and follow `skills/supersaiyan/SKILL.md`** (or the installed `supersaiyan` skill), then use the matching verb (`run`, `prepare`, `status`, `lint`, `stop`, …).
+
+| User ask | Skill / verb |
 |----------|----------------|
-| Fix / implement / solve issue `#N`, Ready card, board task | **super-build** (outer workflow: worktree, claim, ACs, close/move) |
-| Skills listed in the issue Notes / body (e.g. TDD, verification) | Use **inside** the super-build worker path — they are not a substitute for it |
-| Drain the board / autonomous Build→QA→Review | **super-board** / `/supersaiyan run` |
-| Spec → task files → Ready issues | refining-spec → writing-board-tasks → `/supersaiyan prepare` |
+| Fix / implement / solve issue `#N`, Ready card, board task, “do the next issue” | **supersaiyan** → usually `run` (or `status` first if unclear) |
+| Drain the board / autonomous Build→QA→Review | **supersaiyan run** |
+| Spec → task files → Ready issues | **supersaiyan prepare** (or refining-spec → writing-board-tasks → prepare) |
+| Skills listed in the issue Notes / body (e.g. TDD, verification) | Use **inside** the supersaiyan worker path — not a substitute for it |
+| `super-build` / `super-qa` / `super-review` / `super-board` | Internal lane skills — only when supersaiyan (or the user) explicitly routes there |
 
-Trigger phrases for super-build include plain English (“fix the first issue”, “implement #3”), not only `/super-build`.
+Trigger phrases for supersaiyan include plain English (“fix the first issue”, “implement #3”, “work the board”), not only `/supersaiyan`.
 
 ---
 
