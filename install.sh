@@ -111,17 +111,6 @@ fi
 echo
 echo "Installing pipeline scripts"
 
-if [ -d "$SAIYAN/scripts/platforms" ]; then
-  rm -rf "$TARGET/.claude/bin/platforms"
-  cp -RL "$SAIYAN/scripts/platforms" "$TARGET/.claude/bin/platforms"
-  # Bash platform contracts are sourced; Python status_adapter is imported by
-  # super-board-status.py from this same directory.
-  chmod +x "$TARGET/.claude/bin/platforms/"*.sh 2>/dev/null || true
-  ok "platforms/ (git_platform contract + status_adapter.py)"
-else
-  fail "scripts/platforms/ not found"
-fi
-
 for script in super-board-run.sh super-board-gh-guard.sh super-board-status.py super-board-wave-plan.sh tasks-to-issues.sh; do
   src="$SAIYAN/scripts/$script"
   dst="$TARGET/.claude/bin/$script"
