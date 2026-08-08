@@ -49,8 +49,19 @@ Skipped comments use the same template with `🤷 super-board · <lane> · SKIPP
 | 🛡    | Safety / destructive        | would drop a table, would push to prod, would rotate live secrets        |
 | 🧑    | Human review needed         | unresolved human PR comment, design decision, branding choice            |
 | 🤷    | Out-of-scope                | wrong project, deferred to other milestone, manual-only ticket           |
+| 🔁    | Superseded                  | same deliverable covered by another issue; running both would conflict   |
 | 📦    | Wrong-place                 | belongs on a different board / repo                                      |
 | 🎨    | Pure design                 | no measurable AC; needs design pass first                                |
+
+## Superseded skips — auto-close rule
+
+When the reason emoji is 🔁 (superseded), the agent **must also close the issue** immediately after posting the skip comment and moving the card:
+
+```bash
+gh issue close <N> --comment "Closing — superseded by #<M> which covers the same deliverable. Reopen if #<M> does not land."
+```
+
+All other skip types leave the issue open. A deferred or out-of-scope skip (🤷) stays open so the next run can retry or a human can drag it back to Ready.
 
 ## Hard rule
 

@@ -128,7 +128,15 @@ SuperSaiyan is self-contained — no separate tool installs required:
 
 ```bash
 ./tests/test-supersaiyan-prepare.sh
+python3 tests/test-reference-sync.py
+./tests/test-backend-contract.sh
 ```
+
+`test-reference-sync.py` checks that `skills/supersaiyan/references/*` matches the generated
+output of `skills/super-board/references/*` — see `scripts/generate-supersaiyan-references.sh`.
+`test-backend-contract.sh` statically checks that every `scripts/backends/*.sh` implements the
+full worker-backend contract (no live CLI calls — see
+`skills/super-board/references/backends.md`).
 
 For the desktop Control Center:
 

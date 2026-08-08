@@ -1,3 +1,5 @@
+<!-- GENERATED FILE — edit skills/super-board/references/block-template.md, then run scripts/generate-supersaiyan-references.sh to regenerate. Do not hand-edit. -->
+
 # Block & Skip exit template
 
 Pointer: spec `docs/superpowers/specs/2026-05-21-super-board-design.md` §4 "Cross-cutting: Block & Skip exits".

@@ -56,6 +56,18 @@ One command set. Idea → merged PR.
 
 ---
 
+## Golden rule: never implement issue work directly on the primary branch
+
+This applies even outside `run` — including a quick ad hoc "just implement issue #N" ask that doesn't go through any verb above. Before writing a single line of code for a GitHub issue:
+
+1. Run `git branch --show-current`. If it prints the repo's default/base branch (typically `main`), **stop before implementing** — create an issue-scoped branch first (`git checkout -b issue-N-<slug>`), or let `run` dispatch a proper isolated worktree (`references/run.md` → Builder lifecycle).
+2. Never `git commit` issue-scoped changes while on the default branch in the primary worktree, even if you plan to "branch it afterward." Branch *before* implementing, not after.
+3. This is independent of the merge/close gating in `super-build/SKILL.md`'s Autonomy preflight — that governs whether a *finished* PR gets merged. This rule governs where the work happens in the first place, and applies whether or not `super-build` is invoked at all.
+
+If you find yourself with uncommitted issue work already sitting on the default branch: branch from here (`git checkout -b issue-N-<slug>`) before committing — don't commit to the default branch to "save the work," and don't discard it either.
+
+---
+
 ## Config
 
 Config lives at `.claude/supersaiyan/configs/<slug>.json`. Created by `setup`.
@@ -120,13 +132,13 @@ For multi-phase projects, `spec.md` routes to `references/project.md` which hand
 
 ---
 
-## Internal pipeline skills
+## Internal pipeline skills — do not invoke directly for issue work
 
-These skills power the autonomous loop. Users do not invoke them directly:
+These skills power the autonomous loop. **Do not invoke `super-build`, `super-qa`, or `super-review` directly to fix, implement, or close a GitHub issue** — even if the phrasing sounds like it names one of them. Route through this skill's `run` verb (`references/run-workflow.md`); it resolves config and dispatches with the `Read run.md → <Lane> lifecycle. Config: <path>.` instruction those skills need to behave safely. `super-build` does still guard itself if invoked directly (see its own Autonomy preflight) — but the correct path is through `run`, not through catching that guard.
 
-- `super-build` — Builder lane agent (implements code, opens PR)
+- `super-build` — Builder lane agent (implements code, opens PR; never merges/closes on its own)
 - `super-qa` — QA lane agent (runs tests, captures evidence)
-- `super-review` — Reviewer lane agent (reruns tests, merge readiness)
+- `super-review` — Reviewer lane agent (reruns tests, merge readiness; the only lane that merges/closes)
 - `refining-spec` — Tightens a design into a pipeline-ready spec
 - `writing-board-tasks` — Decomposes spec into PR-sized task files
 - `test-driven-development` — TDD discipline used by Builder agent

@@ -1,3 +1,5 @@
+<!-- GENERATED FILE — edit skills/super-board/references/status.md, then run scripts/generate-supersaiyan-references.sh to regenerate. Do not hand-edit. -->
+
 # `super-board status` — read-only live snapshot
 
 > **Source of truth:** spec §7.5 in

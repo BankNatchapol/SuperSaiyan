@@ -38,6 +38,8 @@ Accept any of these inputs:
 
 If the input is ambiguous, default to reviewing the current branch against its upstream/base branch. Ask only when the base branch, PR, or target scope materially changes the result.
 
+**Publishing is the default, not an opt-in.** Whenever scope resolves to a GitHub issue and/or PR — whether you were invoked by a human ("review issue 2", "review PR #17") or by super-board — the result gets posted to GitHub as well as reported in chat. See "Publish to GitHub" below. A review that only exists in chat is incomplete: it leaves no trail on the issue/PR for anyone who looks there next (including QA/Build history that already lives on that thread).
+
 ## Review flow
 
 1. **Establish scope**
@@ -80,6 +82,11 @@ If the input is ambiguous, default to reviewing the current branch against its u
    - Include verification commands and results.
    - Include which Super workflow should own each fix.
 
+7. **Publish to GitHub** (whenever scope includes a GitHub issue and/or PR)
+   - Resolve where the breadcrumb goes: an explicit issue number given by the user; otherwise the issue linked from the PR (`gh pr view <N> --json closingIssuesReferences`); otherwise the PR itself if no linked issue exists.
+   - Post one comment there with the glyph-prefixed heading + full report body — see "Publish to GitHub" below for the exact format and command.
+   - This step runs regardless of who invoked the review (human in chat, or super-board dispatch). It is independent of merge/close/card-move authority — see "What publishing does NOT do" below.
+
 ## Output format
 
 ```markdown
@@ -113,6 +120,59 @@ For Telegram summaries, keep it short and phone-friendly:
 - **Next:** route functional bug to Super QA, schema decision to human gate
 ```
 
+## Publish to GitHub
+
+Once verification (step 5) is done and the report (step 6) is written, post it. This applies to
+every review whose scope includes a GitHub issue and/or PR — plain-branch-only reviews with
+nothing to link against are the only case with no publish target.
+
+**Where it goes** — one comment, not a duplicate on both sides:
+- Issue number known (given directly, or resolved from the PR via `gh pr view <PR> --json
+  closingIssuesReferences`) → post there. This matches where Build and QA already post their
+  breadcrumbs on this pipeline, so a reader following one issue thread sees the whole history.
+- No linked issue exists → post on the PR instead.
+
+**Heading glyph** — reuse the pipeline's existing vocabulary so this reads as one system with
+Build/QA comments, not a different bot:
+- `merge-ready` → `✅ Super Review — merge-ready`
+- `blocked` → `🛡 Super Review — blocked`
+- `human-gated` → `🧑 Super Review — human-gated`
+- `unverified` → `❓ Super Review — unverified`
+
+**Body** — the same content as the Output format template above (scope, base, verification,
+findings by severity, merge-readiness statement). Do not write a shorter or different version
+for GitHub than what you told the user in chat — they should match.
+
+**Command:**
+
+```bash
+gh issue comment <N> --body "$(cat <<'EOF'
+## ✅ Super Review — merge-ready
+
+- Scope: ...
+- Base: ...
+- Verification: ...
+
+### Blockers
+...
+EOF
+)"
+```
+
+(swap `issue comment <N>` for `pr comment <N>` when posting to the PR instead.)
+
+**What publishing does NOT do.** Posting this comment is not merge authority, not a formal
+`gh pr review` approval, and not a card move. Those stay gated exactly as before:
+- Merging, closing the issue, deleting the branch, moving a Project card — only under the
+  super-board-dispatched Reviewer lifecycle (below), or with explicit user authorization in
+  the current conversation.
+- Opening line-level review threads for individual blockers still uses the `[builder]` / `[QA]`
+  / `[review]` prefix discipline described under "super-board integration" — that convention
+  applies to any review thread Super Review opens, not only ones opened during a board dispatch.
+
+If `gh` cannot post (auth failure, no network, repo not found), say so explicitly in the chat
+report rather than silently skipping the publish step.
+
 ## Review Loop behavior
 
 When Super Orchestrator runs **Review Loop**, use this sequence:
@@ -144,6 +204,9 @@ Super Review is done when one of these is true:
 ## super-board integration
 
 When invoked by super-board (env `SUPER_BOARD_RUN=1` or invocation contains "super-board run"):
+this section governs worktree handoff, card moves, merge authority, and the truth-gate — not
+whether a comment gets posted at all. Publishing the review result to GitHub (previous section)
+happens on every review with an issue/PR in scope, manual or dispatched alike.
 
 ### State protocol
 - Read from issue + PR comments + PR review threads.
@@ -157,7 +220,11 @@ When invoked by super-board (env `SUPER_BOARD_RUN=1` or invocation contains "sup
 See `.claude/skills/super-board/references/run.md` → Reviewer. Summary of 8 sub-steps:
 
 1. Worktree from current state of `issue-<N>-<slug>`.
-2. **Gate 1 — thread scan.** If ANY unresolved PR thread:
+2. **Gate 1 — thread scan.** For each unresolved PR thread, first narrowly
+   re-verify the specific file:line it flagged at current branch HEAD (not a
+   full review) — if a later commit already fixed it, Reviewer resolves the
+   thread itself via `resolveReviewThread` and continues. Only genuinely-open
+   or inconclusive threads bounce:
    - `[builder]` open → comment, move card Review → Ready.
    - `[QA]` open → comment, move card Review → QA.
    - Both open → bounce to whichever is older.

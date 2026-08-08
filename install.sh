@@ -2,9 +2,17 @@
 # SuperSaiyan installer — copies skills + pipeline scripts into any repo.
 #
 # Usage:
-#   ./install.sh                  # install into current directory
-#   ./install.sh /path/to/app     # install into specific repo
-#   ./install.sh --check          # verify install without changing files
+#   ./install.sh                     # install into current directory
+#   ./install.sh /path/to/app        # install into specific repo
+#   ./install.sh --check             # verify install without changing files
+#   ./install.sh --keep-local-skills # keep/copy .claude/skills/ locally even if the
+#                                       Claude Code plugin is installed — required when any
+#                                       board config uses worker_backend "codex-exec" or
+#                                       "cursor-agent", since those CLIs have no plugin skill
+#                                       cache and can only read files that physically exist in
+#                                       the target repo. Re-run with this flag any time after
+#                                       onboarding a non-Claude backend (see
+#                                       references/onboard.md step 2 and references/backends.md).
 #
 # After install, open Claude Code in the target repo and run:
 #   /supersaiyan setup
@@ -14,10 +22,12 @@ set -euo pipefail
 SAIYAN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="$PWD"
 CHECK_ONLY=false
+KEEP_LOCAL_SKILLS=false
 
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK_ONLY=true ;;
+    --keep-local-skills) KEEP_LOCAL_SKILLS=true ;;
     -*) echo "Unknown flag: $arg" >&2; exit 64 ;;
     *) TARGET="$arg" ;;
   esac
@@ -73,10 +83,14 @@ same_path() {
 PLUGIN_INSTALLED=false
 if claude plugin list 2>/dev/null | grep -q "supersaiyan"; then
   PLUGIN_INSTALLED=true
-  echo "  (supersaiyan plugin detected — skipping local skill copies to avoid duplicates)"
+  if [ "$KEEP_LOCAL_SKILLS" = true ]; then
+    echo "  (supersaiyan plugin detected, but --keep-local-skills given — copying anyway for codex-exec/cursor-agent workers)"
+  else
+    echo "  (supersaiyan plugin detected — skipping local skill copies to avoid duplicates)"
+  fi
 fi
 
-if [ "$PLUGIN_INSTALLED" = false ]; then
+if [ "$PLUGIN_INSTALLED" = false ] || [ "$KEEP_LOCAL_SKILLS" = true ]; then
   for skill in supersaiyan super-board super-build super-qa super-review refining-spec writing-board-tasks test-driven-development verification-before-completion; do
     src="$SAIYAN/skills/$skill"
     dst="$TARGET/.claude/skills/$skill"
@@ -120,6 +134,15 @@ if [ -d "$SAIYAN/scripts/platforms" ]; then
   ok "platforms/ (git_platform contract + status_adapter.py)"
 else
   fail "scripts/platforms/ not found"
+fi
+
+if [ -d "$SAIYAN/scripts/backends" ]; then
+  rm -rf "$TARGET/.claude/bin/backends"
+  cp -RL "$SAIYAN/scripts/backends" "$TARGET/.claude/bin/backends"
+  chmod +x "$TARGET/.claude/bin/backends/"*.sh
+  ok "backends/ (worker_backend contract: claude-p, codex-exec, cursor-agent)"
+else
+  fail "scripts/backends/ not found"
 fi
 
 for script in super-board-run.sh super-board-gh-guard.sh super-board-status.py super-board-wave-plan.sh tasks-to-issues.sh; do

@@ -68,11 +68,15 @@ mkdir -p "$SMOKE_DIR/.claude/supersaiyan/configs" \
          "$SMOKE_DIR/.claude/supersaiyan/inflight" \
          "$SMOKE_DIR/docs/supersaiyan/runs" \
          "$SMOKE_DIR/.worktrees" \
-         "$SMOKE_DIR/scripts/platforms"
+         "$SMOKE_DIR/scripts/platforms" \
+         "$SMOKE_DIR/scripts/backends"
 
-# Installed-layout mirror: run.sh beside platforms/ (install.sh copies both into .claude/bin/).
+# Installed-layout mirror: run.sh beside platforms/ + backends/ (install.sh copies all three
+# into .claude/bin/). worker_backend gate runs before the platform gate, so both contracts
+# must be present for the smoke run to reach the platform-rewire behavior under test.
 cp "$RUN_SH" "$SMOKE_DIR/scripts/super-board-run.sh"
 cp "$ROOT/scripts/platforms/github.sh" "$SMOKE_DIR/scripts/platforms/github.sh"
+cp "$ROOT/scripts/backends/claude-p.sh" "$SMOKE_DIR/scripts/backends/claude-p.sh"
 chmod +x "$SMOKE_DIR/scripts/super-board-run.sh"
 
 cat > "$SMOKE_DIR/.claude/supersaiyan/configs/smoke.json" <<'EOF'

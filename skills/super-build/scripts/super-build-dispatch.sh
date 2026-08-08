@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# super-build-dispatch.sh — dispatch a single GitHub issue to a headless `claude -p` worker.
+# super-build-dispatch.sh — dispatch a single GitHub issue to a headless worker.
 #
 # Contract (per .claude/skills/super-build/SKILL.md):
 #   - Arg: issue number N
-#   - Env: BASE_BRANCH (required) — the branch the worktree is created from
-#          REPO_DIR    (optional) — defaults to PWD; the working repo root
-#          SKILL_DIR   (optional) — defaults to the dir this script lives in's parent
-#          MAX_TURNS   (optional) — default 250
+#   - Env: BASE_BRANCH    (required) — the branch the worktree is created from
+#          REPO_DIR       (optional) — defaults to PWD; the working repo root
+#          SKILL_DIR      (optional) — defaults to the dir this script lives in's parent
+#          MAX_TURNS      (optional) — default 250 (claude-p backend only)
+#          WORKER_BACKEND (optional) — default "claude-p"; also "codex-exec"/"cursor-agent".
+#                          See .claude/skills/super-board/references/backends.md.
 #   - Side effects:
 #       * git worktree add -b loop/issue-N .worktrees/issue-N BASE_BRANCH
-#       * runs `claude -p` inside that worktree with the composed prompt
+#       * runs the configured backend's worker CLI inside that worktree with the composed prompt
 #       * captures stdout+stderr to .planning/super-build-logs/issue-N.log
 #   - Exit codes:
 #       0  success           — worker produced `chore(loop): close #N` commit on loop/issue-N
-#       2  worker non-zero   — `claude -p` exited non-zero AND no recognizable done/WIP marker
-#       3  no done-commit    — `claude -p` exited zero but no `chore(loop): close #N` commit
+#       2  worker non-zero   — worker exited non-zero AND no recognizable done/WIP marker
+#       3  no done-commit    — worker exited zero but no `chore(loop): close #N` commit
 #       4  HUMAN GATE        — log contains `HUMAN GATE TRIPPED:`
 #       5  WIP-PARTIAL       — log final assistant message starts with `WIP-PARTIAL:` AND
 #                              a `wip(loop): #N partial` commit exists on the branch
@@ -47,6 +49,27 @@ REPO_DIR="${REPO_DIR:-$PWD}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="${SKILL_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 MAX_TURNS="${MAX_TURNS:-250}"
+WORKER_BACKEND="${WORKER_BACKEND:-claude-p}"
+
+# Backend contract (see .claude/skills/super-board/references/backends.md). Installed layout:
+# .claude/bin/backends/<name>.sh (repo-root-relative, same dir install.sh copies alongside
+# super-board-run.sh). Dev-repo fallback: scripts/backends/<name>.sh relative to this script's
+# own location (skills/super-build/scripts/ -> repo root -> scripts/backends/).
+BACKEND_FILE="$REPO_DIR/.claude/bin/backends/${WORKER_BACKEND}.sh"
+if [[ ! -f "$BACKEND_FILE" ]]; then
+  BACKEND_FILE="$SCRIPT_DIR/../../../scripts/backends/${WORKER_BACKEND}.sh"
+fi
+if [[ ! -f "$BACKEND_FILE" ]]; then
+  echo "error: backend contract not found for worker_backend=${WORKER_BACKEND} (looked in .claude/bin/backends/ and scripts/backends/)" >&2
+  exit 64
+fi
+# shellcheck disable=SC1090
+source "$BACKEND_FILE"
+
+if ! backend_auth_check; then
+  echo "error: backend '${WORKER_BACKEND}' failed its auth check — see message above." >&2
+  exit 64
+fi
 
 PREAMBLE="$SKILL_DIR/references/worker-preamble.md"
 if [[ ! -f "$PREAMBLE" ]]; then
@@ -100,6 +123,7 @@ ISSUE_TITLE=$(printf '%s' "$ISSUE_JSON" | jq -r '.title')
 ISSUE_BODY=$(printf '%s' "$ISSUE_JSON" | jq -r '.body')
 
 {
+  printf '%s' "$(backend_worker_addendum)"
   cat "$PREAMBLE"
   printf '\n# Issue #%s — %s\n\n' "$N" "$ISSUE_TITLE"
   printf '%s\n' "$ISSUE_BODY"
@@ -119,16 +143,16 @@ BASE_SHA=$(git -C "$WORKTREE_DIR" rev-parse HEAD)
 
 echo "▶︎ dispatching worker for issue #$N — worktree $WORKTREE_DIR — base $BASE_BRANCH @ ${BASE_SHA:0:7}" | tee -a "$LOG_FILE"
 
-# Run the worker. stdin gets the composed prompt; stdout+stderr both stream to the log.
-# We do NOT use --output-format stream-json here because we want a plain-text log we
-# can grep for the HUMAN GATE / WIP-PARTIAL markers. The orchestrator gets the same log.
+# Run the worker via the backend contract (worker_backend=$WORKER_BACKEND). The composed
+# prompt is passed as a CLI arg, not stdin — codex exec / agent -p both require this, and
+# claude -p accepts it identically. stdout+stderr both stream to the log. We do NOT use
+# --output-format stream-json here because we want a plain-text log we can grep for the
+# HUMAN GATE / WIP-PARTIAL markers. The orchestrator gets the same log.
+PROMPT_TEXT="$(cat "$PROMPT_FILE")"
 WORKER_EXIT=0
 (
   cd "$WORKTREE_DIR" || exit 99
-  exec claude -p \
-    --dangerously-skip-permissions \
-    --max-turns "$MAX_TURNS" \
-    < "$PROMPT_FILE"
+  backend_run_sync "$PROMPT_TEXT"
 ) >>"$LOG_FILE" 2>&1 || WORKER_EXIT=$?
 
 echo "▶︎ worker for issue #$N exited with code $WORKER_EXIT" | tee -a "$LOG_FILE"

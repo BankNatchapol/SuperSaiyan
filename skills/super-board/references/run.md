@@ -135,7 +135,7 @@ Resolves #<N> — <title>
 | 3  | Reviewer | ✅ merged   | <time>  | squash → <merge-commit>          |
 
 ## Evidence folders
-- `docs/super-board/runs/issue-<N>-qa-v1/`
+- `docs/supersaiyan/runs/issue-<N>-qa-v1/`
 - ...
 
 ## Status
@@ -161,9 +161,11 @@ e2e/streaming/ttfb.spec.ts:18   [QA] spec asserts status only — add TTFB asser
 |---|---|---|
 | Builder (Building → QA) | All `[builder]` threads on this PR | Stay in Building, fix, then exit |
 | Tester (QA → Review) | All `[QA]` threads on this PR | Stay in QA, fix, then exit |
-| Reviewer (approving merge) | ALL threads on this PR | Bounce: `[builder]` open → Ready; `[QA]` open → QA |
+| Reviewer (approving merge) | ALL threads on this PR | Gate 1: narrowly re-verify each unresolved thread's flagged file:line first (self-resolve via `resolveReviewThread` if the defect is already fixed); bounce only genuinely-open or inconclusive threads — `[builder]` open → Ready; `[QA]` open → QA |
 
 Threads are resolved via `gh api graphql` `resolveReviewThread` mutation when the fix is committed.
+
+Gate 1's narrow re-verification (Reviewer lifecycle step 2) is the one case where Reviewer resolves a thread it did not fix itself — it is confirming a fix already landed in a later commit, not authoring one. This must stay scoped to the single flagged file:line; it is not a substitute for the full review in steps 3-6, and must never be used to wave off a thread the Reviewer merely disagrees with.
 
 ## Lane lifecycles (Full variant, per card)
 
@@ -196,7 +198,7 @@ Threads are resolved via `gh api graphql` `resolveReviewThread` mutation when th
 2. URL-only variant: skip worktree + pull, run a health-check on `target.url`. If unhealthy → Block.
 3. Read issue + PR + Builder's handoff comment.
 4. Build issue-scoped test plan: one observable test per AC.
-5. Run the tests. Capture evidence to `docs/super-board/runs/issue-<N>-qa-v<N>/`. For UI/visual ACs, capture screenshots at the standard viewports (1920×1080 desktop, 1024×768 tablet, 375×667 mobile). Commit the screenshots to the issue branch BEFORE writing the comment (the markdown image URLs depend on the files being present on the branch).
+5. Run the tests. Capture evidence to `docs/supersaiyan/runs/issue-<N>-qa-v<N>/`. For UI/visual ACs, capture screenshots at the standard viewports (1920×1080 desktop, 1024×768 tablet, 375×667 mobile). Commit the screenshots to the issue branch BEFORE writing the comment (the markdown image URLs depend on the files being present on the branch).
 6. **Pass** → commit test files + screenshots to same branch + push → 🔍 PR comment with results + evidence path **+ inline screenshot embeds** (see "Screenshot embed format" below) → 🔍 issue comment with the SAME inline screenshot embeds → move card QA → Review. Clean up worktree.
 7. **Fail** → 🔍 PR comment with per-AC expected/actual + repro file:line + evidence path + "what fixed should look like" **+ inline screenshot embeds of the broken state** → 🔍 issue comment with the same inline screenshots (showing what's wrong) → increment rebuild counter → move card QA → Ready (label `loop:rebuild-N`). Clean up worktree.
 
@@ -209,9 +211,9 @@ Inline screenshots in the GitHub comment using raw-URL markdown so they render d
 
 | Viewport | Screenshot |
 |---|---|
-| Desktop 1920×1080 | ![desktop](https://github.com/<OWNER>/<REPO>/raw/<BRANCH>/docs/super-board/runs/issue-<N>-qa-v<V>/desktop.png) |
-| Tablet 1024×768  | ![tablet](https://github.com/<OWNER>/<REPO>/raw/<BRANCH>/docs/super-board/runs/issue-<N>-qa-v<V>/tablet.png) |
-| Mobile 375×667   | ![mobile](https://github.com/<OWNER>/<REPO>/raw/<BRANCH>/docs/super-board/runs/issue-<N>-qa-v<V>/mobile.png) |
+| Desktop 1920×1080 | ![desktop](https://github.com/<OWNER>/<REPO>/raw/<BRANCH>/docs/supersaiyan/runs/issue-<N>-qa-v<V>/desktop.png) |
+| Tablet 1024×768  | ![tablet](https://github.com/<OWNER>/<REPO>/raw/<BRANCH>/docs/supersaiyan/runs/issue-<N>-qa-v<V>/tablet.png) |
+| Mobile 375×667   | ![mobile](https://github.com/<OWNER>/<REPO>/raw/<BRANCH>/docs/supersaiyan/runs/issue-<N>-qa-v<V>/mobile.png) |
 ```
 
 Substitution rules:
@@ -237,11 +239,30 @@ If a screenshot file is >5MB, downscale to ≤1920px wide before committing; Git
 ### Reviewer
 
 1. Worktree `.worktrees/issue-<N>-review/` from current state of `issue-<N>-<slug>`.
-2. **Gate 1** — scan PR threads. If ANY unresolved:
-   - `[builder]` open → comment, move card Review → Ready.
-   - `[QA]` open → comment, move card Review → QA.
-   - Both open → bounce to whichever is older; the other gets picked up later.
-   - Clean up worktree, exit.
+2. **Gate 1 — thread scan.** For each unresolved PR review thread:
+   a. **Narrow re-verification (mandatory before bouncing).** Read the thread's
+      target file:line at the CURRENT branch HEAD (the worktree from step 1 is
+      already checked out there). Compare the code at that exact file:line
+      against the specific defect the thread body describes — nothing else.
+      Do NOT re-review surrounding code, other files, or anything outside the
+      thread's original claim; the full review is steps 3–6, not this gate.
+      - **Defect no longer present** (a later commit already fixed it and the
+        thread was simply never marked resolved) → Reviewer resolves the
+        thread itself via the `gh api graphql` `resolveReviewThread` mutation
+        (same mutation used elsewhere in this doc — see "PR review-comment
+        threads" above), with a comment: `[review] Re-checked — <file>:<line>
+        now does <what>; already fixed by <short-sha>. Resolving.` Do NOT
+        bounce on this thread; treat it as resolved for the rest of Gate 1.
+      - **Defect still present, or the check is inconclusive** (file:line
+        moved/deleted ambiguously, can't confirm without a broader look,
+        etc.) → do NOT resolve it. It counts as unresolved below.
+   b. If, after step (a), ANY thread remains unresolved:
+      - `[builder]` open → comment, move card Review → Ready.
+      - `[QA]` open → comment, move card Review → QA.
+      - Both open → bounce to whichever is older; the other gets picked up later.
+      - Clean up worktree, exit.
+   c. If ALL threads are now resolved (already were, or step (a) just resolved
+      them), continue to step 3.
 3. Read PR (code + test files + description), spot-check Tester's evidence (one screenshot at least), read CLAUDE.md / AGENTS.md.
 4. Review the code (logic, conventions). Review the tests (right thing tested? testable assertions? meaningful coverage?).
 5. **Reviewer-side test rerun** (always — closes the Tester self-verification gap):
@@ -304,15 +325,15 @@ Sample issue comment (Tester fail rebuild — with mandatory inline screenshots 
 🔍 super-board · QA fail · v1
    PR:  #87
    Failed: AC1 (TTFB 1240ms), AC2 (CLS 0.18)
-   Evidence: docs/super-board/runs/issue-42-qa-v1/
+   Evidence: docs/supersaiyan/runs/issue-42-qa-v1/
    Next: Rebuild
 
 ### Visual evidence (broken state)
 
 | Viewport | Screenshot |
 |---|---|
-| Desktop 1920×1080 | ![desktop](https://github.com/EricTechPro/BookKeepingApp/raw/issue-42-feature-slug/docs/super-board/runs/issue-42-qa-v1/desktop.png) |
-| Mobile 375×667    | ![mobile](https://github.com/EricTechPro/BookKeepingApp/raw/issue-42-feature-slug/docs/super-board/runs/issue-42-qa-v1/mobile.png) |
+| Desktop 1920×1080 | ![desktop](https://github.com/EricTechPro/BookKeepingApp/raw/issue-42-feature-slug/docs/supersaiyan/runs/issue-42-qa-v1/desktop.png) |
+| Mobile 375×667    | ![mobile](https://github.com/EricTechPro/BookKeepingApp/raw/issue-42-feature-slug/docs/supersaiyan/runs/issue-42-qa-v1/mobile.png) |
 ```
 
 Pass-state comment uses the same `### Visual evidence` block but with screenshots of the **working** UI per AC.
@@ -328,7 +349,14 @@ Sample issue comment (Reviewer approve + merge):
    Status: Done
 ```
 
-Block/Skip exit comments use the 🛡 / 🤷 emojis with a 1-line reason and reference the PR.
+Block/Skip exit comments use the 🛡 / 🤷 / 🔁 emojis with a 1-line reason and reference the PR. See `references/block-template.md` for the full mandatory template.
+
+**Skip types:**
+- 🤷 Deferred/out-of-scope — post skip comment, move card to Skipped, **leave issue open** (next run can retry).
+- 🔁 Superseded — same deliverable, would conflict. Post skip comment, move card to Skipped, then **close the issue**:
+  ```bash
+  gh issue close <N> --comment "Closing — superseded by #<M> which covers the same deliverable. Reopen if #<M> does not land."
+  ```
 
 ## Per-tick logic (~30s cadence)
 
@@ -383,7 +411,7 @@ Worker-side assignee claim alone is **not sufficient** — `claude -p` cold-star
 The dispatcher MUST also:
 
 1. **Claim BEFORE spawning the worker** — `try_claim_assignee` runs in the dispatcher and only proceeds to `nohup claude -p` if it wins the assignee write. Closes the cold-start race.
-2. **Write a local in-flight lock** — `.claude/super-board/inflight/<issue-N>` contains the worker PID. `top_card_in_column` skips any issue with a live lock even if the assignee write hasn't propagated yet.
+2. **Write a local in-flight lock** — `.claude/supersaiyan/inflight/<issue-N>` contains the worker PID. `top_card_in_column` skips any issue with a live lock even if the assignee write hasn't propagated yet.
 3. **Cap one worker per lane** — track `BUILD_PID` / `QA_PID` / `REVIEW_PID`; do not dispatch to a lane whose prior PID is still alive.
 4. **Reap stale locks each tick** — `reap_finished_locks` removes any lock whose PID no longer exists.
 5. **Orphan-scan on startup** — refuse to start if any `claude -p .*super-board run` worker is already running from a prior crashed dispatcher.
@@ -458,7 +486,7 @@ The loop exits cleanly when:
 ## Run manifest
 
 ```
-docs/super-board/runs/<YYYY-MM-DD>-<slug>.md
+docs/supersaiyan/runs/<YYYY-MM-DD>-<slug>.md
 ```
 
 Records: config used, variant, columns, target, per-card history (claim → completion → next column with evidence links), halt gates, final counts, per-lane wall-clock, resume command.

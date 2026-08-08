@@ -82,7 +82,7 @@ my-first-agent-app/
   .claude/skills/                    super-board + refining-spec + writing-board-tasks
   .claude/bin/                       super-board dispatcher scripts
   .claude/workflows/                 super-board-wave.js
-  .claude/super-board/configs/       onboard writes <slug>.json here
+  .claude/supersaiyan/configs/       onboard writes <slug>.json here
 ```
 
 ---
@@ -101,7 +101,7 @@ Manual equivalent:
 APP=/path/to/your-app
 SAIYAN=/path/to/SuperSaiyan
 
-"$SAIYAN/super-board/install.sh" "$APP"
+"$SAIYAN/install.sh" "$APP"
 (
   cd "$APP"
   "$SAIYAN/scripts/install-bridge-skills.sh"
@@ -112,12 +112,26 @@ SAIYAN=/path/to/SuperSaiyan
 | Script | Idempotent? | Notes |
 |--------|-------------|-------|
 | `bootstrap-app.sh` | Yes | Checks/installs dependencies, then runs all three app installers; defaults target to cwd |
-| `install-bridge-skills.sh` | Yes | Copies `.claude/skills/{refining-spec,writing-board-tasks}`; target defaults to cwd |
+| `install-bridge-skills.sh` | Yes | Copies `docs/templates/issue.md` + `docs/superpowers/tasks/README.md` (skills come from `install.sh`); target defaults to cwd |
 | `setup-gstack-artifacts-path.sh` | Yes | Appends CLAUDE.md section once; creates doc dirs |
 | `tasks-to-issues.sh` | Mostly | Low-level helper; prefer `/supersaiyan prepare` |
 | `split-plan-to-tasks.sh` | With `--force` | Mechanical stub — not recommended alone |
 
 `tasks-to-issues.sh` and `split-plan-to-tasks.sh` are **run with cwd = app repo**; they live in SuperSaiyan but read/write `docs/superpowers/` in the app.
+
+### Keeping the installed plugin in sync
+
+If SuperSaiyan was installed as a Claude Code **plugin** (the common path — see README), edits
+in this working tree have zero effect on any Claude Code session until:
+
+1. Commit and push to `origin/main` on GitHub.
+2. `claude plugin marketplace update supersaiyan`
+3. `claude plugin update supersaiyan`
+4. Restart Claude Code.
+
+`bootstrap-app.sh` warns (not a hard failure) when the plugin's pinned commit
+(`~/.claude/plugins/installed_plugins.json` → `gitCommitSha`) is behind
+`git -C SAIYAN_ROOT rev-parse HEAD`.
 
 ---
 
@@ -255,6 +269,8 @@ Trigger phrases for supersaiyan include plain English (“fix the first issue”
 4. **bash 3.2** — scripts must run on macOS default bash (`mapfile` / `declare -A` break).
 5. **Upstream submodules** — `gstack/`, `superpowers/`, `super-board/` may be upstream clones; avoid drive-by edits.
 6. **Control Center stays optional** — UI code lives in `apps/` and `packages/`; never make it a prerequisite for skills or CLI use.
+7. **This repo has no onboarded `.claude/supersaiyan/configs/<slug>.json`**, even though GitHub Project #3 ("SuperSaiyan") is used for real issue tracking here. Because there's no onboarded config, `super-build`'s Autonomy preflight will refuse a bare/standalone invocation in this repo — issue work here has to be driven manually (branch → PR → Super QA → Super Review) rather than a fully automated `/supersaiyan run` loop, unless/until this repo is properly onboarded. Don't route around that guard to force auto-merge.
+8. **Never implement issue work directly on `main` in the primary worktree** — always create an issue-scoped branch first (`issue-N-<slug>`), even for a quick ad hoc "implement issue #N" ask that isn't going through a full `run` dispatch. See `skills/supersaiyan/SKILL.md` → "Golden rule: never implement issue work directly on the primary branch."
 
 ---
 
@@ -271,7 +287,6 @@ Trigger phrases for supersaiyan include plain English (“fix the first issue”
 
 ```bash
 ./scripts/verify-super-board-setup.sh
-cd super-board && bash tests/test-wave-plan.sh
 ```
 
 ---

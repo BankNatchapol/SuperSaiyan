@@ -29,7 +29,7 @@ Run the same preconditions as `run.md` §Preconditions, minus PID checks:
    `{ echo '(async function(){'; sed 's/^export const meta/const meta/' .claude/workflows/super-board-wave.js; echo '})'; } | node --check --input-type=module`
 5. Wave marker FIRST, then the legacy check (lock-before-look closes the
    TOCTOU window where both backends pass each other's checks at once):
-   a. Atomically create `.claude/super-board/inflight/workflow-wave.lock`
+   a. Atomically create `.claude/supersaiyan/inflight/workflow-wave.lock`
       (mkdir -p the directory) containing the config slug and start time:
       `(set -C; printf 'SLUG=%s\nSTARTED=%s\n' <slug> "$(date -u +%FT%TZ)" > <lock>)`.
       If it already exists and `/workflows` shows no running
@@ -85,7 +85,7 @@ Repeat until a done condition or halt gate fires:
    summary. For EVERY card in the wave, release the assignee
    (`gh issue edit <n> --remove-assignee <bot_identity>`, idempotent).
    Append one line per card to the run manifest
-   `docs/super-board/runs/<date>-<slug>.md`:
+   `docs/supersaiyan/runs/<date>-<slug>.md`:
    `| #N | <lanesRun> | <finalStatus> | <column> | <detail> |`.
 6. **Report** — one short status line to the user per wave (and Telegram if
    notifications are enabled; currently disabled per CLAUDE.md). Surface any
@@ -100,7 +100,7 @@ Repeat until a done condition or halt gate fires:
 
 - Stop: `x` on the run in `/workflows` (or TaskStop), then release assignees
   for in-flight cards and post "stopped mid-flight" comments (same protocol
-  as `references/stop.md`). Remove `.claude/super-board/inflight/workflow-wave.lock`.
+  as `references/stop.md`). Remove `.claude/supersaiyan/inflight/workflow-wave.lock`.
 - Resume: just run again — board state is the only state. A workflow stopped
   mid-wave can also be resumed in-session via `resumeFromRunId` (completed
   lane agents return cached results).

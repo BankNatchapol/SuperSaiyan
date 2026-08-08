@@ -1,3 +1,5 @@
+<!-- GENERATED FILE — edit skills/super-board/references/rate-limit-etiquette.md, then run scripts/generate-supersaiyan-references.sh to regenerate. Do not hand-edit. -->
+
 # Worker rate-limit etiquette
 
 The dispatcher's `gh_rate_guard` only protects the dispatcher's own ticks. Workers (Builder / Tester / Reviewer) run as independent `claude -p` sessions and **share the same gh-auth token bucket** — 5000 GraphQL points/hr for a PAT, 15000/hr for a GitHub App. The #381 worker storm (2026-05-21) drained the bucket because nothing in the worker contract told workers to watch the quota.

@@ -67,9 +67,10 @@ A `Flaky` retry-only finding goes to `Flaky`; out-of-scope routes go to `Skip`. 
 
 You are the orchestrator. Your job: drive a BFS crawl of the target EricTechOS app
 that **builds `e2e/paths/` into a comprehensive Playwright suite** while
-fixing any bugs it stumbles on. Each iteration is a fresh headless
-`claude -p` worker that does ONE iter and exits. There is no worktree —
-the worker commits directly to the active branch (default `main`).
+fixing any bugs it stumbles on. Each iteration is a fresh headless worker
+(backend per `worker_backend` — default `claude -p`) that does ONE iter and
+exits. There is no worktree — the worker commits directly to the active
+branch (default `main`).
 
 ## Autonomous mode — NO AskUserQuestion mid-loop
 
@@ -296,17 +297,23 @@ Notify Telegram once: `🐛 Super QA starting — N iterations`.
 ```
 bash scripts/super-qa-dispatch.sh <next_n>
 ```
-…via Bash with `run_in_background: true` (so the orchestrator can poll). The
-dispatcher:
+…via Bash with `run_in_background: true` (so the orchestrator can poll).
+`scripts/super-qa-dispatch.sh`:
 - Composes prompt = `references/iteration-preamble.md` + per-iteration footer
   (iter num, base SHA, mandatory final-commit format).
-- Runs `claude -p --dangerously-skip-permissions --max-turns 250` in repo
-  root (no worktree creation).
+- Runs the configured `worker_backend` (default `claude-p`; also
+  `codex-exec`/`cursor-agent` — see
+  `.claude/skills/super-board/references/backends.md`) in repo root (no
+  worktree creation), exporting `SUPER_QA_FORENSICS=1`.
 - Verifies the worker produced a `super-qa: iter N` commit on the
   current branch.
-- Exit codes: `0` (iter complete) / `2` (worker non-zero) / `3` (no
-  done-commit) / `4` (HUMAN GATE) / `5` (WIP-CHECKPOINT — wall-clock hit
-  mid-fix, picks up next iter).
+- Exit codes: `0` (iter complete — close-out commit found) / `2` (worker
+  non-zero, no recognizable commit) / `3` (worker exited zero but no
+  close-out or wip commit) / `4` (HUMAN GATE) / `5` (WIP-CHECKPOINT — a
+  `wip: super-qa iter N` commit exists but the close-out doesn't; wall-clock
+  was hit before the report could be written — orchestrator picks up the
+  next iteration; the still-red spec is caught by the next iter's
+  regression pass).
 
 Notify Telegram: `🔍 Iter N dispatched`.
 

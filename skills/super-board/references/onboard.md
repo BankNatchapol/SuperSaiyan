@@ -33,7 +33,7 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
 ```
 0. SILENT DETECT (no questions yet)
    ├─ CWD: git repo? any commits? remote URL?
-   ├─ Existing configs in .claude/super-board/configs/?
+   ├─ Existing configs in .claude/supersaiyan/configs/?
    └─ Existing PROJECT.md?
 
 1. ONE BIG QUESTION — "What do you want to run in a loop?"
@@ -44,22 +44,47 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
    ├─ C) QA a local repo (already built)
    │       → variant = qa-only, target = repo (+ optional URL)
    └─ D) Use an existing config
-           → list configs with descriptions → pick → skip to step 9
+           → list configs with descriptions → pick → skip to step 10
 
-2. VERIFY GITHUB AUTH (always)
+2. WHICH TOOL(S) WILL DRIVE THIS BOARD?
+   ├─ Ask: "Will Claude Code drive this loop, or do you also want Codex
+   │        and/or Cursor CLI workers dispatching from the same board?"
+   ├─ Default: Claude Code only (worker_backend "workflow").
+   └─ If more than one tool is selected:
+        ├─ Run steps 3-13 ONCE per tool, producing N config files that all
+        │  point at the SAME project.owner/project.number but differ in
+        │  `description` and `worker_backend`:
+        │    <slug>-claude.json  → worker_backend "workflow" (or "claude-p")
+        │    <slug>-codex.json   → worker_backend "codex-exec"
+        │    <slug>-cursor.json  → worker_backend "cursor-agent"
+        ├─ For codex/cursor configs: confirm `codex login status` / `agent
+        │  status` succeed now (fail fast, not at first dispatch), and that
+        │  `./install.sh --keep-local-skills` has been run so
+        │  `.claude/skills/` is populated locally — Codex/Cursor have no
+        │  plugin skill cache and can only read files that physically exist
+        │  in the repo. See `references/backends.md`.
+        └─ Explain: each config's dispatcher is a plain background process —
+           run `.claude/bin/super-board-run.sh <slug>-codex` alongside
+           `<slug>-cursor` and `<slug>-claude` in parallel shells; they
+           share the board but never fight over one config file. (This is
+           what fixes the classic "two dispatchers overwrite each other's
+           worker_backend" collision — no data-model change needed, multiple
+           named configs already work.)
+
+3. VERIFY GITHUB AUTH (always)
    ├─ `gh auth status`  — must be authenticated
    ├─ Scope check: `project`, `read:project`, `repo`
    ├─ If missing → `gh auth refresh -s project,read:project,repo`
    └─ Tell user WHY: "needed to move cards on your board and create
        projects on your behalf"
 
-3. ENFORCE LOCAL GIT REPO (mandatory)
+4. ENFORCE LOCAL GIT REPO (mandatory)
    ├─ If CWD is not a git repo → "I need to init git before continuing. Proceed? [y/n]"
    ├─ If no remote on local repo and user picked B or C with `push`/`pr`/`merge` authority later
    │     → offer `gh repo create`
    └─ Reason: version control is required to manage worktrees, branches, and merges.
 
-4. RESOLVE TARGET (branches by Q1 answer)
+5. RESOLVE TARGET (branches by Q1 answer)
    ├─ A (URL only): ask for the URL → save target.url. Repo = null.
    ├─ B (build local repo):
    │    ├─ Auto-detect remote. Offer `gh repo create` if missing.
@@ -67,17 +92,17 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
    │    └─ Save repo = {path, remote_or_null}. Optionally also save target.url.
    └─ C (QA local repo): auto-detect repo. Ask only for target URL if any.
 
-5. PICK OR CREATE GITHUB PROJECT
+6. PICK OR CREATE GITHUB PROJECT
    ├─ List existing projects under repo owner (or user's account if no repo)
    ├─ If picked → validate column shape matches variant (fix if not)
    └─ If new → `gh project create --title <name>` → create columns for variant
 
-6. VALIDATE / CREATE COLUMNS (idempotent)
+7. VALIDATE / CREATE COLUMNS (idempotent)
    ├─ Full variant (7 total):    Ready · Building · QA · Review · Done · Blocked · Skipped
    ├─ QA-only variant (6 total): Ready ·            QA · Review · Done · Blocked · Skipped
    └─ Read Status field, add missing options, re-read to confirm.
 
-7. AUTO-GENERATE PROJECT.md (skip if URL-only or user opts out)
+8. AUTO-GENERATE PROJECT.md (skip if URL-only or user opts out)
    ├─ Spawn sub-agent: read whichever manifest set exists + README + top-level structure:
    │    • Node:    package.json
    │    • Python:  pyproject.toml or requirements.txt
@@ -89,9 +114,9 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
    │              Use the answer verbatim as the seed for PROJECT.md.
    │    → draft PROJECT.md (what the app is, stack, conventions, success criteria)
    ├─ Show draft → user confirms/edits inline
-   └─ Save to docs/super-board/PROJECT.md
+   └─ Save to docs/supersaiyan/PROJECT.md
 
-8. PICK BASE BRANCH (Full variant with local repo, OR QA-only with a local repo)
+9. PICK BASE BRANCH (Full variant with local repo, OR QA-only with a local repo)
    (Skip entirely only when target.type == "url" with no repo.)
    ├─ Detect current branch + remote default branch
    ├─ Production-detection (any of these signals → treat as production):
@@ -107,30 +132,30 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
         production. Consider a staging or develop branch instead.
         Want me to create one?"
 
-9. MERGE POLICY (Full variant with local repo, OR QA-only with a local repo)
-   (Tester commits test files to the same branch; merge policy applies.
-   Skip only when target.type == "url" with no repo.)
-   ├─ "Should super-board auto-merge approved PRs into base, or wait
-   │   for a human to click merge? [auto / human]"
-   ├─ Sets config.human_approves_merge accordingly.
-   └─ HARD RULE: if base_branch was production-detected (step 8) AND user
-       did NOT switch to staging/develop, force human_approves_merge = true
-       and tell the user: "Auto-merge to production is disabled. Approved
-       PRs will be marked ready for review; you click merge."
+10. MERGE POLICY (Full variant with local repo, OR QA-only with a local repo)
+    (Tester commits test files to the same branch; merge policy applies.
+    Skip only when target.type == "url" with no repo.)
+    ├─ "Should super-board auto-merge approved PRs into base, or wait
+    │   for a human to click merge? [auto / human]"
+    ├─ Sets config.human_approves_merge accordingly.
+    └─ HARD RULE: if base_branch was production-detected (step 9) AND user
+        did NOT switch to staging/develop, force human_approves_merge = true
+        and tell the user: "Auto-merge to production is disabled. Approved
+        PRs will be marked ready for review; you click merge."
 
-10. RECORD NOTIFICATION CHANNEL
+11. RECORD NOTIFICATION CHANNEL
     └─ Auto-detect from the current session; allow override.
 
-11. WRITE CONFIG + ACTIVE POINTER
+12. WRITE CONFIG + ACTIVE POINTER
     ├─ Generate `description` (short, scannable)
     ├─ Record notifications.bot_identity — either `super-board-bot[bot]`
     │  (when a GitHub App is installed on the repo) or the user's own
-    │  GitHub login (solo projects). Pick during step 2 based on what
+    │  GitHub login (solo projects). Pick during step 3 based on what
     │  `gh auth status` returned.
-    ├─ Write .claude/super-board/configs/<slug>.json (committed)
-    └─ Write .claude/super-board/active ← <slug> (gitignored)
+    ├─ Write .claude/supersaiyan/configs/<slug>.json (committed)
+    └─ Write .claude/supersaiyan/active ← <slug> (gitignored)
 
-12. SUMMARY
+13. SUMMARY
     "✅ Onboard complete.
      📋 Go write your tickets here: <project URL>
      🧹 Then run `super-board lint` to make sure each issue has clear
@@ -145,16 +170,17 @@ Every onboard step that touches GitHub or the filesystem has a defined recovery 
 
 | Step | Failure mode | What the user sees |
 |---|---|---|
-| 2. gh auth | Not logged in | `🔑 You're not signed in to GitHub. Run: \`gh auth login\` — then re-run super-board onboard.` |
-| 2. gh auth | Scope refused (user said no on browser) | `🔑 GitHub asked for project,read:project,repo scopes and you said no. Without them I can't read or move project cards. Re-run: \`gh auth refresh -s project,read:project,repo\`.` |
-| 3. git init | User declined | Halt with: `🛑 super-board needs a git repo. Re-run when ready.` |
-| 4. gh repo create | Quota/perm denied | `📦 GitHub refused to create the repo (org admin required, or you hit your free-repo quota). Options: (a) pick an existing repo, (b) create one in the web UI then re-run, (c) skip repo and run URL-only.` |
-| 5. gh project create | Org project denied | `🔑 You don't have permission to create projects under <org>. Either ask an org admin, or pick your personal account: \`gh project create --owner @me\`.` |
-| 5. gh project pick | Project deleted between list + pick | `📋 That project was deleted after I listed it. Reloading…` then auto-retry. |
-| 6. column create | Column add denied (read-only project) | `🔑 Project is read-only for your account. Either get write access, or pick a different project.` |
-| 7. PROJECT.md autogen | Sub-agent timeout / empty draft | `📝 Couldn't auto-draft PROJECT.md. Skip for now, or write one paragraph and I'll seed from that.` |
-| 8. base branch | gh API rate limit on protection-rule lookup | Soft-fail production detection, warn the user, fall back to asking. Do not halt. |
-| 11. write config | File system not writable | Halt with the exact path: `🛑 Can't write to .claude/super-board/configs/<slug>.json — check permissions.` |
+| 2. which tool(s) | `codex login status` / `agent status` fails for a selected tool | `🔑 <tool> isn't logged in. Run: \`codex login\` / \`agent login\` — then re-run super-board onboard.` |
+| 3. gh auth | Not logged in | `🔑 You're not signed in to GitHub. Run: \`gh auth login\` — then re-run super-board onboard.` |
+| 3. gh auth | Scope refused (user said no on browser) | `🔑 GitHub asked for project,read:project,repo scopes and you said no. Without them I can't read or move project cards. Re-run: \`gh auth refresh -s project,read:project,repo\`.` |
+| 4. git init | User declined | Halt with: `🛑 super-board needs a git repo. Re-run when ready.` |
+| 5. gh repo create | Quota/perm denied | `📦 GitHub refused to create the repo (org admin required, or you hit your free-repo quota). Options: (a) pick an existing repo, (b) create one in the web UI then re-run, (c) skip repo and run URL-only.` |
+| 6. gh project create | Org project denied | `🔑 You don't have permission to create projects under <org>. Either ask an org admin, or pick your personal account: \`gh project create --owner @me\`.` |
+| 6. gh project pick | Project deleted between list + pick | `📋 That project was deleted after I listed it. Reloading…` then auto-retry. |
+| 7. column create | Column add denied (read-only project) | `🔑 Project is read-only for your account. Either get write access, or pick a different project.` |
+| 8. PROJECT.md autogen | Sub-agent timeout / empty draft | `📝 Couldn't auto-draft PROJECT.md. Skip for now, or write one paragraph and I'll seed from that.` |
+| 9. base branch | gh API rate limit on protection-rule lookup | Soft-fail production detection, warn the user, fall back to asking. Do not halt. |
+| 12. write config | File system not writable | Halt with the exact path: `🛑 Can't write to .claude/supersaiyan/configs/<slug>.json — check permissions.` |
 
 Every onboard halt comment includes (a) what the bot tried, (b) what failed, (c) the exact command or click the user can do, (d) how to resume (always: "re-run `super-board onboard`").
 
@@ -172,10 +198,10 @@ Every onboard halt comment includes (a) what the bot tried, (b) what failed, (c)
 
 Before exiting `onboard` successfully, the worker MUST verify:
 
-1. **Config file exists and validates** — `.claude/super-board/configs/<slug>.json`
+1. **Config file exists and validates** — `.claude/supersaiyan/configs/<slug>.json`
    parses as JSON and contains every required field from `references/config-schema.json`
    (including `notifications.bot_identity`).
-2. **Active pointer is updated** — `.claude/super-board/active` is a one-line
+2. **Active pointer is updated** — `.claude/supersaiyan/active` is a one-line
    file containing exactly the new slug, no trailing whitespace beyond a single `\n`.
 3. **Project columns are present on GitHub** — running
    `gh project field-list <project.number> --owner <project.owner>` returns all
@@ -185,7 +211,7 @@ Before exiting `onboard` successfully, the worker MUST verify:
 4. **PROJECT.md exists** — when `paths.project_md` is non-null (i.e. any flow with
    a local repo), the file at that path exists and is non-empty.
 
-If any of these four checks fail, do NOT print the step-12 summary. Instead, surface
+If any of these four checks fail, do NOT print the step-13 summary. Instead, surface
 the specific failed check and tell the user to re-run `super-board onboard`. A
 partial config is worse than no config — the lint and run verbs depend on these
 invariants.

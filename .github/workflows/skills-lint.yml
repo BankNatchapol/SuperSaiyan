@@ -1,0 +1,40 @@
+name: Skills lint
+
+on:
+  pull_request:
+    paths:
+      - "skills/**"
+      - "scripts/generate-supersaiyan-references.sh"
+      - "scripts/backends/**"
+      - "tests/test-reference-sync.py"
+      - "tests/test-backend-contract.sh"
+      - "tests/test-build-safety-contract.sh"
+      - ".github/workflows/skills-lint.yml"
+  push:
+    branches: [main]
+    paths:
+      - "skills/**"
+      - "scripts/generate-supersaiyan-references.sh"
+      - "scripts/backends/**"
+      - "tests/test-reference-sync.py"
+      - "tests/test-backend-contract.sh"
+      - "tests/test-build-safety-contract.sh"
+
+jobs:
+  reference-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/test-reference-sync.py
+
+  backend-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-backend-contract.sh
+
+  build-safety-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-build-safety-contract.sh

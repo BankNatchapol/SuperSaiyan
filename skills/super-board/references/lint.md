@@ -11,7 +11,7 @@ active-pipeline issue must have testable acceptance criteria.
 All clarifications are saved to GitHub via `gh issue edit` /
 `gh issue comment` — **no local file writes** during the per-issue loop.
 The only local artifact this verb produces is
-`docs/super-board/pre-flight.md` in Phase 6.
+`docs/supersaiyan/pre-flight.md` in Phase 6.
 
 ---
 
@@ -168,7 +168,7 @@ Sub-agent scans all linted issues + PROJECT.md to extract operational requiremen
    [ ] .env.local has OPENAI_API_KEY set
 ```
 
-Saved to `docs/super-board/pre-flight.md`. Each `[ ]` is a halt gate for `super-board run` — the loop refuses to start until all items are `[✓]`.
+Saved to `docs/supersaiyan/pre-flight.md`. Each `[ ]` is a halt gate for `super-board run` — the loop refuses to start until all items are `[✓]`.
 
 > Each `[ ]` is a halt gate for `super-board run` — the loop refuses to start until all items are `[✓]`.
 
@@ -202,7 +202,7 @@ Saved to `docs/super-board/pre-flight.md`. Each `[ ]` is a halt gate for `super-
 
 Before declaring lint complete, the worker MUST verify all three:
 
-- [ ] `docs/super-board/pre-flight.md` exists and lists every credential / tool / env signal encountered while scanning issues + PROJECT.md.
+- [ ] `docs/supersaiyan/pre-flight.md` exists and lists every credential / tool / env signal encountered while scanning issues + PROJECT.md.
 - [ ] Every issue in active-pipeline columns (Ready, Building if present, QA, Review) either:
   - has a populated `## Acceptance Criteria` section that passes all 12 criteria, OR
   - carries a `🤷 Skipped` comment explaining why it was deferred, OR

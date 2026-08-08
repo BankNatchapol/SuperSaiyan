@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# install-bridge-skills.sh — copy SuperSaiyan bridge skills + doc templates into app repo.
+# install-bridge-skills.sh — copy SuperSaiyan bridge-only doc templates into an app repo.
+#
+# Skills are installed by the root installer (install.sh), which is plugin-aware
+# (it skips local .claude/skills/ copies when the supersaiyan Claude Code plugin
+# is installed, to avoid duplicate skill definitions). This script only copies
+# the doc assets install.sh does not own.
 #
 # Usage:
 #   cd /path/to/your-app
@@ -21,8 +26,7 @@ TARGET="$(cd "$TARGET" && pwd)"
 
 echo "Target app: $TARGET"
 
-mkdir -p "$TARGET/.claude/skills" "$TARGET/.claude/bin" \
-  "$TARGET/docs/templates" "$TARGET/docs/superpowers/tasks"
+mkdir -p "$TARGET/docs/templates" "$TARGET/docs/superpowers/tasks"
 
 same_path() {
   local left="$1" right="$2"
@@ -30,47 +34,17 @@ same_path() {
     "$(cd "$(dirname "$right")" && pwd)/$(basename "$right")" ]
 }
 
-echo "→ skills"
-for skill in writing-board-tasks refining-spec supersaiyan; do
-  src="$REPO_ROOT/.claude/skills/$skill"
-  dest="$TARGET/.claude/skills/$skill"
-  if [ -d "$src" ]; then
-    if same_path "$src" "$dest"; then
-      echo "    · $skill already at target"
-    else
-      cp -R "$src" "$TARGET/.claude/skills/"
-      if [ -f "$dest/scripts/prepare.sh" ]; then
-        chmod +x "$dest/scripts/prepare.sh"
-      fi
-      echo "    ✓ $skill"
-    fi
-  fi
-done
-
-echo "→ command helpers"
-src="$REPO_ROOT/scripts/tasks-to-issues.sh"
-dest="$TARGET/.claude/bin/tasks-to-issues.sh"
-if same_path "$src" "$dest"; then
-  echo "    · .claude/bin/tasks-to-issues.sh already at target"
-else
-  cp "$src" "$dest"
-  chmod +x "$dest"
-  echo "    ✓ tasks-to-issues.sh"
-fi
-
 echo "→ doc templates"
-for f in task-file.md issue.md; do
-  src="$REPO_ROOT/docs/templates/$f"
-  dest="$TARGET/docs/templates/$f"
-  if [ -f "$src" ]; then
-    if same_path "$src" "$dest"; then
-      echo "    · docs/templates/$f already at target"
-      continue
-    fi
+src="$REPO_ROOT/docs/templates/issue.md"
+dest="$TARGET/docs/templates/issue.md"
+if [ -f "$src" ]; then
+  if same_path "$src" "$dest"; then
+    echo "    · docs/templates/issue.md already at target"
+  else
     cp "$src" "$dest"
-    echo "    ✓ docs/templates/$f"
+    echo "    ✓ docs/templates/issue.md"
   fi
-done
+fi
 
 src="$REPO_ROOT/docs/superpowers/tasks/README.md"
 dest="$TARGET/docs/superpowers/tasks/README.md"
@@ -84,7 +58,8 @@ if [ -f "$src" ]; then
 fi
 
 echo
-echo "✓ Bridge skills installed."
+echo "✓ Bridge doc templates installed."
+echo "  Skills come from install.sh (or the supersaiyan plugin)."
 echo "  After office-hours, run: Use refining-spec for <path-to-design-doc>"
 echo "  After spec in repo, run: Use writing-board-tasks for docs/superpowers/specs/<feature-slug>-design.md"
 echo "  After board tasks exist, run: /supersaiyan prepare <feature-slug>"

@@ -1,3 +1,5 @@
+<!-- GENERATED FILE — edit skills/super-board/references/lint.md, then run scripts/generate-supersaiyan-references.sh to regenerate. Do not hand-edit. -->
+
 # super-board lint — 7-phase interactive ticket clarifier
 
 > Reference for the `super-board lint` verb. See spec §6 of

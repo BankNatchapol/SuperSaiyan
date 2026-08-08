@@ -195,6 +195,31 @@ install_superpowers() {
   fi
 }
 
+check_plugin_freshness() {
+  local installed_file="$HOME/.claude/plugins/installed_plugins.json"
+
+  # Skipped (not warned) when jq/the plugin-manager file is absent, or the
+  # supersaiyan plugin isn't installed via marketplace at all — none of
+  # those are errors; they just mean this check doesn't apply.
+  command -v jq >/dev/null 2>&1 || return 0
+  [ -f "$installed_file" ] || return 0
+
+  local installed_sha
+  installed_sha=$(jq -r '.plugins["supersaiyan@supersaiyan"][0].gitCommitSha // empty' \
+    "$installed_file" 2>/dev/null || true)
+  [ -n "$installed_sha" ] || return 0
+
+  local repo_sha
+  repo_sha=$(git -C "$SAIYAN_ROOT" rev-parse HEAD 2>/dev/null || true)
+  [ -n "$repo_sha" ] || return 0
+
+  if [ "$installed_sha" != "$repo_sha" ]; then
+    warn "Installed supersaiyan plugin is behind this checkout (plugin @ ${installed_sha:0:7}, checkout @ ${repo_sha:0:7}); run: claude plugin marketplace update supersaiyan && claude plugin update supersaiyan, then restart Claude Code"
+  else
+    ok "supersaiyan plugin matches this checkout ($repo_sha)"
+  fi
+}
+
 install_gstack() {
   if [ -f "$HOME/.claude/skills/office-hours/SKILL.md" ]; then
     ok "gstack already installed"
@@ -211,9 +236,21 @@ install_gstack() {
     return
   fi
 
-  echo "  → installing gstack from $SAIYAN_ROOT/gstack"
+  # gstack isn't vendored in this repo — SuperSaiyan doesn't carry a copy, it
+  # clones gstack fresh from upstream at install time, same as gstack's own
+  # documented "Quick start" (github.com/garrytan/gstack → Install).
+  local gstack_dir="$HOME/.claude/skills/gstack"
+  if [ -d "$gstack_dir/.git" ]; then
+    echo "  → updating existing gstack checkout at $gstack_dir"
+    git -C "$gstack_dir" pull --ff-only --quiet
+  else
+    echo "  → installing gstack (cloning garrytan/gstack)"
+    rm -rf "$gstack_dir"
+    git clone --single-branch --depth 1 --quiet \
+      https://github.com/garrytan/gstack.git "$gstack_dir"
+  fi
   (
-    cd "$SAIYAN_ROOT/gstack"
+    cd "$gstack_dir"
     ./setup --host claude --no-prefix --no-plan-tune-hooks --quiet
   )
 
@@ -225,17 +262,17 @@ install_gstack() {
 }
 
 verify_app_install() {
+  # Skill paths are NOT checked here — install.sh (called above, under set -e)
+  # already verified them and would have aborted bootstrap on failure. It's
+  # also plugin-aware (removes local .claude/skills/* when the supersaiyan
+  # plugin is installed), so re-checking those paths here would report a
+  # false FAIL on the common, fully-successful plugin-based install.
   local path
   for path in \
-    ".claude/skills/super-board/SKILL.md" \
-    ".claude/skills/refining-spec/SKILL.md" \
-    ".claude/skills/writing-board-tasks/SKILL.md" \
-    ".claude/skills/supersaiyan/SKILL.md" \
-    ".claude/skills/supersaiyan/references/prepare.md" \
-    ".claude/skills/supersaiyan/scripts/prepare.sh" \
     ".claude/bin/tasks-to-issues.sh" \
     ".claude/workflows/super-board-wave.js" \
     "docs/templates/task-file.md" \
+    "docs/templates/issue.md" \
     "scripts/gstack-env.sh" \
     "CLAUDE.md"; do
     if [ -e "$TARGET/$path" ]; then
@@ -275,12 +312,12 @@ install_brew_package bun bun
 check_authentication
 install_superpowers
 install_gstack
+check_plugin_freshness
 
 echo
 if [ "$CHECK_ONLY" = false ]; then
   echo "App-repo setup"
-  SUPER_BOARD_EMBEDDED_INSTALL=true \
-    "$SAIYAN_ROOT/super-board/install.sh" "$TARGET"
+  "$SAIYAN_ROOT/install.sh" "$TARGET"
   "$SAIYAN_ROOT/scripts/install-bridge-skills.sh" "$TARGET"
   "$SAIYAN_ROOT/scripts/setup-gstack-artifacts-path.sh" "$TARGET"
 fi

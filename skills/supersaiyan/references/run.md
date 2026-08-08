@@ -1,3 +1,5 @@
+<!-- GENERATED FILE — edit skills/super-board/references/run.md, then run scripts/generate-supersaiyan-references.sh to regenerate. Do not hand-edit. -->
+
 # super-board run — full contract
 
 Pointer: spec `docs/superpowers/specs/2026-05-21-super-board-design.md` §7 "Verb 3 — super-board run".
@@ -161,9 +163,11 @@ e2e/streaming/ttfb.spec.ts:18   [QA] spec asserts status only — add TTFB asser
 |---|---|---|
 | Builder (Building → QA) | All `[builder]` threads on this PR | Stay in Building, fix, then exit |
 | Tester (QA → Review) | All `[QA]` threads on this PR | Stay in QA, fix, then exit |
-| Reviewer (approving merge) | ALL threads on this PR | Bounce: `[builder]` open → Ready; `[QA]` open → QA |
+| Reviewer (approving merge) | ALL threads on this PR | Gate 1: narrowly re-verify each unresolved thread's flagged file:line first (self-resolve via `resolveReviewThread` if the defect is already fixed); bounce only genuinely-open or inconclusive threads — `[builder]` open → Ready; `[QA]` open → QA |
 
 Threads are resolved via `gh api graphql` `resolveReviewThread` mutation when the fix is committed.
+
+Gate 1's narrow re-verification (Reviewer lifecycle step 2) is the one case where Reviewer resolves a thread it did not fix itself — it is confirming a fix already landed in a later commit, not authoring one. This must stay scoped to the single flagged file:line; it is not a substitute for the full review in steps 3-6, and must never be used to wave off a thread the Reviewer merely disagrees with.
 
 ## Lane lifecycles (Full variant, per card)
 
@@ -237,11 +241,30 @@ If a screenshot file is >5MB, downscale to ≤1920px wide before committing; Git
 ### Reviewer
 
 1. Worktree `.worktrees/issue-<N>-review/` from current state of `issue-<N>-<slug>`.
-2. **Gate 1** — scan PR threads. If ANY unresolved:
-   - `[builder]` open → comment, move card Review → Ready.
-   - `[QA]` open → comment, move card Review → QA.
-   - Both open → bounce to whichever is older; the other gets picked up later.
-   - Clean up worktree, exit.
+2. **Gate 1 — thread scan.** For each unresolved PR review thread:
+   a. **Narrow re-verification (mandatory before bouncing).** Read the thread's
+      target file:line at the CURRENT branch HEAD (the worktree from step 1 is
+      already checked out there). Compare the code at that exact file:line
+      against the specific defect the thread body describes — nothing else.
+      Do NOT re-review surrounding code, other files, or anything outside the
+      thread's original claim; the full review is steps 3–6, not this gate.
+      - **Defect no longer present** (a later commit already fixed it and the
+        thread was simply never marked resolved) → Reviewer resolves the
+        thread itself via the `gh api graphql` `resolveReviewThread` mutation
+        (same mutation used elsewhere in this doc — see "PR review-comment
+        threads" above), with a comment: `[review] Re-checked — <file>:<line>
+        now does <what>; already fixed by <short-sha>. Resolving.` Do NOT
+        bounce on this thread; treat it as resolved for the rest of Gate 1.
+      - **Defect still present, or the check is inconclusive** (file:line
+        moved/deleted ambiguously, can't confirm without a broader look,
+        etc.) → do NOT resolve it. It counts as unresolved below.
+   b. If, after step (a), ANY thread remains unresolved:
+      - `[builder]` open → comment, move card Review → Ready.
+      - `[QA]` open → comment, move card Review → QA.
+      - Both open → bounce to whichever is older; the other gets picked up later.
+      - Clean up worktree, exit.
+   c. If ALL threads are now resolved (already were, or step (a) just resolved
+      them), continue to step 3.
 3. Read PR (code + test files + description), spot-check Tester's evidence (one screenshot at least), read CLAUDE.md / AGENTS.md.
 4. Review the code (logic, conventions). Review the tests (right thing tested? testable assertions? meaningful coverage?).
 5. **Reviewer-side test rerun** (always — closes the Tester self-verification gap):

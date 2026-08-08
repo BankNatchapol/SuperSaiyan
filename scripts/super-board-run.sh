@@ -49,18 +49,37 @@ BOT_LOGIN=$(jq -r '.notifications.bot_identity // .bot_identity // ""' "$CONFIG_
 WORKER_BACKEND=$(jq -r '.worker_backend // "workflow"' "$CONFIG_PATH")
 GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_PATH")
 
-# Workflow is the default backend (v1.6.0). This legacy dispatcher only runs
-# when the config opts in explicitly — never by accident or stale habit.
-if [ "$WORKER_BACKEND" != "claude-p" ]; then
-  echo "🛑 board '${CONFIG_SLUG}' uses the workflow backend (worker_backend=${WORKER_BACKEND})." >&2
-  echo "    Run it in-session: /super-board run ${CONFIG_SLUG}  (see references/run-workflow.md)" >&2
-  echo "    To use this legacy dispatcher, set \"worker_backend\": \"claude-p\" in the config." >&2
-  exit 78
+# Workflow is the default backend (v1.6.0). This dispatcher only runs when the config opts
+# into one of the bash-dispatcher backends explicitly — never by accident or stale habit.
+# See references/backends.md for the full contract.
+case "$WORKER_BACKEND" in
+  claude-p|codex-exec|cursor-agent) ;;
+  *)
+    echo "🛑 board '${CONFIG_SLUG}' uses the workflow backend (worker_backend=${WORKER_BACKEND})." >&2
+    echo "    Run it in-session: /super-board run ${CONFIG_SLUG}  (see references/run-workflow.md)" >&2
+    echo "    To use this dispatcher, set \"worker_backend\" to \"claude-p\", \"codex-exec\", or \"cursor-agent\" in the config." >&2
+    exit 78
+    ;;
+esac
+
+# Backend contract: scripts/backends/<name>.sh in this dev repo, .claude/bin/backends/<name>.sh
+# once installed (install.sh copies scripts/backends/ alongside this script).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_FILE="$SCRIPT_DIR/backends/${WORKER_BACKEND}.sh"
+if [ ! -f "$BACKEND_FILE" ]; then
+  echo "🛑 backend contract not found: $BACKEND_FILE (worker_backend=${WORKER_BACKEND})" >&2
+  exit 77
+fi
+# shellcheck disable=SC1090
+source "$BACKEND_FILE"
+
+if ! backend_auth_check; then
+  echo "🛑 backend '${WORKER_BACKEND}' failed its auth check — see message above." >&2
+  exit 76
 fi
 
 # Platform contract: scripts/platforms/<name>.sh in this dev repo, .claude/bin/platforms/<name>.sh
 # once installed (install.sh copies scripts/platforms/ alongside this script).
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
 if [ ! -f "$PLATFORM_FILE" ]; then
   echo "🛑 platform contract not found: $PLATFORM_FILE (git_platform=${GIT_PLATFORM})" >&2
@@ -179,8 +198,7 @@ dispatch_lane() {
     review) prompt="Run super-review on issue #${issue} for super-board run. Read .claude/skills/super-board/references/run.md → Reviewer lifecycle. Config: ${CONFIG_PATH}." ;;
     *) log "unknown lane: $lane"; return 1 ;;
   esac
-  nohup claude -p "$prompt" >/dev/null 2>&1 &
-  pid=$!
+  pid=$(backend_launch "$(backend_worker_addendum)${prompt}")
   # v1.3.0+ lock format: bash-assignment style so `super-board stop` can source it
   # to recover lane + dispatch time. issue_locked()/reap_finished_locks() still work
   # because PID= is the first line.
@@ -270,11 +288,12 @@ reap_finished_locks() {
 log "super-board run started — config=${CONFIG_SLUG} variant=${VARIANT} base=${BASE_BRANCH} tick=${TICK_SECONDS}s max_workers=${MAX_WORKERS}"
 
 # Orphan-worker guard. `|| true` defends against pipefail when pgrep finds nothing.
-ORPHANS=$(pgrep -f 'claude -p .*super-board run' 2>/dev/null | grep -v "^$$\$" | wc -l | tr -d ' ' || true)
+ORPHAN_PATTERN="$(backend_orphan_pattern)"
+ORPHANS=$(pgrep -f "$ORPHAN_PATTERN" 2>/dev/null | grep -v "^$$\$" | wc -l | tr -d ' ' || true)
 ORPHANS=${ORPHANS:-0}
 if [ "$ORPHANS" -gt 0 ]; then
-  log "🛑 refusing to start: ${ORPHANS} super-board claude workers already running."
-  log "    Stop them first: pkill -f 'claude -p .*super-board run'"
+  log "🛑 refusing to start: ${ORPHANS} ${WORKER_BACKEND} workers already running."
+  log "    Stop them first: pkill -f '${ORPHAN_PATTERN}'"
   log "    Then re-run: $0 $CONFIG_SLUG"
   exit 73
 fi

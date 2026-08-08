@@ -1,3 +1,5 @@
+<!-- GENERATED FILE — edit skills/super-board/references/stop.md, then run scripts/generate-supersaiyan-references.sh to regenerate. Do not hand-edit. -->
+
 # super-board stop — full contract
 
 Pointer: spec `docs/superpowers/specs/2026-05-21-super-board-design.md` §9 (added in v1.3.0).
@@ -34,7 +36,7 @@ Nothing else. Stop is intentionally tolerant — its job is to bring the system 
 
 - `.claude/supersaiyan/inflight/<issue-N>` — one file per in-flight worker. New (v1.3.0+) format: `PID=…\nLANE=…\nSTARTED=…`. Legacy single-line PID format is also supported.
 - `pgrep -f 'super-board-run\.sh'` — dispatcher PID(s).
-- `pgrep -f 'claude -p .*super-board'` — orphan worker scan (workers without a lock file, e.g. from a crashed dispatcher).
+- `pgrep -f '<orphan-pattern-for-active-config's-worker_backend>'` — orphan worker scan (workers without a lock file, e.g. from a crashed dispatcher). The pattern depends on which `worker_backend` the active config uses — see `references/backends.md` for the exact regex per backend (`claude -p .*super-board run` for `claude-p`, `codex exec .*for SuperSaiyan` for `codex-exec`, `agent.*for SuperSaiyan` for `cursor-agent` — do NOT assume `agent`/`-p` are adjacent, they aren't).
 
 ## Per-worker wrap-up (run for each in-flight lock)
 
@@ -51,14 +53,14 @@ Nothing else. Stop is intentionally tolerant — its job is to bring the system 
 
 ## After the per-worker loop
 
-6. **Sweep orphan workers** — `pgrep -f 'claude -p .*super-board'` catches any `claude -p` worker that wasn't in `inflight/` (defensive against crashed dispatchers).
+6. **Sweep orphan workers** — `pgrep -f '<orphan-pattern-for-active-config's-worker_backend>'` (see `references/backends.md`) catches any worker that wasn't in `inflight/` (defensive against crashed dispatchers).
 7. **Kill the dispatcher loop** — `pgrep -f 'super-board-run\.sh'`, SIGTERM → 1s → SIGKILL.
 8. **Clear in-flight locks** — `rm -f .claude/supersaiyan/inflight/*`. The PIDs they reference are dead now.
 9. **Print summary** — workers stopped, dispatchers stopped, resume command.
 
 ## What stop does NOT do (deliberate)
 
-- **Does not wait for workers to finish.** `claude -p` workers have no SIGTERM handler that flushes a partial commit. Any uncommitted edits in worker worktrees are discarded. The last pushed commit on the branch is the actual resume point.
+- **Does not wait for workers to finish.** Workers (whichever `worker_backend` is active) have no SIGTERM handler that flushes a partial commit. Any uncommitted edits in worker worktrees are discarded. The last pushed commit on the branch is the actual resume point.
 - **Does not touch worktrees** under `.worktrees/`. Leaving them in place lets the next worker check out the same branch faster; the dispatcher's stale-worktree scan cleans up anything truly dead on next start.
 - **Does not touch branches or PRs.** Both persist. State lives on the GitHub Project board — cards stay in whichever column they were in when stopped.
 - **Does not modify the config.** A stopped run is not a deactivated config; `.claude/supersaiyan/active` is preserved.
@@ -104,8 +106,8 @@ Per the cardinal orchestrator/worker rule:
 |---|---|---|
 | `gh issue comment` fails | gh auth expired or network blip | Comments are best-effort. The kill + lock cleanup still happens. Manually note the stop in the issue later if needed. |
 | Assignee release fails (gh 403) | rate limit or auth | The next `super-board run` startup runs `reap_finished_locks` which sweeps stale assignees idempotently. No manual action needed. |
-| Worker PID survives SIGKILL | extremely rare (kernel-level stuck process) | `ps aux \| grep claude -p` to confirm, then escalate via OS tools. |
-| Stop reports "nothing to stop" but `ps` shows live workers | dispatcher and workers were started by a different repo / different inflight dir | Run stop in the right repo OR `pkill -f 'super-board-run\.sh'` manually + `pkill -f 'claude -p .*super-board'`. |
+| Worker PID survives SIGKILL | extremely rare (kernel-level stuck process) | `ps aux \| grep <backend-orphan-pattern>` (see `references/backends.md`) to confirm, then escalate via OS tools. |
+| Stop reports "nothing to stop" but `ps` shows live workers | dispatcher and workers were started by a different repo / different inflight dir | Run stop in the right repo OR `pkill -f 'super-board-run\.sh'` manually + `pkill -f '<backend-orphan-pattern>'` (see `references/backends.md`). |
 
 ## Lock file format (v1.3.0+)
 

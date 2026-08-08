@@ -1,11 +1,11 @@
 ---
 name: super-build
-description: Super Build canonical workflow — the Build lane inside the supersaiyan / super-board pipeline. Headless parallel GitHub Project executor that reads issues whose `Status` field is `Ready`, dispatches each as a headless `claude -p` worker in its own git worktree (max 3 in parallel), merges results back, closes the issue, moves the project card to `Done`, and notifies Telegram on each completion. The project board is the single curation surface — drag a card to `Ready` and Super Build picks it up. Prefer the supersaiyan skill for plain-English "fix the issue" / board-task asks; use this when the user says "Super Build", "run the build loop", "/super-build", or when supersaiyan / super-board has routed work to the Build lane.
+description: Super Build canonical workflow — the Build lane inside the supersaiyan / super-board pipeline. Headless parallel GitHub Project executor that reads issues whose `Status` field is `Ready`, dispatches each as a headless `claude -p` worker in its own git worktree (max 3 in parallel), and opens a PR per issue. DEFAULT IS SAFE: it does not merge, close the issue, or move the card to `Done` on its own — that only happens for a worker explicitly dispatched by the supersaiyan/super-board pipeline's Reviewer lane, or in the explicit opt-in Standalone Auto-Merge mode (see Autonomy preflight). Notifies Telegram on each completion. The project board is the single curation surface — drag a card to `Ready` and Super Build picks it up. Prefer the supersaiyan skill for plain-English "fix the issue" / board-task asks; use this when the user says "Super Build", "/super-build", or when supersaiyan / super-board has routed work to the Build lane.
 ---
 
 # Super Build / Super Build — Headless Parallel GitHub-Project Executor
 
-You are the orchestrator. The source of truth is the **`Ready` column of the configured GitHub Project board**. Your job: dispatch every issue in `Ready` (in board order) as a parallel headless `claude -p` worker in a git worktree, merge results back to the active branch, close the issue, advance its project card to `Done`, and ping Telegram on each completion.
+You are the orchestrator. The source of truth is the **`Ready` column of the configured GitHub Project board**. Your job: dispatch every issue in `Ready` (in board order) as a parallel headless `claude -p` worker in a git worktree, push the branch, and open a PR per issue — then stop. By default you do **not** merge results back, close the issue, or advance its project card to `Done` yourself; ping Telegram on each completion regardless. See **Autonomy preflight** below before doing anything past "open a PR."
 
 **Curation contract:** the human moves cards into `Ready` when they should be worked. The loop never reads `Backlog`, `In Progress`, or `Done` cards. If `Ready` is empty, the loop reports "queue empty" and exits cleanly — no error.
 
@@ -15,7 +15,26 @@ You are the orchestrator. The source of truth is the **`Ready` column of the con
 
 Super Build is the canonical builder. Do not use a separate `build-feature` workflow. If the user wants a one-off feature, first create or curate a GitHub issue/card with clear acceptance criteria, move it to `Ready`, then let Super Build execute it.
 
-Super Build may implement, test, commit, merge worker branches, close completed issues, and move project cards to `Done`. It should not invent new product scope beyond the issue body. If the issue needs product/design/security judgment, apply the human-gate or WIP-partial path instead of guessing.
+Super Build may implement, test, commit, and push. **By default it stops at "open a PR."** It does NOT merge worker branches, close issues, or move project cards to `Done` on its own — that is QA's and Reviewer's job (or a human's). Super Build only merges + closes autonomously inside the explicit, opt-in Standalone Auto-Merge mode below — never as a fallback, never because a signal was ambiguous or missing. It should not invent new product scope beyond the issue body. If the issue needs product/design/security judgment, apply the human-gate or WIP-partial path instead of guessing.
+
+**Never implement issue work directly on the default branch in the primary worktree.** Every issue gets its own branch (`loop/issue-N` in standalone mode, `issue-<N>-<slug>` when pipeline-dispatched) inside an isolated `git worktree`, created *before* implementation starts — see `### 3. Dispatch wave` below. This isn't optional even for a single `--only N` run. (This same rule applies to ad hoc interactive issue work that never invokes this skill at all — see `supersaiyan/SKILL.md` → "Golden rule: never implement issue work directly on the primary branch.")
+
+## Autonomy preflight (read before ANY merge, close, or move-to-Done action)
+
+Applies everywhere in this file. Before you run `git merge`, `gh pr merge`, `gh issue close`, or move a card to `Done` for any issue, run:
+
+```bash
+git rev-parse --show-toplevel | xargs basename
+ls .claude/supersaiyan/configs/*.json 2>/dev/null
+```
+
+Then classify this run:
+
+1. **Pipeline-dispatched.** Your invocation explicitly told you to read `.claude/skills/super-board/references/run.md` → a named lane lifecycle (Builder/Tester/Reviewer), and/or named a `Config: <path>` under `.claude/supersaiyan/configs/`. → Follow **## Pipeline-dispatched mode** below. This always wins, even if an opt-in phrase (case 4) is also present.
+2. **Repo-identity guard.** The toplevel basename is `SuperSaiyan` (the toolkit source repo). → STOP before dispatching any worker. This repo has no GitHub Project `Ready` column to drive and its own `AGENTS.md` documents that the pipeline runs in app repos only. Tell the user: `🛑 This is the SuperSaiyan toolkit repo — it does not run the Build/QA/Review pipeline (see AGENTS.md).` Do not proceed.
+3. **Onboarded but not explicitly dispatched.** A `.claude/supersaiyan/configs/*.json` exists, but this invocation wasn't the explicit pipeline dispatch from case 1. → Tell the user: `🛑 This repo has an onboarded supersaiyan pipeline. Route this through supersaiyan (/supersaiyan run) instead of invoking Super Build standalone.` Still implement, test, commit, push, and open the PR (the default success path below) — just don't merge or close.
+4. **Explicit opt-in.** No onboarded config (case 3 doesn't apply), and the user's current turn contains the exact literal phrase `--standalone-automerge-i-understand-the-risk`. → You may enter **## Standalone Auto-Merge mode** below. Restate the consequence once (no QA, no Review, this session merges and closes on its own) before the first merge/close.
+5. **Anything else** — bare `/super-build`, "Super Build", plain-English "fix the issue," or any other ambiguous match, with none of cases 1–4 applying. → **The default.** Implement, test, commit, push, open a PR, stop. Do not merge or close.
 
 ## Configuration
 
@@ -130,16 +149,17 @@ The dispatcher (at `scripts/super-build-dispatch.sh`) handles:
 
 Poll BashOutput on each in-flight shell. As each finishes:
 
-**On dispatcher exit 0 (success):**
+**On dispatcher exit 0 (success) — DEFAULT: open a PR, do not merge or close.** This is the outcome unless Autonomy preflight case 4 (Standalone Auto-Merge mode) applies to this run:
 - `cd <repo-root>`
-- `git merge --no-ff loop/issue-N -m "merge: loop/issue-N (closes #N)"`
-- `gh issue close N --comment "Closed by /super-build in $(git rev-parse --short HEAD)"`
-- `gh issue edit N --remove-label loop:in-progress`
-- `git worktree remove .worktrees/issue-N`
-- `git branch -D loop/issue-N`
-- Move the project item/card to `Done` if GitHub does not do it automatically on issue close.
-- Notify Telegram: `✅ Super Build issue #N closed (merged)`
+- `git push origin loop/issue-N`
+- `gh pr create --base "$BASE_BRANCH" --head loop/issue-N --draft --title "<issue title>" --body "Closes #N\n\n<summary of what changed>\n\n🤖 Opened by /super-build — awaiting QA/Review. Does not merge or close on its own; see Autonomy preflight in skills/super-build/SKILL.md."`
+- `gh issue comment N --body "🔨 Super Build opened PR #<pr> — implementation done, awaiting QA/Review (or a human merge). Issue stays open until the PR merges."`
+- `gh issue edit N --remove-label loop:in-progress --add-label needs-review`
+- `git worktree remove .worktrees/issue-N` (leave `loop/issue-N` on origin — don't delete; it's cleaned up when the PR merges or closes)
+- Notify Telegram: `✅ Super Build opened PR #<pr> for issue #N — awaiting QA/Review`
 - Recompute ready set; if new issues are now unblocked, dispatch in the next wave (respecting the 3-concurrent throttle)
+
+If Autonomy preflight case 4 applies, use the merge+close sequence in **## Standalone Auto-Merge mode** instead of the steps above.
 
 **On dispatcher exit 5 (intentional WIP-PARTIAL — merge as partial, do NOT close):**
 - `cd <repo-root>`
@@ -167,7 +187,7 @@ Poll BashOutput on each in-flight shell. As each finishes:
 
 ### 5. Final report
 
-When the selected GitHub Project `Ready` queue is empty, or only blocked/skipped cards remain: send a Telegram summary listing issues closed this run, issues still skipped (`human-gated` / `loop:halted` / blocked dependencies), and any halts. Suggest: "Run Super QA to confirm closed issues are truly complete."
+When the selected GitHub Project `Ready` queue is empty, or only blocked/skipped cards remain: send a Telegram summary listing PRs opened this run (awaiting QA/Review), issues closed this run (Standalone Auto-Merge mode only), issues still skipped (`human-gated` / `loop:halted` / blocked dependencies), and any halts. Suggest: "Run Super QA against the opened PRs, then Super Review to merge."
 
 ## Issue contract
 
@@ -206,6 +226,7 @@ The preamble at `references/worker-preamble.md` is the worker contract: decision
 
 If the user invokes `/super-build` after a partial run:
 - Re-read `gh issue list`. Issues already closed are skipped automatically.
+- If issue N already has an open PR from a prior `loop/issue-N` branch: skip re-dispatch, report the existing PR URL instead — don't open a duplicate PR.
 - If `.worktrees/issue-N` exists for an N that's still open: a previous worker was interrupted. Default: notify the user and ask before auto-resuming (a re-dispatch overwrites the previous attempt's branch).
 - If the `loop:in-progress` label is set on issue N but no worktree exists: stale lock from a crashed orchestrator. Remove the label and treat as ready.
 
@@ -221,17 +242,39 @@ If the user invokes `/super-build` after a partial run:
 
 ## Invocation patterns
 
-- `Super Build` / `/super-build` → process all GitHub Project `Ready` issues in board order
-- `/super-build --only N` → execute only issue #N (smoke-test mode, ignores `loop:in-progress` label on that issue if you set `FORCE=1`)
+- `Super Build` / `/super-build` → process all GitHub Project `Ready` issues in board order. **Default outcome per issue: an open PR, no merge, no close** (see Autonomy preflight).
+- `/super-build --only N` → same PR-only default, scoped to a single issue (smoke-test mode, ignores `loop:in-progress` label on that issue if you set `FORCE=1`). `--only` scopes which issue, not merge authority.
 - `/super-build --dry-run` → print the dispatch plan (issues, order, parallelism waves) without invoking workers, without setting labels, without commenting
+- `/super-build --only N --standalone-automerge-i-understand-the-risk` → the only way to get the old merge+close+Done behavior for issue N. Requires no onboarded `.claude/supersaiyan/configs/` and one explicit confirmation (Autonomy preflight case 4).
+
+## Standalone Auto-Merge mode (opt-in, unsafe)
+
+**Do not enter this section unless Autonomy preflight case 4 applies to this run.** This reproduces the pre-fix behavior: merges and closes issues with no QA or Review step. It exists for a genuinely single-lane setup with no QA/Review columns, used knowingly — not as a default or fallback.
+
+When active, replace the default "On dispatcher exit 0" steps in **### 4. Wait + reconcile** with:
+- `cd <repo-root>`
+- `git merge --no-ff loop/issue-N -m "merge: loop/issue-N (closes #N)"`
+- `gh issue close N --comment "Closed by /super-build (standalone auto-merge) in $(git rev-parse --short HEAD)"`
+- `gh issue edit N --remove-label loop:in-progress`
+- `git worktree remove .worktrees/issue-N`
+- `git branch -D loop/issue-N`
+- Move the project item/card to `Done` if GitHub does not do it automatically on issue close.
+- Notify Telegram: `✅ Super Build issue #N closed (merged) — standalone auto-merge mode`
+
+The WIP-PARTIAL, worker-failure, and HUMAN GATE reconcile branches are unchanged in this mode.
 
 ## Companion skill
 
 `/super-qa` / **Super QA** is the autonomous bug-bash iteration loop. It is **independent of this skill** unless Super Orchestrator explicitly sequences them. Run **Super Build** for forward progress on Ready issues; run **Super QA** to harden the existing codebase by hunting bugs.
 
-## super-board integration
+## Pipeline-dispatched mode
 
-When invoked by super-board (env `SUPER_BOARD_RUN=1` set by the runner, or invocation contains "super-board run"), follow these rules instead of the standalone defaults:
+This is how supersaiyan/super-board actually calls you — treat it as the common case, not a special one. Enter this mode whenever ANY of these is true:
+- Your invocation explicitly instructs you to read `.claude/skills/super-board/references/run.md` and follow a named lane lifecycle (Builder/Tester/Reviewer). **Both dispatch backends always say this** (`super-board-run.sh`'s legacy dispatcher and the default `super-board-wave.js` workflow backend) — this is the authoritative, always-present signal. Prefer it over the signals below.
+- Your invocation names a `Config: <path>` under `.claude/supersaiyan/configs/`.
+- Env `SUPER_BOARD_RUN=1` is set, or the invocation text contains `"super-board run"` or `"super-board workflow wave"` (both real strings the two backends send; kept as back-compat signals — don't rely on these alone).
+
+When any of the above holds, follow these rules instead of the standalone defaults:
 
 ### State protocol
 - Read context from: issue body + ALL issue comments + linked PR description + PR comments + PR review threads. NEVER from local state files for inter-lane coordination.

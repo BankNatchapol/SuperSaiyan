@@ -1,3 +1,5 @@
+<!-- GENERATED FILE — edit skills/super-board/references/run-workflow.md, then run scripts/generate-supersaiyan-references.sh to regenerate. Do not hand-edit. -->
+
 # super-board run — workflow backend contract
 
 The DEFAULT backend (v1.6.0+): used when the active config sets

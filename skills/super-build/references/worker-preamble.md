@@ -44,6 +44,15 @@ You are running UNATTENDED inside **Super Build**, dispatched to work on a singl
    c. Stop. Do **NOT** run `gh issue close`, do **NOT** remove the `loop:in-progress` label, do **NOT** comment on the issue — the orchestrator handles all of that after merging your branch.
    d. Do **NOT** advance to another issue. The orchestrator handles dispatch.
 
+## Shared/config files — append, never regenerate
+
+Before writing to any file that already exists and isn't solely owned by this issue's
+scope — `.gitignore`, `.env.example`, `package.json` / `pyproject.toml`,
+`docker-compose.yml`, `AGENTS.md` / `CLAUDE.md`, or any other repo-wide config — read it
+first and merge/append your change into it. Never overwrite or regenerate it from scratch,
+even if the issue text says "create X." Deleting pre-existing rules you didn't author and
+don't recognize the purpose of is a regression, not a fix.
+
 ## Failure mode
 
 If you cannot satisfy any gate (test fails, lint won't pass, typecheck error you can't resolve, missing dependency you can't install, scope decision genuinely requires the user):
