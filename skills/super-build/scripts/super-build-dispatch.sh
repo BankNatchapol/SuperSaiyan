@@ -50,6 +50,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="${SKILL_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 MAX_TURNS="${MAX_TURNS:-250}"
 WORKER_BACKEND="${WORKER_BACKEND:-claude-p}"
+GIT_PLATFORM="${GIT_PLATFORM:-github}"
 
 # Backend contract (see .claude/skills/super-board/references/backends.md). Installed layout:
 # .claude/bin/backends/<name>.sh (repo-root-relative, same dir install.sh copies alongside
@@ -65,6 +66,19 @@ if [[ ! -f "$BACKEND_FILE" ]]; then
 fi
 # shellcheck disable=SC1090
 source "$BACKEND_FILE"
+
+# Platform contract (sibling of backends/). Installed: .claude/bin/platforms/<name>.sh
+# Dev-repo fallback: scripts/platforms/<name>.sh relative to this script.
+PLATFORM_FILE="$REPO_DIR/.claude/bin/platforms/${GIT_PLATFORM}.sh"
+if [[ ! -f "$PLATFORM_FILE" ]]; then
+  PLATFORM_FILE="$SCRIPT_DIR/../../../scripts/platforms/${GIT_PLATFORM}.sh"
+fi
+if [[ ! -f "$PLATFORM_FILE" ]]; then
+  echo "error: platform contract not found for git_platform=${GIT_PLATFORM} (looked in .claude/bin/platforms/ and scripts/platforms/)" >&2
+  exit 64
+fi
+# shellcheck disable=SC1090
+source "$PLATFORM_FILE"
 
 if ! backend_auth_check; then
   echo "error: backend '${WORKER_BACKEND}' failed its auth check — see message above." >&2
@@ -113,8 +127,8 @@ if git rev-parse --verify "$WORKER_BRANCH" >/dev/null 2>&1; then
 fi
 
 # Compose the worker prompt: preamble + issue body + working-dir footer
-ISSUE_JSON=$(gh issue view "$N" --json number,title,body,labels 2>&1) || {
-  echo "error: gh issue view #$N failed:" >&2
+ISSUE_JSON=$(platform_issue_view "$N" --json number,title,body,labels 2>&1) || {
+  echo "error: platform_issue_view #$N failed:" >&2
   echo "$ISSUE_JSON" >&2
   exit 64
 }

@@ -126,10 +126,24 @@ platform_top_unclaimed_card() {
 # ───────────────────────────── Group D — Board write / move-card ─────────────────────────────
 
 platform_card_status_set() {
-  # GitHub ProjectV2 single-select write. Args match today's gh project item-edit:
-  # $1 = item_id, $2 = project_id, $3 = field_id, $4 = single-select-option-id.
+  # GitHub ProjectV2 single-select write.
+  # Usage A (existing): <item_id> <project_id> <field_id> <option_id>
+  # Usage B (add-only — tasks-to-issues Ready enqueue):
+  #   --add <project_number> <owner> <issue_url> <project_id> <field_id> <option_id>
+  #   → gh project item-add + item-edit; echoes the new item id.
   # (Logical <issue> <target-status> is resolved to these IDs by the caller /
   # tasks-to-issues load_project_ready_metadata — same as today.)
+  if [ "${1:-}" = "--add" ]; then
+    shift
+    local number="$1" owner="$2" url="$3" project_id="$4" field_id="$5" option_id="$6"
+    local item_id
+    item_id=$(gh project item-add "$number" --owner "$owner" \
+      --url "$url" --format json --jq '.id')
+    gh project item-edit --id "$item_id" --project-id "$project_id" \
+      --field-id "$field_id" --single-select-option-id "$option_id" >/dev/null
+    echo "$item_id"
+    return 0
+  fi
   local item_id="$1" project_id="$2" field_id="$3" option_id="$4"
   gh project item-edit --id "$item_id" --project-id "$project_id" \
     --field-id "$field_id" --single-select-option-id "$option_id"
@@ -360,6 +374,11 @@ platform_board_ensure() {
     echo "Project ${owner}#${number} Status field missing options:$missing" >&2
     return 65
   fi
-  # Echo project_id + status field id for callers that need them next.
+  # Echo project_id, status field id, then one option id per required option name
+  # (so tasks-to-issues can resolve Ready without a second field-list round-trip).
   printf '%s\n%s\n' "$project_id" "$status_id"
+  for opt in "$@"; do
+    echo "$fields" | jq -r --arg n "$opt" \
+      '.fields[] | select(.name == "Status") | .options[] | select(.name == $n) | .id' | head -1
+  done
 }

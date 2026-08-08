@@ -51,6 +51,18 @@ if ! gh auth status >/dev/null 2>&1; then
   exit 69
 fi
 
+# Platform contract: scripts/platforms/<name>.sh in this repo, .claude/bin/platforms/
+# once installed (install.sh copies platforms/ alongside this script).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GIT_PLATFORM="${GIT_PLATFORM:-github}"
+PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
+if [ ! -f "$PLATFORM_FILE" ]; then
+  echo "platform contract not found: $PLATFORM_FILE (git_platform=${GIT_PLATFORM})" >&2
+  exit 77
+fi
+# shellcheck disable=SC1090
+source "$PLATFORM_FILE"
+
 TASKS_DIR="${TASKS_DIR:-docs/superpowers/tasks}"
 SINGLE_FILE=""
 
@@ -181,15 +193,21 @@ STATUS_FIELD_ID=""
 READY_OPTION_ID=""
 
 load_project_ready_metadata() {
-  local owner="$1" number="$2" fields
+  local owner="$1" number="$2" out
 
   [ -n "$PROJECT_ID" ] && return
 
-  PROJECT_ID=$(gh project view "$number" --owner "$owner" --format json --jq '.id')
-  fields=$(gh project field-list "$number" --owner "$owner" --format json)
-  STATUS_FIELD_ID=$(echo "$fields" | jq -r '.fields[] | select(.name == "Status") | .id' | head -1)
-  READY_OPTION_ID=$(echo "$fields" | jq -r \
-    '.fields[] | select(.name == "Status") | .options[] | select(.name == "Ready") | .id' | head -1)
+  # GitHub: platform_board_ensure validates Status+Ready and returns
+  # project_id / status_field_id / Ready option id. (Design AC names
+  # platform_label_ensure for the GitLab status::ready path; the GitHub
+  # adapter maps that gate here — see platforms/github.sh.)
+  out=$(platform_board_ensure "$number" "$owner" "Ready") || {
+    echo "Project $owner#$number must have a Status field with a Ready option." >&2
+    exit 65
+  }
+  PROJECT_ID=$(printf '%s\n' "$out" | sed -n '1p')
+  STATUS_FIELD_ID=$(printf '%s\n' "$out" | sed -n '2p')
+  READY_OPTION_ID=$(printf '%s\n' "$out" | sed -n '3p')
 
   if [ -z "$PROJECT_ID" ] || [ -z "$STATUS_FIELD_ID" ] || [ -z "$READY_OPTION_ID" ]; then
     echo "Project $owner#$number must have a Status field with a Ready option." >&2
@@ -258,11 +276,8 @@ while IFS= read -r file; do
   if [ -n "${GH_PROJECT_NUMBER:-}" ]; then
     owner="${GH_PROJECT_OWNER:-@me}"
     load_project_ready_metadata "$owner" "$GH_PROJECT_NUMBER"
-    item_id=$(gh project item-add "$GH_PROJECT_NUMBER" --owner "$owner" \
-      --url "$url" --format json --jq '.id')
-    gh project item-edit --id "$item_id" --project-id "$PROJECT_ID" \
-      --field-id "$STATUS_FIELD_ID" \
-      --single-select-option-id "$READY_OPTION_ID" >/dev/null
+    platform_card_status_set --add "$GH_PROJECT_NUMBER" "$owner" "$url" \
+      "$PROJECT_ID" "$STATUS_FIELD_ID" "$READY_OPTION_ID" >/dev/null
     echo "  → added to project $owner#$GH_PROJECT_NUMBER in Ready"
   fi
 done < <(list_task_files)
