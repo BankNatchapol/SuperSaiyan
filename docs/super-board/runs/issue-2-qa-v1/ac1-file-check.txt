@@ -1,0 +1,4 @@
+=== AC1: status_adapter.py exists with PlatformAdapter + GithubStatusAdapter ===
+file exists: OK
+56:class PlatformAdapter(ABC):
+76:class GithubStatusAdapter(PlatformAdapter):

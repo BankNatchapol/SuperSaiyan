@@ -1,0 +1,5 @@
+=== AC1b: moved code matches original gh()/ITEMS_QUERY/paginate_items logic (semantic diff vs pre-refactor main) ===
+gh: NOT FOUND (pre=True, post=False)
+paginate_items: identical=True
+gh() body identical (ignoring self/indent): True
+ITEMS_QUERY identical: True

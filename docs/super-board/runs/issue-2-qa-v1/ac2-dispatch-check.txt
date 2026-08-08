@@ -1,0 +1,9 @@
+=== AC2: super-board-status.py dispatches via GithubStatusAdapter ===
+64:from platforms.status_adapter import (  # noqa: E402
+66:    get_status_adapter,
+472:    adapter = get_status_adapter(cfg.get("git_platform", "github"))
+483:    items_raw, hit_cap = adapter.fetch_project_items(project_owner, project_number)
+539:        comments = adapter.fetch_issue_comments(n)
+-- confirm old gh()/ITEMS_QUERY/paginate_items removed from super-board-status.py --
+0
+
