@@ -47,7 +47,6 @@ TICK_SECONDS=$(jq -r '.tick_seconds // 120' "$CONFIG_PATH")
 MAX_WORKERS=$(jq -r '.max_workers // 3' "$CONFIG_PATH")
 BOT_LOGIN=$(jq -r '.notifications.bot_identity // .bot_identity // ""' "$CONFIG_PATH")
 WORKER_BACKEND=$(jq -r '.worker_backend // "workflow"' "$CONFIG_PATH")
-GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_PATH")
 
 # Workflow is the default backend (v1.6.0). This dispatcher only runs when the config opts
 # into one of the bash-dispatcher backends explicitly — never by accident or stale habit.
@@ -78,16 +77,6 @@ if ! backend_auth_check; then
   exit 76
 fi
 
-# Platform contract: scripts/platforms/<name>.sh in this dev repo, .claude/bin/platforms/<name>.sh
-# once installed (install.sh copies scripts/platforms/ alongside this script).
-PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
-if [ ! -f "$PLATFORM_FILE" ]; then
-  echo "🛑 platform contract not found: $PLATFORM_FILE (git_platform=${GIT_PLATFORM})" >&2
-  exit 77
-fi
-# shellcheck disable=SC1090
-source "$PLATFORM_FILE"
-
 RUN_DATE=$(date +%Y-%m-%d)
 RUN_MANIFEST="docs/supersaiyan/runs/${RUN_DATE}-${CONFIG_SLUG}.md"
 INFLIGHT_DIR=".claude/supersaiyan/inflight"
@@ -98,8 +87,8 @@ log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$RUN_MANIFEST"; }
 
 PROJECT_ITEMS_JSON=""
 fetch_project_items() {
-  # One board snapshot per tick; all column lookups read from this cache.
-  PROJECT_ITEMS_JSON=$(platform_board_snapshot "$PROJECT_NUMBER" "$PROJECT_OWNER")
+  # One gh call per tick; all column lookups read from this cache.
+  PROJECT_ITEMS_JSON=$(gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --format json --limit 500 2>/dev/null || echo '{"items":[]}')
 }
 
 column_count() {
@@ -156,13 +145,16 @@ lane_idle() {
 
 gh_rate_guard() {
   # Sleep until rate limit resets if GraphQL remaining < 200.
-  # Remaining comes from the platform; sleep/reset math lives in platform_rate_guard
-  # (reset timestamp is not part of platform_rate_remaining's return value).
-  local remaining
-  remaining=$(platform_rate_remaining graphql)
+  local payload remaining reset now wait
+  payload=$(gh api rate_limit 2>/dev/null || echo '{"resources":{"graphql":{"remaining":5000,"reset":0}}}')
+  remaining=$(echo "$payload" | jq -r '.resources.graphql.remaining // 5000')
   if [ "$remaining" -lt 200 ]; then
-    log "⚠ GraphQL rate limit low (${remaining} left) — sleeping until reset"
-    platform_rate_guard 200
+    reset=$(echo "$payload" | jq -r '.resources.graphql.reset // 0')
+    now=$(date +%s)
+    wait=$((reset - now + 10))
+    [ "$wait" -lt 60 ] && wait=60
+    log "⚠ GraphQL rate limit low (${remaining} left) — sleeping ${wait}s until reset"
+    sleep "$wait"
   fi
 }
 
@@ -175,7 +167,7 @@ try_claim_assignee() {
   # idempotent for self-assign; on race-loss, gh returns non-zero and we skip.
   local issue="$1"
   [ -z "$BOT_LOGIN" ] && return 0
-  platform_claim_issue "$issue" "$BOT_LOGIN" >/dev/null 2>&1 || {
+  gh issue edit "$issue" --add-assignee "$BOT_LOGIN" >/dev/null 2>&1 || {
     log "claim failed on #${issue} (race or gh api error) — skipping this tick"
     return 1
   }
@@ -244,7 +236,7 @@ check_lane_zombie() {
     sleep 1
     kill -9 "$pid" 2>/dev/null || true
     rm -f "$INFLIGHT_DIR/$issue"
-    [ -n "$BOT_LOGIN" ] && platform_release_issue "$issue" "$BOT_LOGIN" >/dev/null 2>&1 || true
+    [ -n "$BOT_LOGIN" ] && gh issue edit "$issue" --remove-assignee "$BOT_LOGIN" >/dev/null 2>&1 || true
     case "$lane" in
       build)  BUILD_PID="";  BUILD_ISSUE="" ;;
       qa)     QA_PID="";     QA_ISSUE="" ;;
@@ -275,7 +267,7 @@ reap_finished_locks() {
     if [ -z "$PID" ] || ! kill -0 "$PID" 2>/dev/null; then
       rm -f "$lock"
       if [ -n "$BOT_LOGIN" ]; then
-        platform_release_issue "$issue" "$BOT_LOGIN" >/dev/null 2>&1 || true
+        gh issue edit "$issue" --remove-assignee "$BOT_LOGIN" >/dev/null 2>&1 || true
         log "reaped stale lock + swept assignee on #${issue} (pid=${PID:-empty})"
       else
         log "reaped stale lock for #${issue} (pid=${PID:-empty})"
@@ -308,7 +300,8 @@ fi
 
 # Production-merge guard.
 if [ "$BASE_BRANCH" = "main" ] && [ "$HUMAN_APPROVES" = "false" ]; then
-  if platform_detect_production_ci; then
+  if rg -qU 'on:\s*\n?\s*push:\s*\n?\s*branches:[^a-z]*main' .github/workflows 2>/dev/null \
+     || [ -f vercel.json ] || [ -f netlify.toml ]; then
     log "🛡 refusing to start: would auto-merge to production main."
     exit 75
   fi
