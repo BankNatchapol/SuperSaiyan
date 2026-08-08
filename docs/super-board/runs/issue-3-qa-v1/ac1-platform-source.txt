@@ -1,0 +1,34 @@
+=== AC1: GIT_PLATFORM read + BASH_SOURCE-relative platforms/ source ===
+
+--- grep GIT_PLATFORM ---
+50:GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_PATH")
+63:SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+64:PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
+66:  echo "🛑 platform contract not found: $PLATFORM_FILE (git_platform=${GIT_PLATFORM})" >&2
+
+--- sourced block (lines 48-72) ---
+BOT_LOGIN=$(jq -r '.notifications.bot_identity // .bot_identity // ""' "$CONFIG_PATH")
+WORKER_BACKEND=$(jq -r '.worker_backend // "workflow"' "$CONFIG_PATH")
+GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_PATH")
+
+# Workflow is the default backend (v1.6.0). This legacy dispatcher only runs
+# when the config opts in explicitly — never by accident or stale habit.
+if [ "$WORKER_BACKEND" != "claude-p" ]; then
+  echo "🛑 board '${CONFIG_SLUG}' uses the workflow backend (worker_backend=${WORKER_BACKEND})." >&2
+  echo "    Run it in-session: /super-board run ${CONFIG_SLUG}  (see references/run-workflow.md)" >&2
+  echo "    To use this legacy dispatcher, set \"worker_backend\": \"claude-p\" in the config." >&2
+  exit 78
+fi
+
+# Platform contract: scripts/platforms/<name>.sh in this dev repo, .claude/bin/platforms/<name>.sh
+# once installed (install.sh copies scripts/platforms/ alongside this script).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
+if [ ! -f "$PLATFORM_FILE" ]; then
+  echo "🛑 platform contract not found: $PLATFORM_FILE (git_platform=${GIT_PLATFORM})" >&2
+  exit 77
+fi
+# shellcheck disable=SC1090
+source "$PLATFORM_FILE"
+
+RUN_DATE=$(date +%Y-%m-%d)

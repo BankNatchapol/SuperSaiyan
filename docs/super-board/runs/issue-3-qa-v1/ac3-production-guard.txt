@@ -1,0 +1,8 @@
+=== AC3: production-merge guard ===
+290:# Production-merge guard.
+291-if [ "$BASE_BRANCH" = "main" ] && [ "$HUMAN_APPROVES" = "false" ]; then
+292-  if platform_detect_production_ci; then
+293-    log "🛡 refusing to start: would auto-merge to production main."
+294-    exit 75
+295-  fi
+296-fi
