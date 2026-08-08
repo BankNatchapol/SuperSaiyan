@@ -1,3 +1,4 @@
+// GENERATED FILE — edit skills/super-board/references/config-schema.json, then run scripts/generate-supersaiyan-references.sh to regenerate. Do not hand-edit.
 // Source of truth: docs/superpowers/specs/2026-05-21-super-board-design.md §4
 //
 // This file is a REFERENCE DOC, not parsed by the skill at runtime. It uses
@@ -27,10 +28,21 @@
 
   // Worker dispatch backend. "workflow" (default) drains waves in-session via
   // the super-board-wave dynamic workflow (references/run-workflow.md);
-  // requires dynamic workflows enabled in /config. "claude-p" is the legacy
-  // headless dispatcher (.claude/bin/super-board-run.sh) — explicit opt-in
-  // only; the dispatcher refuses to run (exit 78) unless set here.
+  // Claude-Code-only — requires dynamic workflows enabled in /config. The
+  // remaining three values share one headless bash dispatcher
+  // (.claude/bin/super-board-run.sh) via scripts/backends/<name>.sh — see
+  // references/backends.md for the full contract and per-tool setup:
+  //   "claude-p"      — legacy, spawns `claude -p` workers.
+  //   "codex-exec"    — spawns `codex exec` workers.
+  //   "cursor-agent"  — spawns `agent -p` (Cursor CLI) workers.
+  // All three are explicit opt-in; the dispatcher refuses to run (exit 78)
+  // unless one of them is set here.
   "worker_backend": "workflow",
+
+  // Which forge this config drives. "github" (default, back-compat) or "gitlab".
+  // Orthogonal to worker_backend — any combination is valid. Selects which
+  // scripts/platforms/<name>.sh the dispatcher sources. See references/platforms.md.
+  "git_platform": "github",
 
   // Default model ladder for lane workers, indexed by card complexity from
   // the classify router. Overridden per run by `super-board run --low|--high`.

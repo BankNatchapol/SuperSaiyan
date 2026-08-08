@@ -5,8 +5,8 @@
 // the schema. Strip comments before validating an actual config file as JSON.
 //
 // One config per GitHub project this repo drives, written to
-// `.claude/super-board/configs/<slug>.json` (committed). The active
-// pointer `.claude/super-board/active` is gitignored and per-machine.
+// `.claude/supersaiyan/configs/<slug>.json` (committed). The active
+// pointer `.claude/supersaiyan/active` is gitignored and per-machine.
 
 {
   "version": 1,
@@ -27,10 +27,21 @@
 
   // Worker dispatch backend. "workflow" (default) drains waves in-session via
   // the super-board-wave dynamic workflow (references/run-workflow.md);
-  // requires dynamic workflows enabled in /config. "claude-p" is the legacy
-  // headless dispatcher (.claude/bin/super-board-run.sh) — explicit opt-in
-  // only; the dispatcher refuses to run (exit 78) unless set here.
+  // Claude-Code-only — requires dynamic workflows enabled in /config. The
+  // remaining three values share one headless bash dispatcher
+  // (.claude/bin/super-board-run.sh) via scripts/backends/<name>.sh — see
+  // references/backends.md for the full contract and per-tool setup:
+  //   "claude-p"      — legacy, spawns `claude -p` workers.
+  //   "codex-exec"    — spawns `codex exec` workers.
+  //   "cursor-agent"  — spawns `agent -p` (Cursor CLI) workers.
+  // All three are explicit opt-in; the dispatcher refuses to run (exit 78)
+  // unless one of them is set here.
   "worker_backend": "workflow",
+
+  // Which forge this config drives. "github" (default, back-compat) or "gitlab".
+  // Orthogonal to worker_backend — any combination is valid. Selects which
+  // scripts/platforms/<name>.sh the dispatcher sources. See references/platforms.md.
+  "git_platform": "github",
 
   // Default model ladder for lane workers, indexed by card complexity from
   // the classify router. Overridden per run by `super-board run --low|--high`.
@@ -65,8 +76,8 @@
   "paths": {
     // `null` when no PROJECT.md exists (URL-only flows).
     "project_md": null,
-    "pre_flight_md": "docs/super-board/pre-flight.md",
-    "runs_dir": "docs/super-board/runs"
+    "pre_flight_md": "docs/supersaiyan/pre-flight.md",
+    "runs_dir": "docs/supersaiyan/runs"
   },
 
   // When `true`, Reviewer marks the PR ready but does NOT squash-merge; a
