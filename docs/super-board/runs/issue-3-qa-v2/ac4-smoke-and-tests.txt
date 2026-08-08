@@ -1,0 +1,9 @@
+=== AC4: test-run-platform-rewire + smoke shape ===
+
+checking scripts/super-board-run.sh platform rewire
+  ✓ GIT_PLATFORM source + platform_* call sites + smoke exit 74
+PASS: test-run-platform-rewire.sh
+
+checking github.sh
+  ✓ all 31 contract functions defined
+PASS: test-platform-contract.sh

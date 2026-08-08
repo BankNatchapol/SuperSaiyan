@@ -1,0 +1,15 @@
+=== AC2: platform_* call sites; raw gh/rg sites removed ===
+
+--- platform_* calls ---
+103:  PROJECT_ITEMS_JSON=$(platform_board_snapshot "$PROJECT_NUMBER" "$PROJECT_OWNER")
+161:  # (reset timestamp is not part of platform_rate_remaining's return value).
+163:  remaining=$(platform_rate_remaining graphql)
+179:  platform_claim_issue "$issue" "$BOT_LOGIN" >/dev/null 2>&1 || {
+248:    [ -n "$BOT_LOGIN" ] && platform_release_issue "$issue" "$BOT_LOGIN" >/dev/null 2>&1 || true
+279:        platform_release_issue "$issue" "$BOT_LOGIN" >/dev/null 2>&1 || true
+
+--- raw call site counts (non-comment) ---
+gh[[:space:]]+project[[:space:]]+item-list => 0
+gh[[:space:]]+api[[:space:]]+rate_limit => 0
+gh[[:space:]]+issue[[:space:]]+edit.*--add-assignee => 0
+gh[[:space:]]+issue[[:space:]]+edit.*--remove-assignee => 0

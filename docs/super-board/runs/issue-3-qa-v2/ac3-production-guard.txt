@@ -1,0 +1,11 @@
+=== AC3: production-merge guard ===
+310:# Production-merge guard.
+311-if [ "$BASE_BRANCH" = "main" ] && [ "$HUMAN_APPROVES" = "false" ]; then
+312-  if platform_detect_production_ci; then
+313-    log "🛡 refusing to start: would auto-merge to production main."
+314-    exit 75
+315-  fi
+316-fi
+
+--- confirm no .github/workflows grep remains ---
+.github/workflows count: 0
