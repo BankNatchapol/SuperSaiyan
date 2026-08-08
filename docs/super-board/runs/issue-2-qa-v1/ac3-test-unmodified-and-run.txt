@@ -1,0 +1,4 @@
+=== AC3: tests/test-status-json.py unmodified ===
+(no diff above == unmodified: OK)
+--- running test ---
+PASS: test-status-json.py

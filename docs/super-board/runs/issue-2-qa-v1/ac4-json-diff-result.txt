@@ -1,0 +1,86 @@
+--json output byte-identical (wall-clock fields normalized): True
+{
+  "blockers": [],
+  "config": {
+    "base_branch": "main",
+    "human_approves_merge": false,
+    "max_workers": 3,
+    "path": ".claude/supersaiyan/configs/demo.json",
+    "slug": "demo",
+    "truth_gate": "off",
+    "truth_threshold": 70,
+    "variant": "full",
+    "worker_backend": "workflow"
+  },
+  "health": {
+    "exited": false,
+    "last_tick": "09:00:02",
+    "run_active": true,
+    "started_at": null,
+    "workers_active": 1,
+    "workers_max": 3,
+    "worktrees_cleaned": 0
+  },
+  "lanes": {
+    "Backlog": [
+      {
+        "assignees": [],
+        "id": "PVTI_backlog",
+        "labels": [],
+        "number": 11,
+        "repository": "octocat/demo",
+        "state": "OPEN",
+        "status": "Backlog",
+        "title": "Manual idea",
+        "url": "https://github.com/octocat/demo/issues/11"
+      }
+    ],
+    "Blocked": [],
+    "Building": [],
+    "Done": [],
+    "QA": [],
+    "Ready": [
+      {
+        "assignees": [],
+        "id": "PVTI_ready",
+        "labels": [
+          "ui"
+        ],
+        "number": 12,
+        "repository": "octocat/demo",
+        "state": "OPEN",
+        "status": "Ready",
+        "title": "Ship control center",
+        "url": "https://github.com/octocat/demo/issues/12"
+      }
+    ],
+    "Review": [],
+    "Skipped": []
+  },
+  "project": {
+    "number": 7,
+    "owner": "octocat",
+    "title": "Demo Board"
+  },
+  "recent": [
+    {
+      "detail": "",
+      "epoch": 1786154401,
+      "glyph": "\ud83d\udd28",
+      "issue": "#12",
+      "target": "Building",
+      "verb": "dispatch"
+    }
+  ],
+  "truncated": false,
+  "version": 1,
+  "workers": [
+    {
+      "issue": 12,
+      "lane": "build",
+      "pid": 4321,
+      "role": "Builder",
+      "started_at": "09:00:01"
+    }
+  ]
+}

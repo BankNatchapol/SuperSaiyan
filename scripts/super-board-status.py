@@ -44,18 +44,27 @@ from __future__ import annotations
 import datetime
 import json
 import re
-import subprocess
 import sys
 import time
 import unicodedata
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 # Make box-drawing chars render on Windows consoles too.
 try:
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
 except Exception:
     pass
+
+# Platform adapters live next to this script (scripts/platforms/ in-repo,
+# .claude/bin/platforms/ when installed).
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from platforms.status_adapter import (  # noqa: E402
+    MAX_ITEM_PAGES,
+    get_status_adapter,
+)
 
 
 # ───────────────────────────── lane constants ─────────────────────────────
@@ -439,97 +448,6 @@ def resolve_config_path(slug: str) -> Path | None:
     return None
 
 
-def gh(*args: str, check: bool = True) -> str:
-    """Run gh and return stdout. Exits 67 on failure when check=True."""
-    try:
-        proc = subprocess.run(
-            ["gh", *args], capture_output=True, text=True, encoding="utf-8", check=False
-        )
-    except FileNotFoundError:
-        print("gh CLI not found on PATH", file=sys.stderr)
-        sys.exit(67)
-    if proc.returncode != 0:
-        if check:
-            print(f"gh call failed ({' '.join(args[:3])}…)", file=sys.stderr)
-            if proc.stderr.strip():
-                print(proc.stderr.strip(), file=sys.stderr)
-            sys.exit(67)
-        return ""
-    return proc.stdout
-
-
-# ───────────────────────────── GraphQL ─────────────────────────────
-# Targeted query — number, title, labels, Status only. ~3 KB vs. 100+ KB for
-# `gh project item-list --format json` (which slurps every issue body).
-# `repositoryOwner(login:)` is the abstract owner; `... on ProjectV2Owner`
-# picks the `projectV2` field which both User and Organization implement.
-# `$after` is nullable — first page omits the `-F after=…` arg entirely
-# (default null) so we don't have to pass a sentinel value.
-
-ITEMS_QUERY = """
-query($owner:String!, $number:Int!, $after:String) {
-  repositoryOwner(login:$owner) {
-    ... on ProjectV2Owner {
-      projectV2(number:$number) {
-        items(first:100, after:$after) {
-          pageInfo { endCursor hasNextPage }
-          nodes {
-            id
-            content { ... on Issue {
-              number title url state
-              repository { nameWithOwner }
-              assignees(first:10) { nodes { login } }
-              labels(first:20){nodes{name}}
-            } }
-            fieldValues(first:8) {
-              nodes { ... on ProjectV2ItemFieldSingleSelectValue {
-                name field { ... on ProjectV2SingleSelectField { name } } } }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-"""
-
-# Hard ceiling on pagination depth. 20 pages × 100 items = 2000 cards, which
-# is well past any realistic super-board project (the dispatcher's 5000-pt/hr
-# GraphQL budget makes a 20-page snapshot a meaningful chunk of quota). If a
-# project ever exceeds this, we print a truncation warning rather than loop
-# forever on a buggy server response.
-MAX_ITEM_PAGES = 20
-
-
-def paginate_items(
-    fetch: Callable[[str | None], dict[str, Any]],
-    max_pages: int = MAX_ITEM_PAGES,
-) -> tuple[list[dict[str, Any]], bool]:
-    """Walk `fetch(after) → graphql_payload` until pagination is exhausted.
-
-    Pure: no I/O of its own — the `fetch` callable does all I/O. Returns
-    (all_nodes, hit_cap), where `hit_cap` is True iff we stopped because
-    of `max_pages` (i.e., the project is bigger than we surfaced).
-    """
-    all_nodes: list[dict[str, Any]] = []
-    after: str | None = None
-    for _ in range(max_pages):
-        payload = fetch(after)
-        items_section = (
-            ((payload.get("data") or {})
-                .get("repositoryOwner") or {})
-                .get("projectV2") or {}
-        ).get("items") or {}
-        all_nodes.extend(items_section.get("nodes") or [])
-        page_info = items_section.get("pageInfo") or {}
-        if not page_info.get("hasNextPage"):
-            return all_nodes, False
-        after = page_info.get("endCursor")
-        if not after:
-            return all_nodes, False
-    return all_nodes, True
-
-
 # ───────────────────────────── main ─────────────────────────────
 
 
@@ -551,6 +469,7 @@ def main() -> int:
     cfg = json.loads(config_path.read_text())
     project_owner: str = cfg["project"]["owner"]
     project_number: int = int(cfg["project"]["number"])
+    adapter = get_status_adapter(cfg.get("git_platform", "github"))
     # `null`/absent key both mean "use the documented default of 2"; an
     # explicit `null` for *unlimited* is only distinguishable by checking the
     # key is present — callers that want unlimited must still see None here,
@@ -560,27 +479,8 @@ def main() -> int:
     run_date = datetime.date.today().isoformat()
     manifest_path = Path(runs_dir) / f"{run_date}-{config_slug}.md"
 
-    # ── fetch project items (paginated) ──
-    def fetch_page(after: str | None) -> dict[str, Any]:
-        args = [
-            "api", "graphql",
-            "-f", f"query={ITEMS_QUERY}",
-            "-F", f"owner={project_owner}",
-            "-F", f"number={project_number}",
-        ]
-        if after:
-            # First page leaves `$after` unset → GraphQL defaults to null.
-            args += ["-F", f"after={after}"]
-        out = gh(*args)
-        payload: dict[str, Any] = json.loads(out)
-        if payload.get("errors"):
-            print("graphql returned errors:", file=sys.stderr)
-            for err in payload["errors"]:
-                print(f"  - {err.get('message')}", file=sys.stderr)
-            sys.exit(67)
-        return payload
-
-    items_raw, hit_cap = paginate_items(fetch_page)
+    # ── fetch project items (paginated) via PlatformAdapter ──
+    items_raw, hit_cap = adapter.fetch_project_items(project_owner, project_number)
     if hit_cap:
         print(
             f"warning: stopped after {MAX_ITEM_PAGES * 100} items — "
@@ -624,10 +524,10 @@ def main() -> int:
     # needs its root-cause-hash history for the same-issue streak. A single
     # card is very often both (it's usually a repeated hash that got it
     # blocked) — fetch once per issue, reuse for both, instead of hitting
-    # `gh` twice. Fresh cards with no rebuild yet cost nothing here. Skip
-    # silently on error so a stale token doesn't break the rest of the
-    # snapshot. Reason bodies are capped at 4000 chars; emojis in the locked
-    # vocabulary land at the top of any well-formed reason-tag comment.
+    # the platform twice. Fresh cards with no rebuild yet cost nothing here.
+    # Soft-fail inside the adapter so a stale token doesn't break the rest of
+    # the snapshot. Reason bodies are capped at 4000 chars; emojis in the
+    # locked vocabulary land at the top of any well-formed reason-tag comment.
     reasons: dict[int, str] = {}
     streaks: dict[int, int] = {}
     needs_comments = {
@@ -636,12 +536,8 @@ def main() -> int:
         if it["status"] in ("Blocked", "Skipped") or rebuild_count(it) >= 1
     }
     for n, it in needs_comments.items():
-        out = gh("issue", "view", str(n), "--json", "comments", check=False)
-        if not out:
-            continue
-        try:
-            comments = json.loads(out).get("comments") or []
-        except json.JSONDecodeError:
+        comments = adapter.fetch_issue_comments(n)
+        if comments is None:
             continue
         if it["status"] in ("Blocked", "Skipped"):
             ordered = sorted(comments, key=lambda c: c.get("createdAt", ""))
