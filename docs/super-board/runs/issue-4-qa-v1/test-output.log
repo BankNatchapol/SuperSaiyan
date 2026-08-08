@@ -1,0 +1,47 @@
+=== test-tasks-wave-dispatch-platform-rewire.sh ===
+checking issue #4 platform rewire (tasks-to-issues / wave-plan / dispatch)
+  ✓ platform source + call sites + wave-plan --items smoke
+PASS: test-tasks-wave-dispatch-platform-rewire.sh
+
+=== test-supersaiyan-prepare.sh ===
+To /var/folders/gt/4bb9rqtx2k7f505zv794yl3c0000gn/T/tmp.OvbfpmSlCL/single-origin.git
+ * [new branch]      main -> main
+To /var/folders/gt/4bb9rqtx2k7f505zv794yl3c0000gn/T/tmp.OvbfpmSlCL/missing-config-origin.git
+ * [new branch]      main -> main
+To /var/folders/gt/4bb9rqtx2k7f505zv794yl3c0000gn/T/tmp.OvbfpmSlCL/git-safety-origin.git
+ * [new branch]      main -> main
+To /var/folders/gt/4bb9rqtx2k7f505zv794yl3c0000gn/T/tmp.OvbfpmSlCL/dependencies-origin.git
+ * [new branch]      main -> main
+To /var/folders/gt/4bb9rqtx2k7f505zv794yl3c0000gn/T/tmp.OvbfpmSlCL/fresh-origin.git
+ * [new branch]      main -> main
+To /var/folders/gt/4bb9rqtx2k7f505zv794yl3c0000gn/T/tmp.OvbfpmSlCL/stale-origin.git
+ * [new branch]      main -> main
+To /var/folders/gt/4bb9rqtx2k7f505zv794yl3c0000gn/T/tmp.OvbfpmSlCL/statuses-origin.git
+ * [new branch]      main -> main
+To /var/folders/gt/4bb9rqtx2k7f505zv794yl3c0000gn/T/tmp.OvbfpmSlCL/statuses-origin.git
+   3c71381..8d4c109  main -> main
+PASS: test-supersaiyan-prepare.sh (9 scenarios)
+
+=== test-platform-contract.sh ===
+checking github.sh
+  ✓ all 31 contract functions defined
+PASS: test-platform-contract.sh
+
+=== test-backend-contract.sh ===
+checking claude-p.sh
+  ✓ all 6 contract functions defined
+checking codex-exec.sh
+  ✓ all 6 contract functions defined
+checking cursor-agent.sh
+  ✓ all 6 contract functions defined
+PASS: test-backend-contract.sh
+
+=== test-build-safety-contract.sh ===
+checking skills/super-build/SKILL.md
+  ✓ default path is PR-only; destructive behavior is gated behind explicit opt-in
+PASS: test-build-safety-contract.sh
+
+=== test-run-platform-rewire.sh ===
+checking scripts/super-board-run.sh platform rewire
+  ✓ GIT_PLATFORM source + platform_* call sites + smoke exit 74
+PASS: test-run-platform-rewire.sh
