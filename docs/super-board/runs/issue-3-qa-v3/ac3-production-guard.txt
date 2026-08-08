@@ -1,0 +1,5 @@
+=== AC3: production-merge guard → platform_detect_production_ci ===
+312:  if platform_detect_production_ci; then
+
+OK: calls platform_detect_production_ci
+OK: no inline production-merge rg grep

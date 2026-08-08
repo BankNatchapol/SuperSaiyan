@@ -1,0 +1,12 @@
+=== AC1: GIT_PLATFORM read + platforms/${GIT_PLATFORM}.sh source ===
+--- grep GIT_PLATFORM ---
+50:GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_PATH")
+67:SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+84:PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
+86:  echo "🛑 platform contract not found: $PLATFORM_FILE (git_platform=${GIT_PLATFORM})" >&2
+
+--- assert patterns ---
+OK: reads GIT_PLATFORM from config
+OK: BASH_SOURCE-relative SCRIPT_DIR
+OK: sources platforms/${GIT_PLATFORM}.sh
+OK: installed layout is BASH_SOURCE-relative (SCRIPT_DIR/platforms/) — mirrors backends/ pattern

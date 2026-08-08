@@ -1,0 +1,21 @@
+=== AC2: inline gh calls replaced with platform_* ===
+OK: calls platform_board_snapshot
+103:  PROJECT_ITEMS_JSON=$(platform_board_snapshot "$PROJECT_NUMBER" "$PROJECT_OWNER")
+
+OK: calls platform_rate_remaining
+161:  # (reset timestamp is not part of platform_rate_remaining's return value).
+163:  remaining=$(platform_rate_remaining graphql)
+
+OK: calls platform_claim_issue
+179:  platform_claim_issue "$issue" "$BOT_LOGIN" >/dev/null 2>&1 || {
+
+OK: calls platform_release_issue
+248:    [ -n "$BOT_LOGIN" ] && platform_release_issue "$issue" "$BOT_LOGIN" >/dev/null 2>&1 || true
+279:        platform_release_issue "$issue" "$BOT_LOGIN" >/dev/null 2>&1 || true
+
+--- forbidden raw call sites (non-comment) ---
+OK: no inline gh project item-list
+OK: no inline gh api rate_limit
+OK: no inline --add-assignee
+OK: no inline --remove-assignee
+AC2 PASS

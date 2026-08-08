@@ -1,0 +1,20 @@
+=== AC4: smoke + contract tests ===
+--- bash -n ---
+OK: bash -n clean
+
+--- tests/test-run-platform-rewire.sh ---
+checking scripts/super-board-run.sh platform rewire
+  ✓ GIT_PLATFORM source + platform_* call sites + smoke exit 74
+PASS: test-run-platform-rewire.sh
+exit=0
+
+--- tests/test-platform-contract.sh ---
+checking github.sh
+  ✓ all 31 contract functions defined
+PASS: test-platform-contract.sh
+exit=0
+
+--- scope check vs origin/main ---
+ scripts/super-board-run.sh        |  40 +++++++-----
+ tests/test-run-platform-rewire.sh | 129 ++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 153 insertions(+), 16 deletions(-)
