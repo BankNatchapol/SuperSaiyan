@@ -1,6 +1,6 @@
 ---
 name: super-build
-description: Super Build canonical workflow. Headless parallel GitHub Project executor that reads issues whose `Status` field is `Ready`, dispatches each as a headless `claude -p` worker in its own git worktree (max 3 in parallel), merges results back, closes the issue, moves the project card to `Done`, and notifies Telegram on each completion. The project board is the single curation surface — drag a card to `Ready` and Super Build picks it up. Use when the user says "Super Build", "run the build loop", "/super-build", or invokes the skill.
+description: Super Build canonical workflow for implementing GitHub issues / board tasks. Headless parallel GitHub Project executor that reads issues whose `Status` field is `Ready`, dispatches each as a headless `claude -p` worker in its own git worktree (max 3 in parallel), merges results back, closes the issue, moves the project card to `Done`, and notifies Telegram on each completion. The project board is the single curation surface — drag a card to `Ready` and Super Build picks it up. Use when the user says "Super Build", "run the build loop", "/super-build", "fix the issue", "implement issue #N", "solve the Ready card", "work the board task", or otherwise asks to implement/fix a GitHub issue or Project card.
 ---
 
 # Super Build / Super Build — Headless Parallel GitHub-Project Executor
