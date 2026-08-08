@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "description": "SuperSaiyan repo dogfooding its own pipeline (Project #3)",
+  "project": {
+    "owner": "BankNatchapol",
+    "title": "SuperSaiyan",
+    "number": 3
+  },
+  "variant": "full",
+  "worker_backend": "workflow",
+  "model_tier": "medium",
+  "target": {
+    "type": "repo"
+  },
+  "repo": {
+    "path": ".",
+    "remote": "https://github.com/BankNatchapol/SuperSaiyan.git"
+  },
+  "base_branch": "main",
+  "columns": ["Ready", "Building", "QA", "Review", "Done", "Blocked", "Skipped"],
+  "paths": {
+    "project_md": "docs/supersaiyan/PROJECT.md",
+    "pre_flight_md": "docs/supersaiyan/pre-flight.md",
+    "runs_dir": "docs/supersaiyan/runs"
+  },
+  "human_approves_merge": true,
+  "truth_gate": "non-trivial",
+  "truth_threshold": 70,
+  "rebuild_cap": 2,
+  "block_rate_alert_pct": 30,
+  "notifications": {
+    "channel": "github",
+    "chat_id": null,
+    "bot_identity": "BankNatchapol"
+  }
+}
