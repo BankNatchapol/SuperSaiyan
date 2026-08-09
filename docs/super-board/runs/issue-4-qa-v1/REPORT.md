@@ -16,28 +16,26 @@ output only, captured at `test-output.log` in this directory.
 
 ### Note on AC1 naming
 The task text names `platform_label_ensure` (the GitLab `status::ready`-label path from
-`docs/superpowers/specs/gitlab-integration-design.md`). On GitHub there's no label-based status
-model, so Builder mapped the same bootstrap gate to `platform_board_ensure` (which already
-existed for `super-board-run.sh`) instead, and documented the deviation inline
-(`scripts/tasks-to-issues.sh` L200-203) and in the new test's comment (`test-tasks-wave-dispatch-platform-rewire.sh`
-L39-41). `platform_label_ensure` itself is defined in `scripts/platforms/github.sh:344` for its
-actual (unrelated) purpose — GH label creation — and is exercised by `test-platform-contract.sh`.
-Read the design doc's own table (line 196-197): it lists `platform_label_ensure` and
-`platform_board_ensure` as two different rows with different jobs, which matches what Builder did.
-Judged as a correct, intentional adapter-level interpretation rather than a gap.
+`docs/superpowers/specs/gitlab-integration-design.md`). The task helper now stays platform-neutral:
+it calls the logical `platform_card_status_set --add` operation, and the selected adapter owns
+board metadata validation (`platform_board_ensure` for GitHub). This keeps the adapter-specific
+Project IDs out of `tasks-to-issues.sh` while retaining the same Ready-enqueue gate.
 
 ## Regression / signature-compatibility check
-- `platform_card_status_set`'s new `--add` branch is additive (`if [ "${1:-}" = "--add" ]`); the
-  existing 4-arg form used by `super-board-run.sh` (PR #20) is untouched and that script has zero
-  references to the new `--add` path or to `platform_board_ensure` — confirmed no collision.
-- `platform_board_ensure` has exactly one caller (`tasks-to-issues.sh`, new) — no other script to
-  break.
+- `platform_card_status_set`'s new logical `--add` branch is additive (`if [ "${1:-}" = "--add" ]`);
+  both the existing four-ID form and the older six-argument add-only form remain source-compatible.
+  The new logical form owns board metadata resolution inside the adapter.
+- `prepare.sh` now uses the same logical adapter path for stale-mapping repair, board snapshots,
+  and Ready reconciliation, so GitHub Project IDs do not leak into the caller.
+- `platform_board_snapshot` preserves the old fail-loud behavior for API/auth failures; an
+  unavailable board can no longer look like an empty wave.
 
 ## Test suite run (full output in `test-output.log`)
 
 | Suite | Result |
 |---|---|
-| `tests/test-tasks-wave-dispatch-platform-rewire.sh` (new, issue-#4-specific contract test) | ✅ PASS |
+| `tests/test-tasks-wave-dispatch-platform-rewire.sh` (issue-#4-specific contract test) | ✅ PASS |
+| `tests/test-prepare-platform-rewire.sh` (platform caller contract) | ✅ PASS |
 | `tests/test-supersaiyan-prepare.sh` (AC4, 9 scenarios) | ✅ PASS |
 | `tests/test-platform-contract.sh` (31 contract functions defined) | ✅ PASS |
 | `tests/test-backend-contract.sh` | ✅ PASS |
@@ -48,5 +46,5 @@ Judged as a correct, intentional adapter-level interpretation rather than a gap.
 contract test) passed for all three modified scripts.
 
 ## Verdict
-**Pass.** All 4 acceptance criteria met, no regressions in related contract tests, no
-signature-compatibility breaks in shared `platform_*` functions.
+**Pass.** All 4 acceptance criteria met, related contract tests pass, and callers use logical
+platform operations without swallowing board-fetch failures.

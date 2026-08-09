@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# tasks-to-issues.sh — create one GitHub issue per task markdown file.
+# tasks-to-issues.sh — create one platform issue per task markdown file.
 #
-# Run from your APP REPO root (git remote = target repo). Requires gh auth.
+# Run from your APP REPO root (git remote = target repo). Requires the selected
+# platform CLI to be authenticated.
 #
 # Usage (run from the app repo):
-#   tasks-to-issues.sh <feature-slug> [--dry-run] [--force]
-#   tasks-to-issues.sh <task-folder> [--dry-run] [--force]
-#   tasks-to-issues.sh <task-file.md> [--dry-run] [--force]
+#   tasks-to-issues.sh <feature-slug> [--config path] [--dry-run] [--force]
+#   tasks-to-issues.sh <task-folder> [--config path] [--dry-run] [--force]
+#   tasks-to-issues.sh <task-file.md> [--config path] [--dry-run] [--force]
 #
 # Env (optional):
-#   GH_PROJECT_OWNER=@me   GH_PROJECT_NUMBER=3   → add generated issues to Project Ready
+#   GH_PROJECT_OWNER=@me   GH_PROJECT_NUMBER=3   → legacy GitHub board context
+#   PLATFORM_CONFIG_PATH=...                    → board/platform config path
 #   TASKS_DIR=docs/superpowers/tasks
 #
 # A slug resolves to docs/superpowers/tasks/<feature-slug>/.
@@ -21,24 +23,24 @@ set -euo pipefail
 SOURCE="${1:-}"
 DRY_RUN=false
 FORCE=false
+CONFIG_PATH="${PLATFORM_CONFIG_PATH:-}"
 
 shift || true
-for arg in "$@"; do
-  case "$arg" in
-    --dry-run) DRY_RUN=true ;;
-    --force) FORCE=true ;;
-    *) echo "Unknown flag: $arg" >&2; exit 64 ;;
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY_RUN=true; shift ;;
+    --force) FORCE=true; shift ;;
+    --config)
+      [ $# -ge 2 ] || { echo "--config requires a path" >&2; exit 64; }
+      CONFIG_PATH="$2"; shift 2 ;;
+    --config=*) CONFIG_PATH="${1#--config=}"; shift ;;
+    *) echo "Unknown flag: $1" >&2; exit 64 ;;
   esac
 done
 
 if [ -z "$SOURCE" ]; then
-  echo "Usage: $0 <feature-slug|task-folder|task-file.md> [--dry-run] [--force]" >&2
+  echo "Usage: $0 <feature-slug|task-folder|task-file.md> [--config path] [--dry-run] [--force]" >&2
   exit 64
-fi
-
-if ! command -v gh >/dev/null 2>&1; then
-  echo "gh CLI required" >&2
-  exit 69
 fi
 
 if ! command -v jq >/dev/null 2>&1; then
@@ -46,14 +48,18 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 69
 fi
 
-if ! gh auth status >/dev/null 2>&1; then
-  echo "gh not authenticated — run: gh auth login" >&2
-  exit 69
-fi
-
 # Platform contract: scripts/platforms/<name>.sh in this repo, .claude/bin/platforms/
 # once installed (install.sh copies platforms/ alongside this script).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -z "$CONFIG_PATH" ] && [ -f .claude/supersaiyan/active ]; then
+  active_slug=$(tr -d '[:space:]' < .claude/supersaiyan/active)
+  [ -f ".claude/supersaiyan/configs/${active_slug}.json" ] && \
+    CONFIG_PATH=".claude/supersaiyan/configs/${active_slug}.json"
+fi
+GIT_PLATFORM="${GIT_PLATFORM:-}"
+if [ -z "$GIT_PLATFORM" ] && [ -n "$CONFIG_PATH" ] && [ -f "$CONFIG_PATH" ]; then
+  GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_PATH")
+fi
 GIT_PLATFORM="${GIT_PLATFORM:-github}"
 PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
 if [ ! -f "$PLATFORM_FILE" ]; then
@@ -62,6 +68,11 @@ if [ ! -f "$PLATFORM_FILE" ]; then
 fi
 # shellcheck disable=SC1090
 source "$PLATFORM_FILE"
+
+platform_auth_check || {
+  echo "${GIT_PLATFORM} platform authentication check failed" >&2
+  exit 69
+}
 
 TASKS_DIR="${TASKS_DIR:-docs/superpowers/tasks}"
 SINGLE_FILE=""
@@ -188,32 +199,6 @@ fi
 
 CREATED=0
 SKIPPED=0
-PROJECT_ID=""
-STATUS_FIELD_ID=""
-READY_OPTION_ID=""
-
-load_project_ready_metadata() {
-  local owner="$1" number="$2" out
-
-  [ -n "$PROJECT_ID" ] && return
-
-  # GitHub: platform_board_ensure validates Status+Ready and returns
-  # project_id / status_field_id / Ready option id. (Design AC names
-  # platform_label_ensure for the GitLab status::ready path; the GitHub
-  # adapter maps that gate here — see platforms/github.sh.)
-  out=$(platform_board_ensure "$number" "$owner" "Ready") || {
-    echo "Project $owner#$number must have a Status field with a Ready option." >&2
-    exit 65
-  }
-  PROJECT_ID=$(printf '%s\n' "$out" | sed -n '1p')
-  STATUS_FIELD_ID=$(printf '%s\n' "$out" | sed -n '2p')
-  READY_OPTION_ID=$(printf '%s\n' "$out" | sed -n '3p')
-
-  if [ -z "$PROJECT_ID" ] || [ -z "$STATUS_FIELD_ID" ] || [ -z "$READY_OPTION_ID" ]; then
-    echo "Project $owner#$number must have a Status field with a Ready option." >&2
-    exit 65
-  fi
-}
 
 list_task_files() {
   if [ -n "$SINGLE_FILE" ]; then
@@ -265,7 +250,7 @@ while IFS= read -r file; do
     continue
   fi
 
-  url=$(gh issue create --title "$title" --body-file "$body_file")
+  url=$(platform_issue_create "$title" "$body_file")
   rm -f "$body_file"
   num=$(echo "$url" | sed -E 's|.*/issues/([0-9]+)$|\1|')
   remember_issue "$stem" "$num"
@@ -273,12 +258,9 @@ while IFS= read -r file; do
   CREATED=$((CREATED + 1))
   echo "Created #$num — $title"
 
-  if [ -n "${GH_PROJECT_NUMBER:-}" ]; then
-    owner="${GH_PROJECT_OWNER:-@me}"
-    load_project_ready_metadata "$owner" "$GH_PROJECT_NUMBER"
-    platform_card_status_set --add "$GH_PROJECT_NUMBER" "$owner" "$url" \
-      "$PROJECT_ID" "$STATUS_FIELD_ID" "$READY_OPTION_ID" >/dev/null
-    echo "  → added to project $owner#$GH_PROJECT_NUMBER in Ready"
+  if [ -n "$CONFIG_PATH" ] || [ -n "${GH_PROJECT_NUMBER:-}" ]; then
+    platform_card_status_set --add "$CONFIG_PATH" "$url" "Ready" >/dev/null
+    echo "  → added to platform board in Ready"
   fi
 done < <(list_task_files)
 

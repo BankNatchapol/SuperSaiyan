@@ -45,3 +45,6 @@ PASS: test-build-safety-contract.sh
 checking scripts/super-board-run.sh platform rewire
   ✓ GIT_PLATFORM source + platform_* call sites + smoke exit 74
 PASS: test-run-platform-rewire.sh
+
+=== test-prepare-platform-rewire.sh (post-fix contract) ===
+PASS: test-prepare-platform-rewire.sh

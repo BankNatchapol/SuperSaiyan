@@ -9,6 +9,8 @@
 #          MAX_TURNS      (optional) — default 250 (claude-p backend only)
 #          WORKER_BACKEND (optional) — default "claude-p"; also "codex-exec"/"cursor-agent".
 #                          See .claude/skills/super-board/references/backends.md.
+#          CONFIG_PATH    (optional) — platform/backend config JSON; active config is detected
+#                          when omitted.
 #   - Side effects:
 #       * git worktree add -b loop/issue-N .worktrees/issue-N BASE_BRANCH
 #       * runs the configured backend's worker CLI inside that worktree with the composed prompt
@@ -50,6 +52,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="${SKILL_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 MAX_TURNS="${MAX_TURNS:-250}"
 WORKER_BACKEND="${WORKER_BACKEND:-claude-p}"
+CONFIG_PATH="${CONFIG_PATH:-${PLATFORM_CONFIG_PATH:-}}"
+if [[ -z "$CONFIG_PATH" && -f "$REPO_DIR/.claude/supersaiyan/active" ]]; then
+  active_slug=$(tr -d '[:space:]' < "$REPO_DIR/.claude/supersaiyan/active")
+  if [[ -f "$REPO_DIR/.claude/supersaiyan/configs/${active_slug}.json" ]]; then
+    CONFIG_PATH="$REPO_DIR/.claude/supersaiyan/configs/${active_slug}.json"
+  fi
+fi
+GIT_PLATFORM="${GIT_PLATFORM:-}"
+if [[ -z "$GIT_PLATFORM" && -n "$CONFIG_PATH" && -f "$CONFIG_PATH" ]]; then
+  GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_PATH")
+fi
 GIT_PLATFORM="${GIT_PLATFORM:-github}"
 
 # Backend contract (see .claude/skills/super-board/references/backends.md). Installed layout:

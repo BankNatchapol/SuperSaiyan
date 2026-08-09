@@ -83,7 +83,14 @@ set -euo pipefail
 state="${FAKE_GH_STATE:?}"
 cmd="${1:-}"; sub="${2:-}"
 
-if [ "$cmd $sub" = "auth status" ]; then exit 0; fi
+if [ "$cmd $sub" = "auth status" ]; then
+  case "$*" in
+    *"--json hosts"*)
+      echo '{"hosts":[{"active":true,"scopes":["project","read:project","repo"]}]}'
+      ;;
+  esac
+  exit 0
+fi
 if [ "$cmd $sub" = "repo view" ]; then echo "owner/repo"; exit 0; fi
 
 if [ "$cmd $sub" = "issue view" ]; then

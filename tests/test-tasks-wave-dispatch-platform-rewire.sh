@@ -10,11 +10,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TASKS="$ROOT/scripts/tasks-to-issues.sh"
 WAVE="$ROOT/scripts/super-board-wave-plan.sh"
 DISPATCH="$ROOT/skills/super-build/scripts/super-build-dispatch.sh"
+GITHUB_PLATFORM="$ROOT/scripts/platforms/github.sh"
 
 FAIL=0
 fail() { echo "  FAIL: $1" >&2; FAIL=1; }
 
-for f in "$TASKS" "$WAVE" "$DISPATCH"; do
+for f in "$TASKS" "$WAVE" "$DISPATCH" "$GITHUB_PLATFORM"; do
   if [ ! -f "$f" ]; then
     echo "error: $f not found" >&2
     exit 1
@@ -37,14 +38,12 @@ for f in "$TASKS" "$WAVE" "$DISPATCH"; do
 done
 
 # ── 3. tasks-to-issues: board bootstrap + Ready set via platform_* ─────────
-# AC names platform_label_ensure (GitLab status::ready) — on GitHub the skeleton
-# maps that gate to platform_board_ensure (see github.sh comment). Accept either
-# name so the contract stays honest about both the AC text and the GitHub adapter.
-if ! grep -qE 'platform_(board_ensure|label_ensure)' "$TASKS"; then
-  fail "tasks-to-issues.sh missing platform_board_ensure / platform_label_ensure"
-fi
 grep -q 'platform_card_status_set' "$TASKS" \
   || fail "tasks-to-issues.sh missing platform_card_status_set"
+grep -q -- 'platform_card_status_set --add' "$TASKS" \
+  || fail "tasks-to-issues.sh missing logical Ready enqueue"
+grep -qE 'platform_(board_ensure|label_ensure)' "$GITHUB_PLATFORM" \
+  || fail "GitHub adapter missing board metadata validation"
 
 if grep -vE '^\s*#' "$TASKS" | grep -qE 'gh[[:space:]]+project[[:space:]]+view'; then
   fail "tasks-to-issues.sh still has inline 'gh project view'"
@@ -72,6 +71,10 @@ fi
 # ── 5. dispatch: issue view via platform_issue_view ────────────────────────
 grep -q 'platform_issue_view' "$DISPATCH" \
   || fail "super-build-dispatch.sh missing platform_issue_view"
+grep -q 'CONFIG_PATH' "$DISPATCH" \
+  || fail "super-build-dispatch.sh does not accept config context"
+grep -q '\.git_platform // "github"' "$DISPATCH" \
+  || fail "super-build-dispatch.sh does not resolve git_platform from config"
 if grep -vE '^\s*#' "$DISPATCH" | grep -qE 'gh[[:space:]]+issue[[:space:]]+view'; then
   fail "super-build-dispatch.sh still has inline 'gh issue view'"
 fi
@@ -124,6 +127,21 @@ PLAN_OUT=$(
 
 echo "$PLAN_OUT" | jq -e '.cards | length == 1 and .[0].number == 1' >/dev/null \
   || fail "wave-plan --items smoke failed: $PLAN_OUT"
+
+# ── 7. Live board-fetch failures must stay failures ────────────────────────
+# A failed platform call must not be turned into an empty plan: that masks
+# auth/network outages as a drained board.
+mkdir -p "$SMOKE_DIR/bin"
+printf '#!/usr/bin/env bash\nexit 42\n' > "$SMOKE_DIR/bin/gh"
+chmod +x "$SMOKE_DIR/bin/gh"
+set +e
+FETCH_OUT=$(PATH="$SMOKE_DIR/bin:$PATH" bash "$SMOKE_DIR/super-board-wave-plan.sh" \
+  --config "$SMOKE_DIR/config.json" 2>&1)
+FETCH_RC=$?
+set -e
+if [ "$FETCH_RC" -eq 0 ]; then
+  fail "live board-fetch failure was converted into success: $FETCH_OUT"
+fi
 
 if [ "$FAIL" -ne 0 ]; then
   echo "error: issue #4 platform-rewire contract check failed" >&2
