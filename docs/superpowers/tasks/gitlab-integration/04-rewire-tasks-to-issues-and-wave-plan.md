@@ -18,8 +18,10 @@ Platform interface instead.
 ## Acceptance Criteria
 
 - [ ] `scripts/tasks-to-issues.sh`'s `gh project view`/`field-list`/`item-add`/`item-edit
-      --single-select-option-id` sequence is replaced with `platform_label_ensure` (resolve the
-      `status::ready` label id) + `platform_card_status_set`'s add-only case
+      --single-select-option-id` sequence is replaced with the platform adapter's logical Ready
+      enqueue: GitHub resolves the Project Status/Ready option through `platform_board_ensure`,
+      while GitLab resolves the `status::ready` label through `platform_label_ensure`, followed by
+      `platform_card_status_set`'s add-only case
 - [ ] `scripts/super-board-wave-plan.sh`'s `gh project item-list` call is replaced with
       `platform_board_snapshot`; the `Depends on: #N` jq dependency-parsing logic is unchanged
       (confirms the snapshot's output shape matches today's `.content.*`/`.status` fields)

@@ -263,9 +263,11 @@ a nested `project.gitlab{}` sub-object — see Open Judgment Call 8 for the alte
   bash helper for just that one derivation.
 - `scripts/tasks-to-issues.sh`: swap `gh project view`/`field-list`/`item-add`/`item-edit
   --single-select-option-id` (resolve Project GraphQL ID, find Status field + Ready option,
-  add item, set status) for `platform_label_ensure` (resolve `status::ready` label id) +
-  `platform_card_status_set`'s add-only case — GitLab has no separate "add item to project"
-  step since an issue is "on the board" the instant it exists.
+  add item, set status) for the adapter's logical Ready enqueue plus
+  `platform_card_status_set`'s add-only case. GitHub resolves Project Status metadata through
+  `platform_board_ensure`; GitLab resolves the `status::ready` label through
+  `platform_label_ensure`, and has no separate "add item to project" step since an issue is "on
+  the board" the instant it exists.
 - `scripts/super-board-wave-plan.sh`: same board-snapshot swap as `super-board-run.sh`; the
   `Depends on: #N` jq parsing needs zero changes if `platform_board_snapshot`'s output shape
   genuinely matches today's `.content.*`/`.status` fields.

@@ -42,8 +42,8 @@ grep -q 'platform_card_status_set' "$TASKS" \
   || fail "tasks-to-issues.sh missing platform_card_status_set"
 grep -q -- 'platform_card_status_set --add' "$TASKS" \
   || fail "tasks-to-issues.sh missing logical Ready enqueue"
-grep -qE 'platform_(board_ensure|label_ensure)' "$GITHUB_PLATFORM" \
-  || fail "GitHub adapter missing board metadata validation"
+grep -q 'platform_board_ensure' "$GITHUB_PLATFORM" \
+  || fail "GitHub adapter missing Project Status metadata validation"
 
 if grep -vE '^\s*#' "$TASKS" | grep -qE 'gh[[:space:]]+project[[:space:]]+view'; then
   fail "tasks-to-issues.sh still has inline 'gh project view'"
@@ -142,6 +142,137 @@ set -e
 if [ "$FETCH_RC" -eq 0 ]; then
   fail "live board-fetch failure was converted into success: $FETCH_OUT"
 fi
+
+# ── 8. Real tasks-to-issues enqueue behavior ───────────────────────────────
+# Static grep cannot prove the adapter receives the config and performs the
+# project bootstrap/add/edit sequence. Run the real caller against a fake gh.
+ENQUEUE_DIR=$(mktemp -d)
+mkdir -p "$ENQUEUE_DIR/app/docs/superpowers/tasks/demo" \
+  "$ENQUEUE_DIR/app/platforms" "$ENQUEUE_DIR/bin" "$ENQUEUE_DIR/state"
+cp "$TASKS" "$ENQUEUE_DIR/app/tasks-to-issues.sh"
+cp "$GITHUB_PLATFORM" "$ENQUEUE_DIR/app/platforms/github.sh"
+cat > "$ENQUEUE_DIR/app/docs/superpowers/tasks/demo/01-first.md" <<'EOF'
+---
+title: First task
+order: 1
+depends_on_task: null
+design: docs/superpowers/specs/demo.md
+---
+
+## Goal
+
+Create one issue and enqueue it in Ready.
+
+## Acceptance Criteria
+
+- [ ] The issue is created and placed on the board.
+EOF
+cat > "$ENQUEUE_DIR/app/config.json" <<'EOF'
+{"project":{"owner":"owner","number":7},"git_platform":"github"}
+EOF
+: > "$ENQUEUE_DIR/state/log"
+cat > "$ENQUEUE_DIR/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+state="${FAKE_PLATFORM_STATE:?}"
+cmd="${1:-}"; sub="${2:-}"
+if [ "$cmd $sub" = "auth status" ]; then
+  case "$*" in
+    *"--json hosts"*) echo '{"hosts":[{"active":true,"scopes":["project","read:project","repo"]}]}' ;;
+  esac
+  exit 0
+fi
+if [ "$cmd $sub" = "label create" ]; then
+  echo "LABEL_ENSURE $3" >> "$state/log"
+  exit 0
+fi
+if [ "$cmd $sub" = "issue create" ]; then
+  echo "ISSUE_CREATE" >> "$state/log"
+  echo "https://github.com/owner/repo/issues/42"
+  exit 0
+fi
+if [ "$cmd $sub" = "project view" ]; then
+  echo "PROJECT_VIEW" >> "$state/log"
+  echo "PROJECT_ID"
+  exit 0
+fi
+if [ "$cmd $sub" = "project field-list" ]; then
+  echo "FIELD_LIST" >> "$state/log"
+  echo '{"fields":[{"id":"STATUS_ID","name":"Status","options":[{"id":"READY_ID","name":"Ready"}]}]}'
+  exit 0
+fi
+if [ "$cmd $sub" = "project item-list" ]; then
+  echo '{"items":[]}'
+  exit 0
+fi
+if [ "$cmd $sub" = "project item-add" ]; then
+  echo "ITEM_ADD" >> "$state/log"
+  echo "ITEM_42"
+  exit 0
+fi
+if [ "$cmd $sub" = "project item-edit" ]; then
+  echo "ITEM_EDIT" >> "$state/log"
+  exit 0
+fi
+echo "unsupported fake gh call: $*" >&2
+exit 2
+EOF
+chmod +x "$ENQUEUE_DIR/bin/gh"
+(
+  cd "$ENQUEUE_DIR/app"
+  PATH="$ENQUEUE_DIR/bin:$PATH" FAKE_PLATFORM_STATE="$ENQUEUE_DIR/state" \
+    ./tasks-to-issues.sh demo --config "$ENQUEUE_DIR/app/config.json" >/dev/null
+)
+grep -q '^ISSUE_CREATE$' "$ENQUEUE_DIR/state/log" \
+  || fail "real tasks-to-issues caller did not create an issue"
+grep -q '^PROJECT_VIEW$' "$ENQUEUE_DIR/state/log" \
+  || fail "real tasks-to-issues caller did not validate the Project"
+grep -q '^FIELD_LIST$' "$ENQUEUE_DIR/state/log" \
+  || fail "real tasks-to-issues caller did not validate the Ready option"
+grep -q '^ITEM_ADD$' "$ENQUEUE_DIR/state/log" \
+  || fail "real tasks-to-issues caller did not add a board item"
+grep -q '^ITEM_EDIT$' "$ENQUEUE_DIR/state/log" \
+  || fail "real tasks-to-issues caller did not set Ready"
+rm -rf "$ENQUEUE_DIR"
+
+# ── 9. Dispatch discovers a sole config without an active pointer ──────────
+# A standalone dispatch must honor a single GitLab config instead of silently
+# defaulting to GitHub. The fake backend creates the required close commit.
+DISPATCH_DIR=$(mktemp -d)
+mkdir -p "$DISPATCH_DIR/.claude/supersaiyan/configs" \
+  "$DISPATCH_DIR/.claude/bin/backends" "$DISPATCH_DIR/.claude/bin/platforms"
+git -C "$DISPATCH_DIR" init -b main >/dev/null
+git -C "$DISPATCH_DIR" config user.email test@example.com
+git -C "$DISPATCH_DIR" config user.name Test
+touch "$DISPATCH_DIR/README.md"
+git -C "$DISPATCH_DIR" add README.md
+git -C "$DISPATCH_DIR" commit -m fixture >/dev/null
+cat > "$DISPATCH_DIR/.claude/supersaiyan/configs/only.json" <<'EOF'
+{"git_platform":"gitlab","project":{"full_path":"group/repo"}}
+EOF
+cat > "$DISPATCH_DIR/.claude/bin/platforms/gitlab.sh" <<EOF
+platform_issue_view() {
+  printf '%s\\n' '{"number":7,"title":"dispatch smoke","body":"","labels":[]}'
+  printf '%s\\n' used > "$DISPATCH_DIR/platform-selected"
+}
+EOF
+cat > "$DISPATCH_DIR/.claude/bin/backends/fake.sh" <<'EOF'
+backend_auth_check() { return 0; }
+backend_worker_addendum() { :; }
+backend_run_sync() {
+  git config user.email test@example.com
+  git config user.name Test
+  git commit --allow-empty -m 'chore(loop): close #7' >/dev/null
+}
+EOF
+set +e
+BASE_BRANCH=main REPO_DIR="$DISPATCH_DIR" WORKER_BACKEND=fake \
+  "$DISPATCH" 7 >"$DISPATCH_DIR/dispatch.log" 2>&1
+DISPATCH_RC=$?
+set -e
+[ "$DISPATCH_RC" -eq 0 ] && [ -f "$DISPATCH_DIR/platform-selected" ] \
+  || fail "dispatch did not select the sole GitLab config"
+rm -rf "$DISPATCH_DIR"
 
 if [ "$FAIL" -ne 0 ]; then
   echo "error: issue #4 platform-rewire contract check failed" >&2

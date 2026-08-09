@@ -59,6 +59,21 @@ if [[ -z "$CONFIG_PATH" && -f "$REPO_DIR/.claude/supersaiyan/active" ]]; then
     CONFIG_PATH="$REPO_DIR/.claude/supersaiyan/configs/${active_slug}.json"
   fi
 fi
+if [[ -z "$CONFIG_PATH" && -d "$REPO_DIR/.claude/supersaiyan/configs" ]]; then
+  config_count=0
+  sole_config=""
+  for candidate in "$REPO_DIR/.claude/supersaiyan/configs"/*.json; do
+    [[ -f "$candidate" ]] || continue
+    config_count=$((config_count + 1))
+    sole_config="$candidate"
+  done
+  if [[ "$config_count" -eq 1 ]]; then
+    CONFIG_PATH="$sole_config"
+  elif [[ "$config_count" -gt 1 ]]; then
+    echo "error: multiple supersaiyan configs found; set CONFIG_PATH or .claude/supersaiyan/active" >&2
+    exit 64
+  fi
+fi
 GIT_PLATFORM="${GIT_PLATFORM:-}"
 if [[ -z "$GIT_PLATFORM" && -n "$CONFIG_PATH" && -f "$CONFIG_PATH" ]]; then
   GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_PATH")
