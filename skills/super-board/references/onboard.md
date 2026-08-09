@@ -75,6 +75,12 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
         │        overwrite each other's worker_backend" collision — no
         │        data-model change needed, multiple named configs already
         │        work.)
+        │     Known gap: every shared field (`project`, `variant`,
+        │     `rebuild_cap`, `truth_gate`, etc.) is fully duplicated across
+        │     the N files today — editing one means editing all of them
+        │     identically, with nothing catching drift. A shared-base +
+        │     linked-overlay design is proposed, not implemented, in
+        │     `docs/super-board-analysis/multi-tool-config-linking.md`.
         │
         └─ B) PER-LANE MAP — one board, one config, one dispatcher process.
               Pick this to specialize by lane (e.g. one tool builds, another
