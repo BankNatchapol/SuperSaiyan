@@ -86,7 +86,7 @@ cmd="${1:-}"; sub="${2:-}"
 if [ "$cmd $sub" = "auth status" ]; then
   case "$*" in
     *"--json hosts"*)
-      echo '{"hosts":[{"active":true,"scopes":["project","read:project","repo"]}]}'
+      echo '{"hosts":{"github.com":[{"active":true,"host":"github.com","login":"octocat","scopes":"gist, project, read:org, repo"}]}}'
       ;;
   esac
   exit 0

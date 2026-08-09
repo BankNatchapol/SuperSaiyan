@@ -20,7 +20,7 @@ platform_auth_check() {
   local auth_json scopes
   auth_json=$(gh auth status --active --json hosts 2>/dev/null || true)
   scopes=$(printf '%s' "$auth_json" | jq -r \
-    '.hosts[]? | select(.active == true) | .scopes[]?' 2>/dev/null | tr '\n' ' ')
+    '.hosts | add | map(select(.active == true))[0].scopes // ""' 2>/dev/null)
   case ",${scopes// /,}," in
     *,project,*) ;;
     *)
