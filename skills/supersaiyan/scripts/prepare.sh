@@ -178,6 +178,9 @@ platform_auth_check || {
 
 # ── Main run: repair → create → reconcile ─────────────────────────────────────
 
+# Remote platform failures are intentionally fatal here. Reporting prepare as
+# successful after issue creation or Ready reconciliation failed would leave the
+# board partially queued and make a later run appear safely idle.
 [ -d "$TASK_DIR" ] || { echo "Task directory not found: $TASK_DIR" >&2; exit 66; }
 
 MAP_FILE="$TASK_DIR/.issue-map.json"
@@ -191,7 +194,7 @@ REPAIRED=0
 if [ -f "$MAP_FILE" ] && [ "$BEFORE_COUNT" -gt 0 ]; then
   while IFS= read -r stem; do
     issue_num=$(jq -r --arg s "$stem" '.[$s].number' "$MAP_FILE")
-    if ! platform_issue_view "$issue_num" --json state --jq .state >/dev/null 2>&1; then
+    if ! platform_issue_view "$issue_num" >/dev/null 2>&1; then
       TMP_WORK=$(mktemp)
       jq --arg s "$stem" 'del(.[$s])' "$MAP_FILE" > "$TMP_WORK"
       mv "$TMP_WORK" "$MAP_FILE"
@@ -223,7 +226,7 @@ if [ "$AFTER_COUNT" -gt 0 ]; then
     existing_status=$(printf '%s' "$items" | jq -r --argjson n "$issue_num" \
       '[.items[] | select(.content.number == $n)] | if length > 0 then .[0].status else "" end')
     if [ "$existing_status" = "Backlog" ] || [ -z "$existing_status" ]; then
-      issue_state=$(platform_issue_view "$issue_num" --json state --jq .state)
+      issue_state=$(platform_issue_view "$issue_num" | jq -r '.state')
       if [ "$issue_state" = "OPEN" ]; then
         platform_card_status_set --add "$CONFIG_FILE" "$issue_url" "Ready" >/dev/null
       fi

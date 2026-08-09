@@ -217,10 +217,10 @@ platform_issue_create() {
 }
 
 platform_issue_view() {
-  # $1 = issue number, remaining args forwarded (e.g. --json fields).
+  # $1 = issue number. Emits the platform-neutral issue shape consumed by
+  # prepare/dispatch: {number,title,body,labels,state}, with state OPEN/CLOSED.
   local issue="$1"
-  shift
-  gh issue view "$issue" "$@"
+  gh issue view "$issue" --json number,title,body,labels,state
 }
 
 platform_issue_comment() {

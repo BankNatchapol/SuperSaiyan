@@ -51,13 +51,32 @@ fi
 # Platform contract: scripts/platforms/<name>.sh in this repo, .claude/bin/platforms/
 # once installed (install.sh copies platforms/ alongside this script).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIGS_DIR=".claude/supersaiyan/configs"
 if [ -z "$CONFIG_PATH" ] && [ -f .claude/supersaiyan/active ]; then
   active_slug=$(tr -d '[:space:]' < .claude/supersaiyan/active)
-  [ -f ".claude/supersaiyan/configs/${active_slug}.json" ] && \
-    CONFIG_PATH=".claude/supersaiyan/configs/${active_slug}.json"
+  CONFIG_PATH="$CONFIGS_DIR/${active_slug}.json"
+fi
+if [ -z "$CONFIG_PATH" ] && [ -d "$CONFIGS_DIR" ]; then
+  config_count=0
+  sole_config=""
+  for candidate in "$CONFIGS_DIR"/*.json; do
+    [ -f "$candidate" ] || continue
+    config_count=$((config_count + 1))
+    sole_config="$candidate"
+  done
+  if [ "$config_count" -eq 1 ]; then
+    CONFIG_PATH="$sole_config"
+  elif [ "$config_count" -gt 1 ]; then
+    echo "multiple supersaiyan configs found; pass --config or set .claude/supersaiyan/active" >&2
+    exit 75
+  fi
+fi
+if [ -n "$CONFIG_PATH" ] && [ ! -f "$CONFIG_PATH" ]; then
+  echo "config not found: $CONFIG_PATH" >&2
+  exit 66
 fi
 GIT_PLATFORM="${GIT_PLATFORM:-}"
-if [ -z "$GIT_PLATFORM" ] && [ -n "$CONFIG_PATH" ] && [ -f "$CONFIG_PATH" ]; then
+if [ -z "$GIT_PLATFORM" ] && [ -n "$CONFIG_PATH" ]; then
   GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_PATH")
 fi
 GIT_PLATFORM="${GIT_PLATFORM:-github}"

@@ -35,9 +35,18 @@ Platform interface instead.
 - Modify: `scripts/tasks-to-issues.sh`
 - Modify: `scripts/super-board-wave-plan.sh`
 - Modify: `skills/super-build/scripts/super-build-dispatch.sh`
+- Modify: `skills/supersaiyan/scripts/prepare.sh` (thread config context through the same
+  adapter operations)
 
 **Interfaces:**
 - Consumes: `platform_*` functions from `scripts/platforms/github.sh` (task 01)
+- `platform_issue_view <issue>` returns normalized `{number,title,body,labels,state}` JSON;
+  adapters absorb forge-specific CLI flags and field names
+
+**Failure semantics:** platform authentication, issue creation, board snapshot, and Ready
+reconciliation failures during `supersaiyan prepare` are intentionally fail-fast.
+The pre-adapter implementation suppressed some of these failures, which could report success
+while leaving a partially queued board.
 
 ## Out of scope
 

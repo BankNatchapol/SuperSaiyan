@@ -29,8 +29,6 @@ done
 CONFIG_JSON=$(cat "$CONFIG")
 VARIANT=$(echo "$CONFIG_JSON" | jq -r '.variant')
 MAX_WORKERS=$(echo "$CONFIG_JSON" | jq -r '.max_workers // 3')
-OWNER=$(echo "$CONFIG_JSON" | jq -r '.project.owner')
-NUMBER=$(echo "$CONFIG_JSON" | jq -r '.project.number')
 GIT_PLATFORM=$(echo "$CONFIG_JSON" | jq -r '.git_platform // "github"')
 
 # Platform contract: scripts/platforms/<name>.sh in this repo, .claude/bin/platforms/
@@ -47,7 +45,13 @@ source "$PLATFORM_FILE"
 if [ -n "$ITEMS_FILE" ]; then
   ITEMS=$(cat "$ITEMS_FILE")
 else
-  ITEMS=$(platform_board_snapshot "$NUMBER" "$OWNER")
+  # The input may be a one-shot process substitution, so persist the JSON that
+  # was already read and pass a platform-neutral config reference. GitHub reads
+  # owner/number from it; GitLab reads host/full_path/board_id.
+  CONFIG_REF=$(mktemp)
+  trap 'rm -f "$CONFIG_REF"' EXIT
+  printf '%s\n' "$CONFIG_JSON" > "$CONFIG_REF"
+  ITEMS=$(platform_board_snapshot "$CONFIG_REF")
 fi
 
 # Validate loudly: a typo (or missing key → literal "null") must not silently

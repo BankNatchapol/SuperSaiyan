@@ -155,7 +155,7 @@ if git rev-parse --verify "$WORKER_BRANCH" >/dev/null 2>&1; then
 fi
 
 # Compose the worker prompt: preamble + issue body + working-dir footer
-ISSUE_JSON=$(platform_issue_view "$N" --json number,title,body,labels 2>&1) || {
+ISSUE_JSON=$(platform_issue_view "$N" 2>&1) || {
   echo "error: platform_issue_view #$N failed:" >&2
   echo "$ISSUE_JSON" >&2
   exit 64

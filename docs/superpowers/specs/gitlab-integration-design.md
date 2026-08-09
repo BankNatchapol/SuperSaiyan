@@ -152,7 +152,7 @@ plus the one addition above given documented flakiness of concurrent label/assig
 | Function | GitHub | GitLab |
 |---|---|---|
 | `platform_issue_create` | `gh issue create --title --body-file` | `glab issue create --title "<t>" --description-file <f>` |
-| `platform_issue_view` | `gh issue view N --json <fields>` | `glab api "projects/:id/issues/:iid"` (raw REST, for the same machine-parsing reason `super-board-status.py` already prefers raw GraphQL over `gh project item-list`'s formatted output) |
+| `platform_issue_view <issue>` → normalized `{number,title,body,labels,state}` with `state` in `OPEN|CLOSED` | `gh issue view N --json number,title,body,labels,state` | `glab api "projects/:id/issues/:iid"` followed inside the adapter by normalization from `iid`/`description`/lowercase `state` (raw REST is still the source, for the same machine-parsing reason `super-board-status.py` already prefers raw GraphQL over `gh project item-list`'s formatted output) |
 | `platform_issue_comment` | `gh issue comment N --body` | `glab issue note <iid> -m "<body>"` (GitLab calls comments "notes") |
 | `platform_issue_close` | `gh issue close N --comment "<c>"` | `glab issue close <iid> --note "<c>"` — clean 1:1 |
 | `platform_issue_edit_labels` | `gh issue edit N --add-label a,b --remove-label c` | `glab issue update <iid> --label "a,b" --unlabel "c"` |

@@ -2,7 +2,7 @@
 # test-tasks-wave-dispatch-platform-rewire.sh — verifies issue #4 / gitlab-integration
 # task 04: tasks-to-issues.sh, super-board-wave-plan.sh, and super-build-dispatch.sh
 # route their remaining direct gh board/issue calls through platform_*.
-# Static contract + syntax only — no live board traffic.
+# Contract, syntax, and fake-adapter behavior only — no live board traffic.
 
 set -euo pipefail
 
@@ -10,12 +10,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TASKS="$ROOT/scripts/tasks-to-issues.sh"
 WAVE="$ROOT/scripts/super-board-wave-plan.sh"
 DISPATCH="$ROOT/skills/super-build/scripts/super-build-dispatch.sh"
+PREPARE="$ROOT/skills/supersaiyan/scripts/prepare.sh"
 GITHUB_PLATFORM="$ROOT/scripts/platforms/github.sh"
 
 FAIL=0
 fail() { echo "  FAIL: $1" >&2; FAIL=1; }
 
-for f in "$TASKS" "$WAVE" "$DISPATCH" "$GITHUB_PLATFORM"; do
+for f in "$TASKS" "$WAVE" "$DISPATCH" "$PREPARE" "$GITHUB_PLATFORM"; do
   if [ ! -f "$f" ]; then
     echo "error: $f not found" >&2
     exit 1
@@ -77,6 +78,9 @@ grep -q '\.git_platform // "github"' "$DISPATCH" \
   || fail "super-build-dispatch.sh does not resolve git_platform from config"
 if grep -vE '^\s*#' "$DISPATCH" | grep -qE 'gh[[:space:]]+issue[[:space:]]+view'; then
   fail "super-build-dispatch.sh still has inline 'gh issue view'"
+fi
+if grep -E 'platform_issue_view.*--json' "$DISPATCH" "$PREPARE" >/dev/null; then
+  fail "platform_issue_view callers still leak GitHub CLI flags across the adapter boundary"
 fi
 
 # ── 6. Smoke: wave-plan with --items still plans (no live fetch) ───────────
@@ -254,7 +258,11 @@ cat > "$DISPATCH_DIR/.claude/supersaiyan/configs/only.json" <<'EOF'
 EOF
 cat > "$DISPATCH_DIR/.claude/bin/platforms/gitlab.sh" <<EOF
 platform_issue_view() {
-  printf '%s\\n' '{"number":7,"title":"dispatch smoke","body":"","labels":[]}'
+  [ "\$#" -eq 1 ] || {
+    echo "platform_issue_view expects only an issue reference" >&2
+    return 64
+  }
+  printf '%s\\n' '{"number":7,"title":"dispatch smoke","body":"GitLab normalized body","labels":[],"state":"OPEN"}'
   printf '%s\\n' used > "$DISPATCH_DIR/platform-selected"
 }
 EOF
@@ -262,6 +270,10 @@ cat > "$DISPATCH_DIR/.claude/bin/backends/fake.sh" <<'EOF'
 backend_auth_check() { return 0; }
 backend_worker_addendum() { :; }
 backend_run_sync() {
+  case "$1" in
+    *"GitLab normalized body"*) ;;
+    *) echo "normalized issue body missing from worker prompt" >&2; return 98 ;;
+  esac
   git config user.email test@example.com
   git config user.name Test
   git commit --allow-empty -m 'chore(loop): close #7' >/dev/null
@@ -275,6 +287,124 @@ set -e
 [ "$DISPATCH_RC" -eq 0 ] && [ -f "$DISPATCH_DIR/platform-selected" ] \
   || fail "dispatch did not select the sole GitLab config"
 rm -rf "$DISPATCH_DIR"
+
+# ── 10. Wave planner passes platform-neutral config context ───────────────
+# GitLab configs do not have GitHub's project.owner/project.number fields. The
+# adapter must receive a readable config reference so it can resolve full_path,
+# host, and board_id itself.
+WAVE_GITLAB_DIR=$(mktemp -d)
+mkdir -p "$WAVE_GITLAB_DIR/platforms"
+cp "$WAVE" "$WAVE_GITLAB_DIR/super-board-wave-plan.sh"
+cat > "$WAVE_GITLAB_DIR/config.json" <<'EOF'
+{
+  "variant": "full",
+  "max_workers": 3,
+  "human_approves_merge": true,
+  "git_platform": "gitlab",
+  "project": {
+    "host": "gitlab.example.com",
+    "full_path": "group/demo",
+    "board_id": 9
+  }
+}
+EOF
+cat > "$WAVE_GITLAB_DIR/platforms/gitlab.sh" <<'EOF'
+platform_board_snapshot() {
+  config_path="${1:-}"
+  [ -f "$config_path" ] || {
+    echo "expected readable config path, got: ${config_path:-<empty>}" >&2
+    return 65
+  }
+  [ "$(jq -r '.project.full_path' "$config_path")" = "group/demo" ] || return 65
+  cat <<'JSON'
+{"items":[{"id":"ITEM_8","status":"Ready","content":{"type":"Issue","number":8,"title":"GitLab card","body":"","repository":"group/demo","assignees":[]}}]}
+JSON
+}
+EOF
+GITLAB_PLAN_OUT=$(bash "$WAVE_GITLAB_DIR/super-board-wave-plan.sh" \
+  --config <(cat "$WAVE_GITLAB_DIR/config.json") 2>"$WAVE_GITLAB_DIR/error.log") || true
+echo "$GITLAB_PLAN_OUT" | jq -e '.cards | length == 1 and .[0].number == 8' >/dev/null 2>&1 \
+  || fail "wave planner did not pass GitLab config context: $(cat "$WAVE_GITLAB_DIR/error.log")"
+rm -rf "$WAVE_GITLAB_DIR"
+
+# ── 11. Standalone tasks-to-issues config discovery is forge-safe ─────────
+# Match prepare/dispatch semantics: one config is selected automatically, while
+# an explicitly invalid config path fails before authenticating or creating.
+TASK_CONFIG_DIR=$(mktemp -d)
+mkdir -p "$TASK_CONFIG_DIR/app/docs/superpowers/tasks/demo" \
+  "$TASK_CONFIG_DIR/app/.claude/supersaiyan/configs" \
+  "$TASK_CONFIG_DIR/app/platforms" "$TASK_CONFIG_DIR/state"
+cp "$TASKS" "$TASK_CONFIG_DIR/app/tasks-to-issues.sh"
+cat > "$TASK_CONFIG_DIR/app/docs/superpowers/tasks/demo/01-first.md" <<'EOF'
+---
+title: First task
+order: 1
+depends_on_task: null
+---
+
+## Goal
+
+Create one issue through the selected forge.
+EOF
+cat > "$TASK_CONFIG_DIR/app/.claude/supersaiyan/configs/only.json" <<'EOF'
+{"git_platform":"gitlab","project":{"host":"gitlab.example.com","full_path":"group/demo","board_id":9}}
+EOF
+cat > "$TASK_CONFIG_DIR/app/platforms/gitlab.sh" <<'EOF'
+platform_auth_check() { echo "GITLAB_AUTH" >> "$FAKE_PLATFORM_STATE/log"; }
+platform_issue_create() {
+  echo "GITLAB_ISSUE_CREATE" >> "$FAKE_PLATFORM_STATE/log"
+  echo "https://gitlab.example.com/group/demo/-/issues/42"
+}
+platform_card_status_set() { echo "GITLAB_READY" >> "$FAKE_PLATFORM_STATE/log"; }
+EOF
+cat > "$TASK_CONFIG_DIR/app/platforms/github.sh" <<'EOF'
+platform_auth_check() { echo "WRONG_GITHUB_ADAPTER" >> "$FAKE_PLATFORM_STATE/log"; }
+platform_issue_create() { return 99; }
+platform_card_status_set() { return 99; }
+EOF
+: > "$TASK_CONFIG_DIR/state/log"
+set +e
+(
+  cd "$TASK_CONFIG_DIR/app"
+  FAKE_PLATFORM_STATE="$TASK_CONFIG_DIR/state" ./tasks-to-issues.sh demo >/dev/null 2>&1
+)
+TASK_CONFIG_RC=$?
+set -e
+[ "$TASK_CONFIG_RC" -eq 0 ] \
+  && grep -q '^GITLAB_ISSUE_CREATE$' "$TASK_CONFIG_DIR/state/log" \
+  && ! grep -q '^WRONG_GITHUB_ADAPTER$' "$TASK_CONFIG_DIR/state/log" \
+  || fail "tasks-to-issues did not auto-select the sole GitLab config"
+
+: > "$TASK_CONFIG_DIR/state/log"
+set +e
+(
+  cd "$TASK_CONFIG_DIR/app"
+  FAKE_PLATFORM_STATE="$TASK_CONFIG_DIR/state" \
+    ./tasks-to-issues.sh demo --config missing.json >"$TASK_CONFIG_DIR/out" 2>"$TASK_CONFIG_DIR/err"
+)
+MISSING_CONFIG_RC=$?
+set -e
+[ "$MISSING_CONFIG_RC" -ne 0 ] \
+  && grep -q 'config not found' "$TASK_CONFIG_DIR/err" \
+  && [ ! -s "$TASK_CONFIG_DIR/state/log" ] \
+  || fail "explicit missing tasks-to-issues config did not fail before adapter use"
+
+cp "$TASK_CONFIG_DIR/app/.claude/supersaiyan/configs/only.json" \
+  "$TASK_CONFIG_DIR/app/.claude/supersaiyan/configs/second.json"
+: > "$TASK_CONFIG_DIR/state/log"
+set +e
+(
+  cd "$TASK_CONFIG_DIR/app"
+  FAKE_PLATFORM_STATE="$TASK_CONFIG_DIR/state" \
+    ./tasks-to-issues.sh demo >"$TASK_CONFIG_DIR/out" 2>"$TASK_CONFIG_DIR/err"
+)
+MULTIPLE_CONFIG_RC=$?
+set -e
+[ "$MULTIPLE_CONFIG_RC" -ne 0 ] \
+  && grep -q 'multiple supersaiyan configs' "$TASK_CONFIG_DIR/err" \
+  && [ ! -s "$TASK_CONFIG_DIR/state/log" ] \
+  || fail "ambiguous tasks-to-issues config did not fail before adapter use"
+rm -rf "$TASK_CONFIG_DIR"
 
 if [ "$FAIL" -ne 0 ]; then
   echo "error: issue #4 platform-rewire contract check failed" >&2
