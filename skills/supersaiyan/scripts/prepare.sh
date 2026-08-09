@@ -45,41 +45,27 @@ trap cleanup EXIT
 
 # ── Config discovery ───────────────────────────────────────────────────────────
 
-CONFIGS_DIR=".claude/supersaiyan/configs"
-if [ ! -d "$CONFIGS_DIR" ]; then
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_RESOLVER=".claude/bin/platform-config.sh"
+if [ ! -f "$CONFIG_RESOLVER" ]; then
+  CONFIG_RESOLVER="$SCRIPT_DIR/../../../scripts/platform-config.sh"
+fi
+[ -f "$CONFIG_RESOLVER" ] || {
+  echo "platform config resolver not found: $CONFIG_RESOLVER" >&2
+  exit 66
+}
+# shellcheck disable=SC1090
+source "$CONFIG_RESOLVER"
+CONFIG_FILE=$(platform_config_resolve "$PWD" "${CONFIG_PATH:-}") || exit $?
+if [ -z "$CONFIG_FILE" ]; then
   echo "NEEDS_ONBOARD"
   exit 78
 fi
-
-config_count=0
-first_config=""
-while IFS= read -r f; do
-  config_count=$((config_count + 1))
-  [ "$config_count" -eq 1 ] && first_config="$f"
-done < <(find "$CONFIGS_DIR" -maxdepth 1 -name "*.json" 2>/dev/null | sort)
-
-if [ "$config_count" -eq 0 ]; then
-  echo "NEEDS_ONBOARD"
-  exit 78
-fi
-
-CONFIG_SLUG=""
-if [ "$config_count" -eq 1 ]; then
-  CONFIG_SLUG=$(basename "$first_config" .json)
-else
-  ACTIVE_FILE=".claude/supersaiyan/active"
-  if [ ! -f "$ACTIVE_FILE" ]; then
-    echo "Multiple board configs found. Write the active slug to $ACTIVE_FILE." >&2
-    exit 75
-  fi
-  CONFIG_SLUG=$(tr -d '[:space:]' < "$ACTIVE_FILE")
-fi
-
-CONFIG_FILE="$CONFIGS_DIR/$CONFIG_SLUG.json"
-[ -f "$CONFIG_FILE" ] || { echo "Config not found: $CONFIG_FILE" >&2; exit 66; }
+CONFIG_SLUG=$(basename "$CONFIG_FILE" .json)
 
 PROJECT_OWNER=$(jq -r '.project.owner // "@me"' "$CONFIG_FILE")
 PROJECT_NUMBER=$(jq -r '.project.number' "$CONFIG_FILE")
+GIT_PLATFORM=$(platform_config_resolve_platform "$CONFIG_FILE" "${GIT_PLATFORM:-}") || exit $?
 
 # ── Resolve task directory ─────────────────────────────────────────────────────
 
@@ -157,8 +143,29 @@ if [ "$CHECK_ONLY" = true ]; then
   exit 0
 fi
 
+# ── Platform contract ────────────────────────────────────────────────────────
+
+PLATFORM_FILE=".claude/bin/platforms/${GIT_PLATFORM}.sh"
+if [ ! -f "$PLATFORM_FILE" ]; then
+  PLATFORM_FILE="$SCRIPT_DIR/../../../scripts/platforms/${GIT_PLATFORM}.sh"
+fi
+[ -f "$PLATFORM_FILE" ] || {
+  echo "platform contract not found: $PLATFORM_FILE (git_platform=$GIT_PLATFORM)" >&2
+  exit 77
+}
+# shellcheck disable=SC1090
+source "$PLATFORM_FILE"
+export PLATFORM_CONFIG_PATH="$CONFIG_FILE"
+platform_auth_check board || {
+  echo "${GIT_PLATFORM} platform authentication check failed (Project access required)" >&2
+  exit 69
+}
+
 # ── Main run: repair → create → reconcile ─────────────────────────────────────
 
+# Remote platform failures are intentionally fatal here. Reporting prepare as
+# successful after issue creation or Ready reconciliation failed would leave the
+# board partially queued and make a later run appear safely idle.
 [ -d "$TASK_DIR" ] || { echo "Task directory not found: $TASK_DIR" >&2; exit 66; }
 
 MAP_FILE="$TASK_DIR/.issue-map.json"
@@ -167,18 +174,31 @@ MAP_FILE="$TASK_DIR/.issue-map.json"
 BEFORE_COUNT=0
 [ -f "$MAP_FILE" ] && BEFORE_COUNT=$(jq 'length' "$MAP_FILE")
 
-# Repair stale issue mappings (mapped issue was deleted from GitHub)
+# Repair stale issue mappings (mapped issue was deleted from the platform)
 REPAIRED=0
 if [ -f "$MAP_FILE" ] && [ "$BEFORE_COUNT" -gt 0 ]; then
   while IFS= read -r stem; do
     issue_num=$(jq -r --arg s "$stem" '.[$s].number' "$MAP_FILE")
-    if ! gh issue view "$issue_num" --json state --jq .state >/dev/null 2>&1; then
-      TMP_WORK=$(mktemp)
-      jq --arg s "$stem" 'del(.[$s])' "$MAP_FILE" > "$TMP_WORK"
-      mv "$TMP_WORK" "$MAP_FILE"
-      TMP_WORK=""
-      REPAIRED=$((REPAIRED + 1))
-    fi
+    lookup_rc=0
+    platform_issue_view "$issue_num" >/dev/null 2>&1 || lookup_rc=$?
+    case "$lookup_rc" in
+      0) ;;
+      44)
+        TMP_WORK=$(mktemp)
+        jq --arg s "$stem" 'del(.[$s])' "$MAP_FILE" > "$TMP_WORK"
+        mv "$TMP_WORK" "$MAP_FILE"
+        TMP_WORK=""
+        REPAIRED=$((REPAIRED + 1))
+        ;;
+      69|70)
+        echo "issue lookup failed for mapped issue #$issue_num (exit $lookup_rc); issue map left unchanged" >&2
+        exit "$lookup_rc"
+        ;;
+      *)
+        echo "issue lookup returned unsupported exit $lookup_rc for mapped issue #$issue_num; issue map left unchanged" >&2
+        exit 70
+        ;;
+    esac
   done < <(jq -r 'keys[]' "$MAP_FILE" 2>/dev/null)
 fi
 
@@ -187,78 +207,49 @@ TASKS_TO_ISSUES="${TASKS_TO_ISSUES:-.claude/bin/tasks-to-issues.sh}"
 [ -x "$TASKS_TO_ISSUES" ] || { echo "tasks-to-issues.sh not executable: $TASKS_TO_ISSUES" >&2; exit 66; }
 
 if [ -n "$PHASE" ]; then
-  GH_PROJECT_OWNER="$PROJECT_OWNER" GH_PROJECT_NUMBER="$PROJECT_NUMBER" \
-    "$TASKS_TO_ISSUES" "$TASK_DIR" >/dev/null 2>&1 || true
+  "$TASKS_TO_ISSUES" "$TASK_DIR" --board --config "$CONFIG_FILE"
 else
-  GH_PROJECT_OWNER="$PROJECT_OWNER" GH_PROJECT_NUMBER="$PROJECT_NUMBER" \
-    "$TASKS_TO_ISSUES" "$SLUG" >/dev/null 2>&1 || true
+  "$TASKS_TO_ISSUES" "$SLUG" --board --config "$CONFIG_FILE"
 fi
 
 AFTER_COUNT=0
 [ -f "$MAP_FILE" ] && AFTER_COUNT=$(jq 'length' "$MAP_FILE")
 CREATED=$(( AFTER_COUNT - BEFORE_COUNT + REPAIRED ))
 
-# Reconcile board: add our issues that aren't in the project, move open Backlog items to Ready
-if [ "$AFTER_COUNT" -gt 0 ] && command -v gh >/dev/null 2>&1 \
-    && [ -n "$PROJECT_NUMBER" ] && [ "$PROJECT_NUMBER" != "null" ]; then
-
-  PROJECT_ID=$(gh project view "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
-    --format json --jq '.id' 2>/dev/null || true)
-
-  if [ -n "$PROJECT_ID" ]; then
-    fields=$(gh project field-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
-      --format json 2>/dev/null || echo '{"fields":[]}')
-    STATUS_FIELD_ID=$(printf '%s' "$fields" | \
-      jq -r '.fields[] | select(.name == "Status") | .id' | head -1)
-    READY_OPTION_ID=$(printf '%s' "$fields" | \
-      jq -r '.fields[] | select(.name == "Status") | .options[] | select(.name == "Ready") | .id' \
-      | head -1)
-
-    if [ -n "$STATUS_FIELD_ID" ] && [ -n "$READY_OPTION_ID" ]; then
-      # Snapshot current project items once
-      items=$(gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
-        --format json 2>/dev/null || echo '{"items":[]}')
-
-      # Process each issue in our map
-      while IFS=$(printf '\t') read -r issue_num issue_url; do
-        [ -z "$issue_num" ] && continue
-
-        # Check if this issue is already a project item (using initial snapshot)
-        existing_id=$(printf '%s' "$items" | jq -r --argjson n "$issue_num" \
-          '[.items[] | select(.content.number == $n)] |
-           if length > 0 then .[0].id else "" end' 2>/dev/null || true)
-
-        if [ -z "$existing_id" ]; then
-          # Add to project and set to Ready if open
-          new_id=$(gh project item-add "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
-            --url "$issue_url" 2>/dev/null || true)
-          if [ -n "$new_id" ]; then
-            issue_state=$(gh issue view "$issue_num" --json state --jq .state 2>/dev/null \
-              || echo "CLOSED")
-            if [ "$issue_state" = "OPEN" ]; then
-              gh project item-edit --id "$new_id" --project-id "$PROJECT_ID" \
-                --field-id "$STATUS_FIELD_ID" \
-                --single-select-option-id "$READY_OPTION_ID" >/dev/null 2>&1 || true
-            fi
-          fi
-        else
-          # Already in project — move to Ready if Backlog and open
-          existing_status=$(printf '%s' "$items" | jq -r --arg id "$existing_id" \
-            '.items[] | select(.id == $id) | .status' 2>/dev/null || true)
-          if [ "$existing_status" = "Backlog" ] || [ -z "$existing_status" ]; then
-            issue_state=$(gh issue view "$issue_num" --json state --jq .state 2>/dev/null \
-              || echo "CLOSED")
-            if [ "$issue_state" = "OPEN" ]; then
-              gh project item-edit --id "$existing_id" --project-id "$PROJECT_ID" \
-                --field-id "$STATUS_FIELD_ID" \
-                --single-select-option-id "$READY_OPTION_ID" >/dev/null 2>&1 || true
-            fi
-          fi
-        fi
-      done < <(jq -r 'to_entries[] | [(.value.number | tostring), .value.url] | @tsv' \
-                 "$MAP_FILE" 2>/dev/null)
+# Reconcile board: add mapped open issues that are absent or still in Backlog.
+if [ "$AFTER_COUNT" -gt 0 ]; then
+  items=$(platform_board_snapshot "$CONFIG_FILE")
+  while IFS=$(printf '\t') read -r issue_num issue_url; do
+    [ -z "$issue_num" ] && continue
+    existing_status=$(printf '%s' "$items" | jq -r --arg url "$issue_url" \
+      '[.items[] | select(.content.url == $url)] | if length > 0 then .[0].status else "" end')
+    if [ "$existing_status" = "Backlog" ] || [ -z "$existing_status" ]; then
+      lookup_rc=0
+      issue_json=$(platform_issue_view "$issue_num") || lookup_rc=$?
+      case "$lookup_rc" in
+        0) ;;
+        44|69|70)
+          echo "issue lookup failed during Ready reconciliation for #$issue_num (exit $lookup_rc)" >&2
+          exit "$lookup_rc"
+          ;;
+        *)
+          echo "issue lookup returned unsupported exit $lookup_rc during Ready reconciliation for #$issue_num" >&2
+          exit 70
+          ;;
+      esac
+      issue_state=$(printf '%s' "$issue_json" | jq -er '.state | strings') || {
+        echo "issue #$issue_num returned a malformed normalized state during Ready reconciliation" >&2
+        exit 70
+      }
+      if [ "$issue_state" = "OPEN" ]; then
+        platform_card_status_set --add "$CONFIG_FILE" "$issue_url" "Ready" >/dev/null
+      elif [ "$issue_state" != "CLOSED" ]; then
+        echo "issue #$issue_num returned unsupported state during Ready reconciliation: $issue_state" >&2
+        exit 70
+      fi
     fi
-  fi
+  done < <(jq -r 'to_entries[] | [(.value.number | tostring), .value.url] | @tsv' \
+             "$MAP_FILE" 2>/dev/null)
 fi
 
 echo "created=$CREATED repaired=$REPAIRED"

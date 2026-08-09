@@ -10,7 +10,7 @@
 #
 # Usage:
 #   super-board-wave-plan.sh --config <config.json> [--items <project-items.json>]
-# Without --items, fetches live board state via `gh project item-list`.
+# Without --items, fetches live board state via platform_board_snapshot.
 # Stdout: {"cards":[{"number":10,"status":"Review","title":"..."}]}
 set -euo pipefail
 
@@ -29,13 +29,29 @@ done
 CONFIG_JSON=$(cat "$CONFIG")
 VARIANT=$(echo "$CONFIG_JSON" | jq -r '.variant')
 MAX_WORKERS=$(echo "$CONFIG_JSON" | jq -r '.max_workers // 3')
-OWNER=$(echo "$CONFIG_JSON" | jq -r '.project.owner')
-NUMBER=$(echo "$CONFIG_JSON" | jq -r '.project.number')
+GIT_PLATFORM=$(echo "$CONFIG_JSON" | jq -r '.git_platform // "github"')
+
+# Platform contract: scripts/platforms/<name>.sh in this repo, .claude/bin/platforms/
+# once installed (install.sh copies platforms/ alongside this script).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
+if [ ! -f "$PLATFORM_FILE" ]; then
+  echo "platform contract not found: $PLATFORM_FILE (git_platform=${GIT_PLATFORM})" >&2
+  exit 77
+fi
+# shellcheck disable=SC1090
+source "$PLATFORM_FILE"
 
 if [ -n "$ITEMS_FILE" ]; then
   ITEMS=$(cat "$ITEMS_FILE")
 else
-  ITEMS=$(gh project item-list "$NUMBER" --owner "$OWNER" --format json --limit 500)
+  # The input may be a one-shot process substitution, so persist the JSON that
+  # was already read and pass a platform-neutral config reference. GitHub reads
+  # owner/number from it; GitLab reads host/full_path/board_id.
+  CONFIG_REF=$(mktemp)
+  trap 'rm -f "$CONFIG_REF"' EXIT
+  printf '%s\n' "$CONFIG_JSON" > "$CONFIG_REF"
+  ITEMS=$(platform_board_snapshot "$CONFIG_REF")
 fi
 
 # Validate loudly: a typo (or missing key → literal "null") must not silently

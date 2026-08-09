@@ -1,0 +1,21 @@
+RUN seven-suite QA command
+PASS: test-tasks-wave-dispatch-platform-rewire.sh
+PASS: test-prepare-platform-rewire.sh
+PASS: test-supersaiyan-prepare.sh (9 scenarios)
+PASS: test-platform-contract.sh (31 contract functions defined)
+PASS: test-backend-contract.sh (all 6 contract functions defined for each backend)
+PASS: test-build-safety-contract.sh
+PASS: test-run-platform-rewire.sh
+PASS seven-suite QA command (exit 0)
+
+RUN shell-syntax (all changed .sh files in origin/main...HEAD)
+PASS shell-syntax (exit 0)
+
+RUN live-platform-auth
+PASS live-platform-auth (exit 0)
+
+RUN diff-check
+PASS diff-check (exit 0)
+
+RUN unresolved-review-thread query
+PASS unresolved-review-thread query (0 unresolved threads)

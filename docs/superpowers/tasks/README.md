@@ -63,7 +63,7 @@ From your **app repo** root (where `gh` points):
 
 export GH_PROJECT_OWNER=@me GH_PROJECT_NUMBER=3
 ~/Documents/SuperSaiyan/scripts/tasks-to-issues.sh \
-  docs/superpowers/tasks/<feature-slug>/01-first-task.md
+  docs/superpowers/tasks/<feature-slug>/01-first-task.md --board
 
 # Task folder → one issue for every task .md file
 ~/Documents/SuperSaiyan/scripts/tasks-to-issues.sh \
@@ -72,5 +72,9 @@ export GH_PROJECT_OWNER=@me GH_PROJECT_NUMBER=3
 
 Passing only `<feature-slug>` remains supported as shorthand for the task
 folder.
+
+Direct filing is issue-only by default, including in an onboarded repository. Add `--board`
+when the command should authenticate for the configured board and enqueue new issues in Ready.
+`/supersaiyan prepare` supplies `--board` automatically.
 
 See [plan-to-issues-bridge.md](../../super-board-analysis/plan-to-issues-bridge.md).
