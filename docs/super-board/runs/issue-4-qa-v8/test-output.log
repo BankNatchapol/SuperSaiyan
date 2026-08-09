@@ -1,0 +1,31 @@
+TESTED product commit ec4008dbb497ed594c830b988ec9422eaa1c44be
+
+RUN seven-suite QA command
+PASS: test-tasks-wave-dispatch-platform-rewire.sh
+PASS: test-prepare-platform-rewire.sh
+PASS: test-supersaiyan-prepare.sh (9 scenarios)
+PASS: test-platform-contract.sh (31 contract functions defined)
+PASS: test-backend-contract.sh (all 6 contract functions defined for each backend)
+PASS: test-build-safety-contract.sh
+PASS: test-run-platform-rewire.sh
+PASS seven-suite QA command (exit 0)
+
+RUN Review-v7 regression focus
+PASS failed Ready enqueue preserves the issue map and retry reconciles without duplication
+PASS already-Ready mapped issue is not mutated again
+PASS auth scopes are selected from the repository target host
+PASS unrelated-host repo scope cannot satisfy target-host auth
+PASS GitHub label objects normalize to labels:string[]
+
+RUN shell syntax
+PASS shell syntax (11 changed shell files, exit 0)
+
+RUN reference sync
+PASS test-reference-sync.py (exit 0)
+
+RUN live platform auth
+PASS platform_auth_check issue (exit 0)
+PASS platform_auth_check board (exit 0)
+
+RUN diff check
+PASS git diff --check origin/main...ec4008d (exit 0)
