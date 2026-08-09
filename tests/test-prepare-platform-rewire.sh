@@ -36,6 +36,11 @@ grep -q 'platform_card_status_set' "$PREPARE" \
 grep -q -- '--config' "$PREPARE" \
   || fail "prepare.sh does not pass config context"
 
+for f in "$TASKS" "$PREPARE"; do
+  grep -q 'PLATFORM_CONFIG_PATH' "$f" \
+    || fail "$(basename "$f") does not export the platform issue-view config context"
+done
+
 if grep -vE '^\s*#' "$PREPARE" | grep -qE '\bgh\s+(issue|project)\b'; then
   fail "prepare.sh still has direct gh issue/project calls"
 fi

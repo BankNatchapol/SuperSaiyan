@@ -8,7 +8,17 @@
 # ───────────────────────────── Group A — Auth & identity ─────────────────────────────
 
 platform_auth_check() {
-  # gh auth status + scope check (project, read:project, repo).
+  # gh auth status. Pass `project` when the caller is about to mutate/read a
+  # GitHub Project; issue-only callers need only the repository token.
+  local require_project=false
+  case "${1:-}" in
+    "") ;;
+    project|board) require_project=true ;;
+    *)
+      echo "platform_auth_check: unknown scope requirement '$1'" >&2
+      return 64
+      ;;
+  esac
   command -v gh >/dev/null 2>&1 || {
     echo "gh CLI not found on PATH — install: https://cli.github.com" >&2
     return 1
@@ -17,6 +27,7 @@ platform_auth_check() {
     echo "gh not authenticated — run: gh auth login" >&2
     return 1
   }
+  [ "$require_project" = true ] || return 0
   local auth_json scopes
   auth_json=$(gh auth status --active --json hosts 2>/dev/null || true)
   scopes=$(printf '%s' "$auth_json" | jq -r \
@@ -219,6 +230,8 @@ platform_issue_create() {
 platform_issue_view() {
   # $1 = issue number. Emits the platform-neutral issue shape consumed by
   # prepare/dispatch: {number,title,body,labels,state}, with state OPEN/CLOSED.
+  # PLATFORM_CONFIG_PATH is available for adapters that need project context;
+  # GitHub's issue endpoint does not need it.
   local issue="$1"
   gh issue view "$issue" --json number,title,body,labels,state
 }

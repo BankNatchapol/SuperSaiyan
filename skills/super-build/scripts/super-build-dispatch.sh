@@ -74,11 +74,16 @@ if [[ -z "$CONFIG_PATH" && -d "$REPO_DIR/.claude/supersaiyan/configs" ]]; then
     exit 64
   fi
 fi
+if [[ -n "$CONFIG_PATH" && ! -f "$CONFIG_PATH" ]]; then
+  echo "error: config not found: $CONFIG_PATH" >&2
+  exit 66
+fi
 GIT_PLATFORM="${GIT_PLATFORM:-}"
 if [[ -z "$GIT_PLATFORM" && -n "$CONFIG_PATH" && -f "$CONFIG_PATH" ]]; then
   GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_PATH")
 fi
 GIT_PLATFORM="${GIT_PLATFORM:-github}"
+export PLATFORM_CONFIG_PATH="$CONFIG_PATH"
 
 # Backend contract (see .claude/skills/super-board/references/backends.md). Installed layout:
 # .claude/bin/backends/<name>.sh (repo-root-relative, same dir install.sh copies alongside

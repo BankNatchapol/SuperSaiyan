@@ -88,10 +88,18 @@ fi
 # shellcheck disable=SC1090
 source "$PLATFORM_FILE"
 
-platform_auth_check || {
-  echo "${GIT_PLATFORM} platform authentication check failed" >&2
-  exit 69
-}
+export PLATFORM_CONFIG_PATH="$CONFIG_PATH"
+if [ -n "$CONFIG_PATH" ] || [ -n "${GH_PROJECT_NUMBER:-}" ]; then
+  platform_auth_check project || {
+    echo "${GIT_PLATFORM} platform authentication check failed (Project access required)" >&2
+    exit 69
+  }
+else
+  platform_auth_check || {
+    echo "${GIT_PLATFORM} platform authentication check failed" >&2
+    exit 69
+  }
+fi
 
 TASKS_DIR="${TASKS_DIR:-docs/superpowers/tasks}"
 SINGLE_FILE=""

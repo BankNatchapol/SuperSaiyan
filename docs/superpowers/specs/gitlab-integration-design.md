@@ -91,8 +91,13 @@ mirroring the existing `tests/test-backend-contract.sh`.
 
 | Function | GitHub | GitLab |
 |---|---|---|
-| `platform_auth_check` | `gh auth status` + scope check (`project`,`read:project`,`repo`) | `glab auth status` + scope check (`api`,`write_repository`) |
+| `platform_auth_check [project]` | `gh auth status`; pass `project` when a caller will read/write a GitHub Project, then require (`project`,`read:project`,`repo`) | `glab auth status`; pass `project` for board operations, then require (`api`,`write_repository`) |
 | `platform_bot_identity_resolve` | GitHub App install vs. personal login | Project/Group Access Token → auto-created bot user (`project_<id>_bot_<random>`) vs. personal token |
+
+The `project` argument is an operation-level requirement, not a platform
+selection signal. Standalone issue creation may call `platform_auth_check`
+without it; board enqueue/reconciliation must pass `project` and fail before
+mutating anything when the required scope is absent.
 
 **Group B — Rate limit / quota**
 
@@ -156,6 +161,12 @@ plus the one addition above given documented flakiness of concurrent label/assig
 | `platform_issue_comment` | `gh issue comment N --body` | `glab issue note <iid> -m "<body>"` (GitLab calls comments "notes") |
 | `platform_issue_close` | `gh issue close N --comment "<c>"` | `glab issue close <iid> --note "<c>"` — clean 1:1 |
 | `platform_issue_edit_labels` | `gh issue edit N --add-label a,b --remove-label c` | `glab issue update <iid> --label "a,b" --unlabel "c"` |
+
+For callers whose public signature is only `platform_issue_view <issue>`, the
+selected adapter receives the project context through the exported
+`PLATFORM_CONFIG_PATH` environment variable. It points to the same config file
+used to select the adapter; adapters must resolve forge-specific project
+coordinates from that file and still return the normalized shape above.
 
 **Group G — MR/PR CRUD**
 

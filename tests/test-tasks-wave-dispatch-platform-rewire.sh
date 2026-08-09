@@ -262,7 +262,13 @@ platform_issue_view() {
     echo "platform_issue_view expects only an issue reference" >&2
     return 64
   }
-  printf '%s\\n' '{"number":7,"title":"dispatch smoke","body":"GitLab normalized body","labels":[],"state":"OPEN"}'
+  [ -n "\${PLATFORM_CONFIG_PATH:-}" ] && [ -f "\$PLATFORM_CONFIG_PATH" ] || {
+    echo "platform_issue_view requires readable PLATFORM_CONFIG_PATH" >&2
+    return 65
+  }
+  [ "\$(jq -r '.git_platform' "\$PLATFORM_CONFIG_PATH")" = "gitlab" ] || return 65
+  printf '%s\\n' '{"iid":7,"title":"dispatch smoke","description":"GitLab normalized body","labels":["status::ready"],"state":"opened"}' \\
+    | jq '{number:.iid,title,body:.description,labels,state:(if .state == "opened" then "OPEN" else "CLOSED" end)}'
   printf '%s\\n' used > "$DISPATCH_DIR/platform-selected"
 }
 EOF
@@ -288,7 +294,42 @@ set -e
   || fail "dispatch did not select the sole GitLab config"
 rm -rf "$DISPATCH_DIR"
 
-# ── 10. Wave planner passes platform-neutral config context ───────────────
+# ── 10. Dispatch rejects an explicitly missing config before adapter choice ──
+# A stale CONFIG_PATH must never fall back to GitHub: that can dispatch a task
+# against the wrong forge. The failure must happen before platform_issue_view.
+STALE_DISPATCH_DIR=$(mktemp -d)
+mkdir -p "$STALE_DISPATCH_DIR/.claude/bin/backends" \
+  "$STALE_DISPATCH_DIR/.claude/bin/platforms"
+git -C "$STALE_DISPATCH_DIR" init -b main >/dev/null
+git -C "$STALE_DISPATCH_DIR" config user.email test@example.com
+git -C "$STALE_DISPATCH_DIR" config user.name Test
+touch "$STALE_DISPATCH_DIR/README.md"
+git -C "$STALE_DISPATCH_DIR" add README.md
+git -C "$STALE_DISPATCH_DIR" commit -m fixture >/dev/null
+cat > "$STALE_DISPATCH_DIR/.claude/bin/platforms/github.sh" <<'EOF'
+platform_issue_view() {
+  printf '%s\n' used > "$REPO_DIR/wrong-forge-selected"
+  printf '%s\n' '{"number":7,"title":"wrong forge","body":"","labels":[],"state":"OPEN"}'
+}
+EOF
+cat > "$STALE_DISPATCH_DIR/.claude/bin/backends/fake.sh" <<'EOF'
+backend_auth_check() { return 0; }
+backend_worker_addendum() { :; }
+backend_run_sync() { return 99; }
+EOF
+set +e
+CONFIG_PATH="$STALE_DISPATCH_DIR/missing.json" \
+  GIT_PLATFORM= \
+  BASE_BRANCH=main REPO_DIR="$STALE_DISPATCH_DIR" WORKER_BACKEND=fake \
+  "$DISPATCH" 7 >"$STALE_DISPATCH_DIR/dispatch.log" 2>&1
+STALE_DISPATCH_RC=$?
+set -e
+[ "$STALE_DISPATCH_RC" -ne 0 ] \
+  && [ ! -f "$STALE_DISPATCH_DIR/wrong-forge-selected" ] \
+  || fail "dispatch silently fell back to GitHub for a missing CONFIG_PATH"
+rm -rf "$STALE_DISPATCH_DIR"
+
+# ── 11. Wave planner passes platform-neutral config context ───────────────
 # GitLab configs do not have GitHub's project.owner/project.number fields. The
 # adapter must receive a readable config reference so it can resolve full_path,
 # host, and board_id itself.
@@ -405,6 +446,56 @@ set -e
   && [ ! -s "$TASK_CONFIG_DIR/state/log" ] \
   || fail "ambiguous tasks-to-issues config did not fail before adapter use"
 rm -rf "$TASK_CONFIG_DIR"
+
+# ── 14. Issue-only filing does not require Project scope ────────────────────
+# Board enqueue is optional for standalone tasks-to-issues. A repo-scoped token
+# must still be able to create issues when no config or GH_PROJECT_NUMBER exists.
+NO_BOARD_DIR=$(mktemp -d)
+mkdir -p "$NO_BOARD_DIR/app/docs/superpowers/tasks/demo" \
+  "$NO_BOARD_DIR/app/platforms" "$NO_BOARD_DIR/bin" "$NO_BOARD_DIR/state"
+cp "$TASKS" "$NO_BOARD_DIR/app/tasks-to-issues.sh"
+cp "$GITHUB_PLATFORM" "$NO_BOARD_DIR/app/platforms/github.sh"
+cat > "$NO_BOARD_DIR/app/docs/superpowers/tasks/demo/01-first.md" <<'EOF'
+---
+title: Issue-only task
+order: 1
+depends_on_task: null
+---
+
+## Goal
+
+Create an issue without a project board.
+EOF
+cat > "$NO_BOARD_DIR/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-} ${2:-}" = "auth status" ]; then
+  case "$*" in
+    *"--json hosts"*)
+      echo '{"hosts":{"github.com":[{"active":true,"host":"github.com","login":"octocat","scopes":"repo"}]}}'
+      ;;
+  esac
+  exit 0
+fi
+if [ "${1:-} ${2:-}" = "issue create" ]; then
+  echo "https://github.com/owner/repo/issues/43"
+  exit 0
+fi
+echo "unexpected gh call: $*" >&2
+exit 2
+EOF
+chmod +x "$NO_BOARD_DIR/bin/gh"
+set +e
+(
+  cd "$NO_BOARD_DIR/app"
+  PATH="$NO_BOARD_DIR/bin:$PATH" ./tasks-to-issues.sh demo \
+    >"$NO_BOARD_DIR/out" 2>"$NO_BOARD_DIR/err"
+)
+NO_BOARD_RC=$?
+set -e
+[ "$NO_BOARD_RC" -eq 0 ] \
+  || fail "issue-only tasks-to-issues rejected a repo-scoped token without Project scope"
+rm -rf "$NO_BOARD_DIR"
 
 if [ "$FAIL" -ne 0 ]; then
   echo "error: issue #4 platform-rewire contract check failed" >&2

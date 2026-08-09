@@ -41,7 +41,9 @@ Platform interface instead.
 **Interfaces:**
 - Consumes: `platform_*` functions from `scripts/platforms/github.sh` (task 01)
 - `platform_issue_view <issue>` returns normalized `{number,title,body,labels,state}` JSON;
-  adapters absorb forge-specific CLI flags and field names
+  adapters absorb forge-specific CLI flags and field names. Callers export
+  `PLATFORM_CONFIG_PATH` so the adapter can resolve project context without
+  leaking forge-specific arguments into the caller.
 
 **Failure semantics:** platform authentication, issue creation, board snapshot, and Ready
 reconciliation failures during `supersaiyan prepare` are intentionally fail-fast.
