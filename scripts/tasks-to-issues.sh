@@ -218,15 +218,45 @@ list_task_files() {
 
 reconcile_mapped_issue_ready() {
   local issue_number="$1" issue_url="$2"
-  local snapshot existing_status
+  local issue_json issue_state lookup_rc snapshot existing_status
+
+  lookup_rc=0
+  issue_json=$(platform_issue_view "$issue_number") || lookup_rc=$?
+  case "$lookup_rc" in
+    0)
+      issue_state=$(printf '%s' "$issue_json" | jq -er '.state | strings') || {
+        echo "mapped issue #$issue_number returned a malformed normalized state" >&2
+        return 70
+      }
+      case "$issue_state" in
+        OPEN) ;;
+        CLOSED)
+          echo "  → preserved mapped CLOSED issue"
+          return 0
+          ;;
+        *)
+          echo "mapped issue #$issue_number returned unsupported state: $issue_state" >&2
+          return 70
+          ;;
+      esac
+      ;;
+    44|69|70)
+      echo "mapped issue #$issue_number lookup failed (exit $lookup_rc); Ready reconciliation aborted" >&2
+      return "$lookup_rc"
+      ;;
+    *)
+      echo "mapped issue #$issue_number lookup returned unsupported exit $lookup_rc" >&2
+      return 70
+      ;;
+  esac
 
   if [ -n "$CONFIG_PATH" ]; then
     snapshot=$(platform_board_snapshot "$CONFIG_PATH") || return
   else
     snapshot=$(platform_board_snapshot "${GH_PROJECT_NUMBER:-}" "${GH_PROJECT_OWNER:-@me}") || return
   fi
-  existing_status=$(printf '%s' "$snapshot" | jq -r --argjson n "$issue_number" \
-    '[.items[] | select(.content.number == $n)] | if length > 0 then .[0].status else "" end')
+  existing_status=$(printf '%s' "$snapshot" | jq -r --arg url "$issue_url" \
+    '[.items[] | select(.content.url == $url)] | if length > 0 then .[0].status else "" end')
 
   case "$existing_status" in
     ""|null|Backlog)

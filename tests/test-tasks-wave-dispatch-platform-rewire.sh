@@ -273,6 +273,9 @@ Recover Ready enqueue without creating a duplicate issue.
 EOF
 cat > "$RETRY_DIR/app/platforms/github.sh" <<'EOF'
 platform_auth_check() { return 0; }
+platform_issue_view() {
+  echo '{"number":42,"title":"Retry enqueue task","body":"","labels":[],"state":"OPEN"}'
+}
 platform_issue_create() {
   count=$(cat "$FAKE_PLATFORM_STATE/create-count")
   echo $((count + 1)) > "$FAKE_PLATFORM_STATE/create-count"
@@ -290,9 +293,9 @@ platform_card_status_set() {
 }
 platform_board_snapshot() {
   if [ -f "$FAKE_PLATFORM_STATE/ready-done" ]; then
-    echo '{"items":[{"id":"ITEM_42","status":"Ready","content":{"number":42}}]}'
+    echo '{"items":[{"id":"ITEM_42","status":"Ready","content":{"number":42,"url":"https://github.com/owner/repo/issues/42"}}]}'
   elif [ -f "$FAKE_PLATFORM_STATE/failed-once" ]; then
-    echo '{"items":[{"id":"ITEM_42","status":null,"content":{"number":42}}]}'
+    echo '{"items":[{"id":"ITEM_42","status":null,"content":{"number":42,"url":"https://github.com/owner/repo/issues/42"}}]}'
   else
     echo '{"items":[]}'
   fi

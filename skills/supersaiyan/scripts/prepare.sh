@@ -221,12 +221,31 @@ if [ "$AFTER_COUNT" -gt 0 ]; then
   items=$(platform_board_snapshot "$CONFIG_FILE")
   while IFS=$(printf '\t') read -r issue_num issue_url; do
     [ -z "$issue_num" ] && continue
-    existing_status=$(printf '%s' "$items" | jq -r --argjson n "$issue_num" \
-      '[.items[] | select(.content.number == $n)] | if length > 0 then .[0].status else "" end')
+    existing_status=$(printf '%s' "$items" | jq -r --arg url "$issue_url" \
+      '[.items[] | select(.content.url == $url)] | if length > 0 then .[0].status else "" end')
     if [ "$existing_status" = "Backlog" ] || [ -z "$existing_status" ]; then
-      issue_state=$(platform_issue_view "$issue_num" | jq -r '.state')
+      lookup_rc=0
+      issue_json=$(platform_issue_view "$issue_num") || lookup_rc=$?
+      case "$lookup_rc" in
+        0) ;;
+        44|69|70)
+          echo "issue lookup failed during Ready reconciliation for #$issue_num (exit $lookup_rc)" >&2
+          exit "$lookup_rc"
+          ;;
+        *)
+          echo "issue lookup returned unsupported exit $lookup_rc during Ready reconciliation for #$issue_num" >&2
+          exit 70
+          ;;
+      esac
+      issue_state=$(printf '%s' "$issue_json" | jq -er '.state | strings') || {
+        echo "issue #$issue_num returned a malformed normalized state during Ready reconciliation" >&2
+        exit 70
+      }
       if [ "$issue_state" = "OPEN" ]; then
         platform_card_status_set --add "$CONFIG_FILE" "$issue_url" "Ready" >/dev/null
+      elif [ "$issue_state" != "CLOSED" ]; then
+        echo "issue #$issue_num returned unsupported state during Ready reconciliation: $issue_state" >&2
+        exit 70
       fi
     fi
   done < <(jq -r 'to_entries[] | [(.value.number | tostring), .value.url] | @tsv' \

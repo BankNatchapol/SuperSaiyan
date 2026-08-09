@@ -76,6 +76,15 @@ EOF
   chmod +x "$app/.claude/bin/tasks-to-issues.sh"
 }
 
+install_real_helper() {
+  local app="$1"
+  mkdir -p "$app/.claude/bin/platforms"
+  cp "$ROOT/scripts/tasks-to-issues.sh" "$app/.claude/bin/tasks-to-issues.sh"
+  cp "$ROOT/scripts/platform-config.sh" "$app/.claude/bin/platform-config.sh"
+  cp "$ROOT/scripts/platforms/github.sh" "$app/.claude/bin/platforms/github.sh"
+  chmod +x "$app/.claude/bin/tasks-to-issues.sh"
+}
+
 install_fake_gh() {
   local bin="$1"
   cat > "$bin/gh" <<'EOF'
@@ -289,24 +298,33 @@ EOF
     fail "$lookup_failure removed a mapped issue without a confirmed 404"
 done
 
-# 8. Backlog generated cards move to Ready; active/final/manual cards are preserved.
+# 8. The real filing helper moves only OPEN mapped issues in this repository.
+# CLOSED mapped issues remain untouched whether they are in Backlog or absent,
+# and an issue with the same number from another repository cannot mask the
+# target card's status in a shared Project.
 new_fixture statuses
 write_task "$APP/docs/superpowers/tasks/demo/03-closed.md" "Closed task" 3 02-second
-git -C "$APP" add docs/superpowers/tasks/demo/03-closed.md
+write_task "$APP/docs/superpowers/tasks/demo/04-closed-absent.md" "Closed absent task" 4 03-closed
+install_real_helper "$APP"
+git -C "$APP" add docs/superpowers/tasks/demo/03-closed.md \
+  docs/superpowers/tasks/demo/04-closed-absent.md .claude/bin
 git -C "$APP" commit -m closed-task >/dev/null
 git -C "$APP" push >/dev/null
 cat > "$APP/docs/superpowers/tasks/demo/.issue-map.json" <<'EOF'
 {
   "01-first":{"number":10,"url":"https://github.com/owner/repo/issues/10","order":1},
   "02-second":{"number":11,"url":"https://github.com/owner/repo/issues/11","order":2},
-  "03-closed":{"number":12,"url":"https://github.com/owner/repo/issues/12","order":3}
+  "03-closed":{"number":12,"url":"https://github.com/owner/repo/issues/12","order":3},
+  "04-closed-absent":{"number":13,"url":"https://github.com/owner/repo/issues/13","order":4}
 }
 EOF
 printf 'OPEN\nhttps://github.com/owner/repo/issues/10\nBody\n' > "$STATE/issues/10"
 printf 'OPEN\nhttps://github.com/owner/repo/issues/11\n- Depends on: #10\n' > "$STATE/issues/11"
 printf 'CLOSED\nhttps://github.com/owner/repo/issues/12\n- Depends on: #11\n' > "$STATE/issues/12"
+printf 'CLOSED\nhttps://github.com/owner/repo/issues/13\n- Depends on: #12\n' > "$STATE/issues/13"
 cat > "$STATE/items.json" <<'EOF'
 [
+  {"id":"OTHER_ITEM_10","status":"Ready","content":{"type":"Issue","repository":"other/repo","number":10,"url":"https://github.com/other/repo/issues/10"}},
   {"id":"ITEM_10","status":"Backlog","content":{"type":"Issue","repository":"owner/repo","number":10,"url":"https://github.com/owner/repo/issues/10"}},
   {"id":"ITEM_11","status":"Building","content":{"type":"Issue","repository":"owner/repo","number":11,"url":"https://github.com/owner/repo/issues/11"}},
   {"id":"ITEM_12","status":"Backlog","content":{"type":"Issue","repository":"owner/repo","number":12,"url":"https://github.com/owner/repo/issues/12"}},
@@ -320,6 +338,10 @@ run_prepare >/dev/null
   fail "active generated card was changed"
 [ "$(jq -r '.[] | select(.id=="ITEM_12") | .status' "$STATE/items.json")" = Backlog ] ||
   fail "closed generated card was changed"
+[ "$(jq '[.[] | select(.content.url=="https://github.com/owner/repo/issues/13")] | length' "$STATE/items.json")" -eq 0 ] ||
+  fail "closed mapped issue absent from the board was re-enqueued"
+[ "$(jq -r '.[] | select(.id=="OTHER_ITEM_10") | .status' "$STATE/items.json")" = Ready ] ||
+  fail "same-number card from another repository was changed"
 [ "$(jq -r '.[] | select(.id=="ITEM_99") | .status' "$STATE/items.json")" = Backlog ] ||
   fail "manual card was changed"
 
