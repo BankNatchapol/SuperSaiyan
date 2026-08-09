@@ -56,6 +56,7 @@ feature="$1"
 dir="docs/superpowers/tasks/$feature"
 map="$dir/.issue-map.json"
 state="${FAKE_GH_STATE:?}"
+echo "HELPER_ARGS $*" >> "$state/log"
 [ -f "$map" ] || printf '{}\n' > "$map"
 for file in "$dir"/*.md; do
   stem=$(basename "$file" .md)
@@ -96,8 +97,14 @@ if [ "$cmd $sub" = "repo view" ]; then echo "owner/repo"; exit 0; fi
 if [ "$cmd $sub" = "issue view" ]; then
   number="$3"
   file="$state/issues/$number"
-  [ -f "$file" ] || { echo "issue not found" >&2; exit 1; }
+  [ -f "$file" ] || { echo "HTTP 404: Not Found" >&2; exit 1; }
   issue_state=$(sed -n '1p' "$file")
+  case "$issue_state" in
+    ERROR_401) echo "HTTP 401: Bad credentials" >&2; exit 1 ;;
+    ERROR_403) echo "HTTP 403: Resource not accessible" >&2; exit 1 ;;
+    ERROR_NETWORK) echo "failed to connect to github.com" >&2; exit 1 ;;
+    ERROR_MALFORMED) echo '{not-json'; exit 0 ;;
+  esac
   url=$(sed -n '2p' "$file")
   body=$(sed -n '3,$p' "$file")
   args="$*"
@@ -106,8 +113,8 @@ if [ "$cmd $sub" = "issue view" ]; then
     *"--jq .body"*) echo "$body" ;;
     *"--json state,url"*) jq -n --arg state "$issue_state" --arg url "$url" \
       '{state:$state,url:$url}' ;;
-    *) jq -n --argjson number "$number" --arg state "$issue_state" --arg url "$url" \
-      '{number:$number,state:$state,url:$url}' ;;
+    *) jq -n --argjson number "$number" --arg state "$issue_state" --arg body "$body" \
+      '{number:$number,title:("Issue " + ($number | tostring)),body:$body,labels:[],state:$state}' ;;
   esac
   exit 0
 fi
@@ -248,12 +255,15 @@ out=$(run_prepare)
 echo "$out" | grep -q 'created=2' || fail "fresh run did not create two issues"
 [ "$(grep -c '^CREATE ' "$STATE/log")" -eq 2 ] || fail "wrong create count"
 [ "$(grep -c '^ITEM_ADD ' "$STATE/log")" -eq 2 ] || fail "wrong item-add count"
+grep -q '^HELPER_ARGS demo --board --config ' "$STATE/log" ||
+  fail "prepare did not request explicit board enqueue from tasks-to-issues"
 out=$(run_prepare)
 echo "$out" | grep -q 'created=0' || fail "repeat run created issues"
 [ "$(grep -c '^CREATE ' "$STATE/log")" -eq 2 ] || fail "repeat was not idempotent"
 [ "$(grep -c '^ITEM_ADD ' "$STATE/log")" -eq 2 ] || fail "repeat re-added cards"
 
-# 7. Confirmed-deleted mappings are repaired.
+# 7. Only confirmed-deleted mappings are repaired; other lookup failures
+# abort and preserve the map.
 new_fixture stale
 cat > "$APP/docs/superpowers/tasks/demo/.issue-map.json" <<'EOF'
 {"01-first":{"number":50,"url":"https://github.com/owner/repo/issues/50","order":1}}
@@ -262,6 +272,22 @@ out=$(run_prepare)
 echo "$out" | grep -q 'repaired=1' || fail "stale mapping was not repaired"
 [ "$(jq -r '."01-first".number' "$APP/docs/superpowers/tasks/demo/.issue-map.json")" != 50 ] ||
   fail "stale issue number remains mapped"
+
+for lookup_failure in ERROR_401 ERROR_403 ERROR_NETWORK ERROR_MALFORMED; do
+  new_fixture "lookup-$lookup_failure"
+  cat > "$APP/docs/superpowers/tasks/demo/.issue-map.json" <<'EOF'
+{"01-first":{"number":50,"url":"https://github.com/owner/repo/issues/50","order":1}}
+EOF
+  printf '%s\nhttps://github.com/owner/repo/issues/50\nBody\n' "$lookup_failure" \
+    > "$STATE/issues/50"
+  case "$lookup_failure" in
+    ERROR_401|ERROR_403) expected_lookup_rc=69 ;;
+    *) expected_lookup_rc=70 ;;
+  esac
+  run_expect "$expected_lookup_rc" run_prepare
+  [ "$(jq -r '."01-first".number' "$APP/docs/superpowers/tasks/demo/.issue-map.json")" = 50 ] ||
+    fail "$lookup_failure removed a mapped issue without a confirmed 404"
+done
 
 # 8. Backlog generated cards move to Ready; active/final/manual cards are preserved.
 new_fixture statuses

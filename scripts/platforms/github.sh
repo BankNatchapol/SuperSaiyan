@@ -8,14 +8,13 @@
 # ───────────────────────────── Group A — Auth & identity ─────────────────────────────
 
 platform_auth_check() {
-  # gh auth status. Pass `project` when the caller is about to mutate/read a
-  # GitHub Project; issue-only callers need only the repository token.
-  local require_project=false
-  case "${1:-}" in
-    "") ;;
-    project|board) require_project=true ;;
+  # Modes: issue (default) requires repo scope and target-repository access;
+  # board additionally requires Project read/write scope.
+  local mode="${1:-issue}"
+  case "$mode" in
+    issue|board) ;;
     *)
-      echo "platform_auth_check: unknown scope requirement '$1'" >&2
+      echo "platform_auth_check: unknown auth mode '$mode'" >&2
       return 64
       ;;
   esac
@@ -27,15 +26,32 @@ platform_auth_check() {
     echo "gh not authenticated — run: gh auth login" >&2
     return 1
   }
-  [ "$require_project" = true ] || return 0
   local auth_json scopes
-  auth_json=$(gh auth status --active --json hosts 2>/dev/null || true)
-  scopes=$(printf '%s' "$auth_json" | jq -r \
-    '.hosts | add | map(select(.active == true))[0].scopes // ""' 2>/dev/null)
+  auth_json=$(gh auth status --active --json hosts 2>/dev/null) || {
+    echo "could not inspect GitHub authentication scopes" >&2
+    return 1
+  }
+  scopes=$(printf '%s' "$auth_json" | jq -er \
+    '.hosts | add | map(select(.active == true))[0].scopes // ""' 2>/dev/null) || {
+    echo "could not parse GitHub authentication scopes" >&2
+    return 1
+  }
+  case ",${scopes// /,}," in
+    *,repo,*) ;;
+    *)
+      echo "GitHub repository scope missing; run: gh auth refresh -s repo" >&2
+      return 1
+      ;;
+  esac
+  gh repo view --json nameWithOwner --jq '.nameWithOwner' >/dev/null 2>&1 || {
+    echo "GitHub token cannot access the target repository" >&2
+    return 1
+  }
+  [ "$mode" = board ] || return 0
   case ",${scopes// /,}," in
     *,project,*) ;;
     *)
-      echo "GitHub Project write scope missing; run: gh auth refresh -s project,read:project,repo" >&2
+      echo "GitHub Project write scope missing; run: gh auth refresh -s repo,project" >&2
       return 1
       ;;
   esac
@@ -232,8 +248,30 @@ platform_issue_view() {
   # prepare/dispatch: {number,title,body,labels,state}, with state OPEN/CLOSED.
   # PLATFORM_CONFIG_PATH is available for adapters that need project context;
   # GitHub's issue endpoint does not need it.
-  local issue="$1"
-  gh issue view "$issue" --json number,title,body,labels,state
+  local issue="$1" output
+  if output=$(gh issue view "$issue" --json number,title,body,labels,state 2>&1); then
+    if ! printf '%s' "$output" | jq -e \
+      'type == "object" and
+       (.number | type == "number") and
+       (.title | type == "string") and
+       (.body | type == "string") and
+       (.labels | type == "array") and
+       (.state == "OPEN" or .state == "CLOSED")' >/dev/null 2>&1; then
+      echo "GitHub issue response was malformed" >&2
+      return 70
+    fi
+    printf '%s\n' "$output"
+    return 0
+  fi
+
+  printf '%s\n' "$output" >&2
+  case "$output" in
+    *"HTTP 404"*|*"404 Not Found"*|*"Could not resolve to an issue"*|*"Could not resolve to an Issue"*) return 44 ;;
+    *"HTTP 401"*|*"HTTP 403"*|*"Bad credentials"*|*"Resource not accessible"*|*"Forbidden"*)
+      return 69
+      ;;
+    *) return 70 ;;
+  esac
 }
 
 platform_issue_comment() {

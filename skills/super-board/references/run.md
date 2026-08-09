@@ -41,7 +41,7 @@ Progress: ✅ onboard  →  ✅ lint  →  🤖 run (you are here)
 |---|---|
 | Active config exists | Halt: "Run `super-board onboard` first." |
 | Project + required columns exist | Halt: "Project / columns missing. Run `super-board onboard` to repair." |
-| `gh auth` valid with required scopes | Halt: "Re-auth: `gh auth refresh -s project,read:project,repo`." |
+| `gh auth` valid with required scopes | Halt: "Re-auth: `gh auth refresh -s repo,project`." |
 | `pre-flight.md` all items `[✓]` | Halt: "Pre-flight incomplete — fix these: [list]." |
 | No issues missing ACs in active columns | Halt: "N issues need clarification. Run `super-board lint`." |
 | Full variant: clean git working tree on base branch | Halt: "Working tree dirty. Stash or commit before running." |

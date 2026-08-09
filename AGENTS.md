@@ -233,7 +233,7 @@ Feature slug: <feature-slug>
 ```bash
 ~/Documents/SuperSaiyan/scripts/tasks-to-issues.sh docs/superpowers/tasks/<feature-slug>/01-first-task.md --dry-run
 export GH_PROJECT_OWNER=@me GH_PROJECT_NUMBER=<n>
-~/Documents/SuperSaiyan/scripts/tasks-to-issues.sh docs/superpowers/tasks/<feature-slug>
+~/Documents/SuperSaiyan/scripts/tasks-to-issues.sh docs/superpowers/tasks/<feature-slug> --board
 ```
 
 ```text

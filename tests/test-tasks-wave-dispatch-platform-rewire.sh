@@ -12,6 +12,7 @@ WAVE="$ROOT/scripts/super-board-wave-plan.sh"
 DISPATCH="$ROOT/skills/super-build/scripts/super-build-dispatch.sh"
 PREPARE="$ROOT/skills/supersaiyan/scripts/prepare.sh"
 GITHUB_PLATFORM="$ROOT/scripts/platforms/github.sh"
+CONFIG_RESOLVER="$ROOT/scripts/platform-config.sh"
 
 FAIL=0
 fail() { echo "  FAIL: $1" >&2; FAIL=1; }
@@ -22,6 +23,8 @@ for f in "$TASKS" "$WAVE" "$DISPATCH" "$PREPARE" "$GITHUB_PLATFORM"; do
     exit 1
   fi
 done
+
+[ -f "$CONFIG_RESOLVER" ] || fail "shared platform config resolver is missing"
 
 echo "checking issue #4 platform rewire (tasks-to-issues / wave-plan / dispatch)"
 
@@ -74,8 +77,8 @@ grep -q 'platform_issue_view' "$DISPATCH" \
   || fail "super-build-dispatch.sh missing platform_issue_view"
 grep -q 'CONFIG_PATH' "$DISPATCH" \
   || fail "super-build-dispatch.sh does not accept config context"
-grep -q '\.git_platform // "github"' "$DISPATCH" \
-  || fail "super-build-dispatch.sh does not resolve git_platform from config"
+grep -q 'platform_config_resolve_platform' "$DISPATCH" \
+  || fail "super-build-dispatch.sh does not use the shared platform resolver"
 if grep -vE '^\s*#' "$DISPATCH" | grep -qE 'gh[[:space:]]+issue[[:space:]]+view'; then
   fail "super-build-dispatch.sh still has inline 'gh issue view'"
 fi
@@ -154,6 +157,7 @@ ENQUEUE_DIR=$(mktemp -d)
 mkdir -p "$ENQUEUE_DIR/app/docs/superpowers/tasks/demo" \
   "$ENQUEUE_DIR/app/platforms" "$ENQUEUE_DIR/bin" "$ENQUEUE_DIR/state"
 cp "$TASKS" "$ENQUEUE_DIR/app/tasks-to-issues.sh"
+cp "$CONFIG_RESOLVER" "$ENQUEUE_DIR/app/platform-config.sh"
 cp "$GITHUB_PLATFORM" "$ENQUEUE_DIR/app/platforms/github.sh"
 cat > "$ENQUEUE_DIR/app/docs/superpowers/tasks/demo/01-first.md" <<'EOF'
 ---
@@ -186,6 +190,10 @@ if [ "$cmd $sub" = "auth status" ]; then
       echo '{"hosts":{"github.com":[{"active":true,"host":"github.com","login":"octocat","scopes":"gist, project, read:org, repo"}]}}'
       ;;
   esac
+  exit 0
+fi
+if [ "$cmd $sub" = "repo view" ]; then
+  echo "owner/repo"
   exit 0
 fi
 if [ "$cmd $sub" = "label create" ]; then
@@ -227,7 +235,7 @@ chmod +x "$ENQUEUE_DIR/bin/gh"
 (
   cd "$ENQUEUE_DIR/app"
   PATH="$ENQUEUE_DIR/bin:$PATH" FAKE_PLATFORM_STATE="$ENQUEUE_DIR/state" \
-    ./tasks-to-issues.sh demo --config "$ENQUEUE_DIR/app/config.json" >/dev/null
+    ./tasks-to-issues.sh demo --board --config "$ENQUEUE_DIR/app/config.json" >/dev/null
 )
 grep -q '^ISSUE_CREATE$' "$ENQUEUE_DIR/state/log" \
   || fail "real tasks-to-issues caller did not create an issue"
@@ -327,6 +335,27 @@ set -e
 [ "$STALE_DISPATCH_RC" -ne 0 ] \
   && [ ! -f "$STALE_DISPATCH_DIR/wrong-forge-selected" ] \
   || fail "dispatch silently fell back to GitHub for a missing CONFIG_PATH"
+
+cat > "$STALE_DISPATCH_DIR/gitlab.json" <<'EOF'
+{"git_platform":"gitlab","project":{"full_path":"group/repo"}}
+EOF
+cat > "$STALE_DISPATCH_DIR/.claude/bin/platforms/gitlab.sh" <<'EOF'
+platform_issue_view() {
+  printf '%s\n' used > "$REPO_DIR/wrong-forge-selected"
+  return 99
+}
+EOF
+set +e
+CONFIG_PATH="$STALE_DISPATCH_DIR/gitlab.json" \
+  GIT_PLATFORM=github \
+  BASE_BRANCH=main REPO_DIR="$STALE_DISPATCH_DIR" WORKER_BACKEND=fake \
+  "$DISPATCH" 7 >"$STALE_DISPATCH_DIR/dispatch.log" 2>&1
+DISPATCH_MISMATCH_RC=$?
+set -e
+[ "$DISPATCH_MISMATCH_RC" -ne 0 ] \
+  && grep -q 'GIT_PLATFORM.*git_platform\|platform mismatch' "$STALE_DISPATCH_DIR/dispatch.log" \
+  && [ ! -f "$STALE_DISPATCH_DIR/wrong-forge-selected" ] \
+  || fail "dispatch accepted a GIT_PLATFORM/config mismatch or sourced an adapter"
 rm -rf "$STALE_DISPATCH_DIR"
 
 # ── 11. Wave planner passes platform-neutral config context ───────────────
@@ -376,6 +405,7 @@ mkdir -p "$TASK_CONFIG_DIR/app/docs/superpowers/tasks/demo" \
   "$TASK_CONFIG_DIR/app/.claude/supersaiyan/configs" \
   "$TASK_CONFIG_DIR/app/platforms" "$TASK_CONFIG_DIR/state"
 cp "$TASKS" "$TASK_CONFIG_DIR/app/tasks-to-issues.sh"
+cp "$CONFIG_RESOLVER" "$TASK_CONFIG_DIR/app/platform-config.sh"
 cat > "$TASK_CONFIG_DIR/app/docs/superpowers/tasks/demo/01-first.md" <<'EOF'
 ---
 title: First task
@@ -413,8 +443,9 @@ TASK_CONFIG_RC=$?
 set -e
 [ "$TASK_CONFIG_RC" -eq 0 ] \
   && grep -q '^GITLAB_ISSUE_CREATE$' "$TASK_CONFIG_DIR/state/log" \
+  && ! grep -q '^GITLAB_READY$' "$TASK_CONFIG_DIR/state/log" \
   && ! grep -q '^WRONG_GITHUB_ADAPTER$' "$TASK_CONFIG_DIR/state/log" \
-  || fail "tasks-to-issues did not auto-select the sole GitLab config"
+  || fail "onboarded GitLab issue-only filing used the wrong adapter or mutated board status"
 
 : > "$TASK_CONFIG_DIR/state/log"
 set +e
@@ -445,6 +476,50 @@ set -e
   && grep -q 'multiple supersaiyan configs' "$TASK_CONFIG_DIR/err" \
   && [ ! -s "$TASK_CONFIG_DIR/state/log" ] \
   || fail "ambiguous tasks-to-issues config did not fail before adapter use"
+
+# A stale active pointer is an explicit, invalid selection. It must not fall
+# back to another sole config, and it must fail before adapter authentication.
+rm "$TASK_CONFIG_DIR/app/.claude/supersaiyan/configs/second.json"
+echo missing > "$TASK_CONFIG_DIR/app/.claude/supersaiyan/active"
+: > "$TASK_CONFIG_DIR/state/log"
+set +e
+(
+  cd "$TASK_CONFIG_DIR/app"
+  FAKE_PLATFORM_STATE="$TASK_CONFIG_DIR/state" \
+    ./tasks-to-issues.sh demo >"$TASK_CONFIG_DIR/out" 2>"$TASK_CONFIG_DIR/err"
+)
+STALE_ACTIVE_RC=$?
+set -e
+[ "$STALE_ACTIVE_RC" -ne 0 ] \
+  && grep -q 'active.*missing\|config not found' "$TASK_CONFIG_DIR/err" \
+  && [ ! -s "$TASK_CONFIG_DIR/state/log" ] \
+  || fail "stale active config pointer fell back or reached an adapter"
+
+# A selected config owns the forge decision. An inherited, contradictory
+# GIT_PLATFORM must fail before sourcing either adapter; a matching value passes.
+rm "$TASK_CONFIG_DIR/app/.claude/supersaiyan/active"
+: > "$TASK_CONFIG_DIR/state/log"
+set +e
+(
+  cd "$TASK_CONFIG_DIR/app"
+  GIT_PLATFORM=github FAKE_PLATFORM_STATE="$TASK_CONFIG_DIR/state" \
+    ./tasks-to-issues.sh demo --force >"$TASK_CONFIG_DIR/out" 2>"$TASK_CONFIG_DIR/err"
+)
+PLATFORM_MISMATCH_RC=$?
+set -e
+[ "$PLATFORM_MISMATCH_RC" -ne 0 ] \
+  && grep -q 'GIT_PLATFORM.*git_platform\|platform mismatch' "$TASK_CONFIG_DIR/err" \
+  && [ ! -s "$TASK_CONFIG_DIR/state/log" ] \
+  || fail "conflicting inherited GIT_PLATFORM did not fail before adapter use"
+
+: > "$TASK_CONFIG_DIR/state/log"
+(
+  cd "$TASK_CONFIG_DIR/app"
+  GIT_PLATFORM=gitlab FAKE_PLATFORM_STATE="$TASK_CONFIG_DIR/state" \
+    ./tasks-to-issues.sh demo --force >/dev/null
+) || fail "matching inherited GIT_PLATFORM was rejected"
+grep -q '^GITLAB_ISSUE_CREATE$' "$TASK_CONFIG_DIR/state/log" \
+  || fail "matching GIT_PLATFORM did not use the selected config adapter"
 rm -rf "$TASK_CONFIG_DIR"
 
 # ── 14. Issue-only filing does not require Project scope ────────────────────
@@ -454,6 +529,7 @@ NO_BOARD_DIR=$(mktemp -d)
 mkdir -p "$NO_BOARD_DIR/app/docs/superpowers/tasks/demo" \
   "$NO_BOARD_DIR/app/platforms" "$NO_BOARD_DIR/bin" "$NO_BOARD_DIR/state"
 cp "$TASKS" "$NO_BOARD_DIR/app/tasks-to-issues.sh"
+cp "$CONFIG_RESOLVER" "$NO_BOARD_DIR/app/platform-config.sh"
 cp "$GITHUB_PLATFORM" "$NO_BOARD_DIR/app/platforms/github.sh"
 cat > "$NO_BOARD_DIR/app/docs/superpowers/tasks/demo/01-first.md" <<'EOF'
 ---
@@ -477,6 +553,10 @@ if [ "${1:-} ${2:-}" = "auth status" ]; then
   esac
   exit 0
 fi
+if [ "${1:-} ${2:-}" = "repo view" ]; then
+  echo "owner/repo"
+  exit 0
+fi
 if [ "${1:-} ${2:-}" = "issue create" ]; then
   echo "https://github.com/owner/repo/issues/43"
   exit 0
@@ -496,6 +576,194 @@ set -e
 [ "$NO_BOARD_RC" -eq 0 ] \
   || fail "issue-only tasks-to-issues rejected a repo-scoped token without Project scope"
 rm -rf "$NO_BOARD_DIR"
+
+# ── 15. Onboarded GitHub filing is issue-only unless --board is explicit ───
+ONBOARDED_DIR=$(mktemp -d)
+mkdir -p "$ONBOARDED_DIR/app/docs/superpowers/tasks/demo" \
+  "$ONBOARDED_DIR/app/.claude/supersaiyan/configs" \
+  "$ONBOARDED_DIR/app/platforms" "$ONBOARDED_DIR/state"
+cp "$TASKS" "$ONBOARDED_DIR/app/tasks-to-issues.sh"
+cp "$CONFIG_RESOLVER" "$ONBOARDED_DIR/app/platform-config.sh"
+cp "$GITHUB_PLATFORM" "$ONBOARDED_DIR/app/platforms/github.sh"
+cat > "$ONBOARDED_DIR/app/docs/superpowers/tasks/demo/01-first.md" <<'EOF'
+---
+title: Onboarded issue-only task
+order: 1
+depends_on_task: null
+---
+
+## Goal
+
+Create an issue without touching the configured Project.
+EOF
+cat > "$ONBOARDED_DIR/app/.claude/supersaiyan/configs/only.json" <<'EOF'
+{"git_platform":"github","project":{"owner":"owner","number":7}}
+EOF
+cat > "$ONBOARDED_DIR/app/platforms/github.sh" <<'EOF'
+platform_auth_check() { echo "AUTH $1" >> "$FAKE_PLATFORM_STATE/log"; }
+platform_issue_create() {
+  echo "ISSUE_CREATE" >> "$FAKE_PLATFORM_STATE/log"
+  echo "https://github.com/owner/repo/issues/44"
+}
+platform_card_status_set() { echo "PROJECT_MUTATION" >> "$FAKE_PLATFORM_STATE/log"; }
+EOF
+: > "$ONBOARDED_DIR/state/log"
+(
+  cd "$ONBOARDED_DIR/app"
+  FAKE_PLATFORM_STATE="$ONBOARDED_DIR/state" ./tasks-to-issues.sh demo >/dev/null
+) || fail "onboarded GitHub issue-only filing failed"
+grep -q '^AUTH issue$' "$ONBOARDED_DIR/state/log" \
+  || fail "onboarded issue-only filing did not request issue authentication"
+! grep -q '^PROJECT_MUTATION$' "$ONBOARDED_DIR/state/log" \
+  || fail "onboarded issue-only filing mutated the Project without --board"
+rm -rf "$ONBOARDED_DIR"
+
+# ── 16. GitHub auth modes enforce repo and board capabilities ─────────────
+AUTH_DIR=$(mktemp -d)
+mkdir -p "$AUTH_DIR/bin"
+cat > "$AUTH_DIR/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-} ${2:-}" = "auth status" ]; then
+  case "$*" in
+    *"--json hosts"*)
+      jq -n --arg scopes "${FAKE_SCOPES:-}" \
+        '{hosts:{"github.com":[{active:true,host:"github.com",login:"octocat",scopes:$scopes}]}}'
+      ;;
+  esac
+  exit 0
+fi
+if [ "${1:-} ${2:-}" = "repo view" ]; then
+  [ "${FAKE_REPO_ACCESS:-yes}" = yes ] && { echo owner/repo; exit 0; }
+  echo "HTTP 403: Resource not accessible" >&2
+  exit 1
+fi
+echo "unexpected gh call: $*" >&2
+exit 2
+EOF
+chmod +x "$AUTH_DIR/bin/gh"
+(
+  PATH="$AUTH_DIR/bin:$PATH" FAKE_SCOPES=repo FAKE_REPO_ACCESS=yes \
+    bash -c 'source "$1"; platform_auth_check issue' _ "$GITHUB_PLATFORM"
+) || fail "issue auth rejected repo scope with repository access"
+if (
+  PATH="$AUTH_DIR/bin:$PATH" FAKE_SCOPES=project FAKE_REPO_ACCESS=yes \
+    bash -c 'source "$1"; platform_auth_check issue' _ "$GITHUB_PLATFORM"
+); then
+  fail "issue auth accepted a token without repo scope"
+fi
+if (
+  PATH="$AUTH_DIR/bin:$PATH" FAKE_SCOPES=repo FAKE_REPO_ACCESS=no \
+    bash -c 'source "$1"; platform_auth_check issue' _ "$GITHUB_PLATFORM"
+); then
+  fail "issue auth accepted a token without target repository access"
+fi
+(
+  PATH="$AUTH_DIR/bin:$PATH" FAKE_SCOPES='repo, project' FAKE_REPO_ACCESS=yes \
+    bash -c 'source "$1"; platform_auth_check board' _ "$GITHUB_PLATFORM"
+) || fail "board auth rejected repo+project without separate read:project"
+if (
+  PATH="$AUTH_DIR/bin:$PATH" FAKE_SCOPES=repo FAKE_REPO_ACCESS=yes \
+    bash -c 'source "$1"; platform_auth_check board' _ "$GITHUB_PLATFORM"
+); then
+  fail "board auth accepted a token without project scope"
+fi
+rm -rf "$AUTH_DIR"
+
+# ── 17. GitHub issue lookup normalizes not-found/auth/transport failures ───
+LOOKUP_DIR=$(mktemp -d)
+mkdir -p "$LOOKUP_DIR/bin"
+cat > "$LOOKUP_DIR/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${FAKE_LOOKUP:-ok}" in
+  ok) echo '{"number":4,"title":"T","body":"B","labels":[],"state":"OPEN"}' ;;
+  404) echo 'HTTP 404: Not Found' >&2; exit 1 ;;
+  401) echo 'HTTP 401: Bad credentials' >&2; exit 1 ;;
+  403) echo 'HTTP 403: Resource not accessible' >&2; exit 1 ;;
+  network) echo 'failed to connect to github.com' >&2; exit 1 ;;
+  malformed) echo '{not-json' ;;
+esac
+EOF
+chmod +x "$LOOKUP_DIR/bin/gh"
+lookup_rc() {
+  local mode="$1" rc=0
+  PATH="$LOOKUP_DIR/bin:$PATH" FAKE_LOOKUP="$mode" \
+    bash -c 'source "$1"; platform_issue_view 4 >/dev/null' _ "$GITHUB_PLATFORM" || rc=$?
+  echo "$rc"
+}
+[ "$(lookup_rc ok)" -eq 0 ] || fail "successful issue lookup did not return 0"
+[ "$(lookup_rc 404)" -eq 44 ] || fail "HTTP 404 issue lookup did not return 44"
+[ "$(lookup_rc 401)" -eq 69 ] || fail "HTTP 401 issue lookup did not return 69"
+[ "$(lookup_rc 403)" -eq 69 ] || fail "HTTP 403 issue lookup did not return 69"
+[ "$(lookup_rc network)" -eq 70 ] || fail "network issue lookup did not return 70"
+[ "$(lookup_rc malformed)" -eq 70 ] || fail "malformed issue lookup did not return 70"
+rm -rf "$LOOKUP_DIR"
+
+# ── 18. Shared config precedence is deterministic ────────────────────────
+RESOLVE_DIR=$(mktemp -d)
+mkdir -p "$RESOLVE_DIR/.claude/supersaiyan/configs"
+cat > "$RESOLVE_DIR/.claude/supersaiyan/configs/sole.json" <<'EOF'
+{"git_platform":"github"}
+EOF
+cat > "$RESOLVE_DIR/env.json" <<'EOF'
+{"git_platform":"gitlab"}
+EOF
+cat > "$RESOLVE_DIR/explicit.json" <<'EOF'
+{"git_platform":"github"}
+EOF
+source "$CONFIG_RESOLVER"
+resolved=$(PLATFORM_CONFIG_PATH="$RESOLVE_DIR/env.json" \
+  platform_config_resolve "$RESOLVE_DIR" "$RESOLVE_DIR/explicit.json")
+[ "$resolved" = "$RESOLVE_DIR/explicit.json" ] \
+  || fail "explicit config did not override PLATFORM_CONFIG_PATH"
+echo sole > "$RESOLVE_DIR/.claude/supersaiyan/active"
+resolved=$(PLATFORM_CONFIG_PATH="$RESOLVE_DIR/env.json" \
+  platform_config_resolve "$RESOLVE_DIR")
+[ "$resolved" = "$RESOLVE_DIR/env.json" ] \
+  || fail "PLATFORM_CONFIG_PATH did not override the active pointer"
+unset PLATFORM_CONFIG_PATH
+resolved=$(platform_config_resolve "$RESOLVE_DIR")
+[ "$resolved" = "$RESOLVE_DIR/.claude/supersaiyan/configs/sole.json" ] \
+  || fail "valid active pointer was not selected"
+rm "$RESOLVE_DIR/.claude/supersaiyan/active"
+resolved=$(platform_config_resolve "$RESOLVE_DIR")
+[ "$resolved" = "$RESOLVE_DIR/.claude/supersaiyan/configs/sole.json" ] \
+  || fail "sole config was not selected"
+if platform_config_resolve_platform "$RESOLVE_DIR/explicit.json" invalid >/dev/null 2>&1; then
+  fail "config/platform mismatch was accepted by the shared resolver"
+fi
+cat > "$RESOLVE_DIR/invalid.json" <<'EOF'
+{"git_platform":"bitbucket"}
+EOF
+if platform_config_resolve_platform "$RESOLVE_DIR/invalid.json" >/dev/null 2>&1; then
+  fail "unsupported git_platform was accepted"
+fi
+rm -rf "$RESOLVE_DIR"
+
+# ── 19. Installer copies the shared resolver beside pipeline scripts ──────
+INSTALL_DIR=$(mktemp -d)
+mkdir -p "$INSTALL_DIR/app" "$INSTALL_DIR/bin" "$INSTALL_DIR/home"
+cat > "$INSTALL_DIR/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat > "$INSTALL_DIR/bin/claude" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-} ${2:-}" in
+  "plugin list") exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF
+chmod +x "$INSTALL_DIR/bin/gh" "$INSTALL_DIR/bin/claude"
+PATH="$INSTALL_DIR/bin:$PATH" HOME="$INSTALL_DIR/home" \
+  bash "$ROOT/install.sh" "$INSTALL_DIR/app" >/dev/null \
+  || fail "installer smoke failed"
+[ -f "$INSTALL_DIR/app/.claude/bin/platform-config.sh" ] \
+  || fail "installer did not copy the shared config resolver"
+grep -q '".claude/bin/platform-config.sh"' "$ROOT/scripts/bootstrap-app.sh" \
+  || fail "bootstrap verification does not require the installed shared resolver"
+rm -rf "$INSTALL_DIR"
 
 if [ "$FAIL" -ne 0 ]; then
   echo "error: issue #4 platform-rewire contract check failed" >&2

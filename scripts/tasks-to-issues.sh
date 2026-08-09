@@ -5,13 +5,13 @@
 # platform CLI to be authenticated.
 #
 # Usage (run from the app repo):
-#   tasks-to-issues.sh <feature-slug> [--config path] [--dry-run] [--force]
-#   tasks-to-issues.sh <task-folder> [--config path] [--dry-run] [--force]
-#   tasks-to-issues.sh <task-file.md> [--config path] [--dry-run] [--force]
+#   tasks-to-issues.sh <feature-slug> [--config path] [--board] [--dry-run] [--force]
+#   tasks-to-issues.sh <task-folder> [--config path] [--board] [--dry-run] [--force]
+#   tasks-to-issues.sh <task-file.md> [--config path] [--board] [--dry-run] [--force]
 #
 # Env (optional):
-#   GH_PROJECT_OWNER=@me   GH_PROJECT_NUMBER=3   → legacy GitHub board context
-#   PLATFORM_CONFIG_PATH=...                    → board/platform config path
+#   GH_PROJECT_OWNER=@me   GH_PROJECT_NUMBER=3   → legacy context used with --board
+#   PLATFORM_CONFIG_PATH=...                    → platform config path
 #   TASKS_DIR=docs/superpowers/tasks
 #
 # A slug resolves to docs/superpowers/tasks/<feature-slug>/.
@@ -23,23 +23,25 @@ set -euo pipefail
 SOURCE="${1:-}"
 DRY_RUN=false
 FORCE=false
-CONFIG_PATH="${PLATFORM_CONFIG_PATH:-}"
+BOARD=false
+CLI_CONFIG_PATH=""
 
 shift || true
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=true; shift ;;
     --force) FORCE=true; shift ;;
+    --board) BOARD=true; shift ;;
     --config)
       [ $# -ge 2 ] || { echo "--config requires a path" >&2; exit 64; }
-      CONFIG_PATH="$2"; shift 2 ;;
-    --config=*) CONFIG_PATH="${1#--config=}"; shift ;;
+      CLI_CONFIG_PATH="$2"; shift 2 ;;
+    --config=*) CLI_CONFIG_PATH="${1#--config=}"; shift ;;
     *) echo "Unknown flag: $1" >&2; exit 64 ;;
   esac
 done
 
 if [ -z "$SOURCE" ]; then
-  echo "Usage: $0 <feature-slug|task-folder|task-file.md> [--config path] [--dry-run] [--force]" >&2
+  echo "Usage: $0 <feature-slug|task-folder|task-file.md> [--config path] [--board] [--dry-run] [--force]" >&2
   exit 64
 fi
 
@@ -51,35 +53,15 @@ fi
 # Platform contract: scripts/platforms/<name>.sh in this repo, .claude/bin/platforms/
 # once installed (install.sh copies platforms/ alongside this script).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIGS_DIR=".claude/supersaiyan/configs"
-if [ -z "$CONFIG_PATH" ] && [ -f .claude/supersaiyan/active ]; then
-  active_slug=$(tr -d '[:space:]' < .claude/supersaiyan/active)
-  CONFIG_PATH="$CONFIGS_DIR/${active_slug}.json"
-fi
-if [ -z "$CONFIG_PATH" ] && [ -d "$CONFIGS_DIR" ]; then
-  config_count=0
-  sole_config=""
-  for candidate in "$CONFIGS_DIR"/*.json; do
-    [ -f "$candidate" ] || continue
-    config_count=$((config_count + 1))
-    sole_config="$candidate"
-  done
-  if [ "$config_count" -eq 1 ]; then
-    CONFIG_PATH="$sole_config"
-  elif [ "$config_count" -gt 1 ]; then
-    echo "multiple supersaiyan configs found; pass --config or set .claude/supersaiyan/active" >&2
-    exit 75
-  fi
-fi
-if [ -n "$CONFIG_PATH" ] && [ ! -f "$CONFIG_PATH" ]; then
-  echo "config not found: $CONFIG_PATH" >&2
+CONFIG_RESOLVER="$SCRIPT_DIR/platform-config.sh"
+[ -f "$CONFIG_RESOLVER" ] || {
+  echo "platform config resolver not found: $CONFIG_RESOLVER" >&2
   exit 66
-fi
-GIT_PLATFORM="${GIT_PLATFORM:-}"
-if [ -z "$GIT_PLATFORM" ] && [ -n "$CONFIG_PATH" ]; then
-  GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_PATH")
-fi
-GIT_PLATFORM="${GIT_PLATFORM:-github}"
+}
+# shellcheck disable=SC1090
+source "$CONFIG_RESOLVER"
+CONFIG_PATH=$(platform_config_resolve "$PWD" "$CLI_CONFIG_PATH") || exit $?
+GIT_PLATFORM=$(platform_config_resolve_platform "$CONFIG_PATH" "${GIT_PLATFORM:-}") || exit $?
 PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
 if [ ! -f "$PLATFORM_FILE" ]; then
   echo "platform contract not found: $PLATFORM_FILE (git_platform=${GIT_PLATFORM})" >&2
@@ -89,17 +71,16 @@ fi
 source "$PLATFORM_FILE"
 
 export PLATFORM_CONFIG_PATH="$CONFIG_PATH"
-if [ -n "$CONFIG_PATH" ] || [ -n "${GH_PROJECT_NUMBER:-}" ]; then
-  platform_auth_check project || {
-    echo "${GIT_PLATFORM} platform authentication check failed (Project access required)" >&2
-    exit 69
-  }
-else
-  platform_auth_check || {
-    echo "${GIT_PLATFORM} platform authentication check failed" >&2
-    exit 69
-  }
+if [ "$BOARD" = true ] && [ -z "$CONFIG_PATH" ] && [ -z "${GH_PROJECT_NUMBER:-}" ]; then
+  echo "--board requires --config, PLATFORM_CONFIG_PATH, an onboarded config, or GH_PROJECT_NUMBER" >&2
+  exit 64
 fi
+AUTH_MODE=issue
+[ "$BOARD" = true ] && AUTH_MODE=board
+platform_auth_check "$AUTH_MODE" || {
+  echo "${GIT_PLATFORM} platform authentication check failed (${AUTH_MODE} access required)" >&2
+  exit 69
+}
 
 TASKS_DIR="${TASKS_DIR:-docs/superpowers/tasks}"
 SINGLE_FILE=""
@@ -285,7 +266,7 @@ while IFS= read -r file; do
   CREATED=$((CREATED + 1))
   echo "Created #$num — $title"
 
-  if [ -n "$CONFIG_PATH" ] || [ -n "${GH_PROJECT_NUMBER:-}" ]; then
+  if [ "$BOARD" = true ]; then
     platform_card_status_set --add "$CONFIG_PATH" "$url" "Ready" >/dev/null
     echo "  → added to platform board in Ready"
   fi
@@ -309,6 +290,10 @@ else
   echo "No new issues; all selected tasks were already mapped in $MAP_FILE"
 fi
 echo "Next:"
-echo "  1. Open GitHub Project → confirm generated cards are in Ready"
+if [ "$BOARD" = true ]; then
+  echo "  1. Open the configured board → confirm generated cards are in Ready"
+else
+  echo "  1. Issues were filed only; pass --board to enqueue them in Ready"
+fi
 echo "  2. Preferred: run /supersaiyan prepare <feature-slug> for reconciliation + lint"
 echo "  3. Then run /super-board run <slug>"

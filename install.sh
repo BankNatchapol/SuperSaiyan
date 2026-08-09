@@ -145,7 +145,7 @@ else
   fail "scripts/backends/ not found"
 fi
 
-for script in super-board-run.sh super-board-gh-guard.sh super-board-status.py super-board-wave-plan.sh tasks-to-issues.sh; do
+for script in super-board-run.sh super-board-gh-guard.sh super-board-status.py super-board-wave-plan.sh tasks-to-issues.sh platform-config.sh; do
   src="$SAIYAN/scripts/$script"
   dst="$TARGET/.claude/bin/$script"
   if [ -f "$src" ]; then
@@ -248,6 +248,7 @@ for path in \
   $SKILL_PATHS \
   ".claude/bin/super-board-wave-plan.sh" \
   ".claude/bin/tasks-to-issues.sh" \
+  ".claude/bin/platform-config.sh" \
   ".claude/workflows/super-board-wave.js"; do
   if [ -e "$TARGET/$path" ]; then
     ok "$path"

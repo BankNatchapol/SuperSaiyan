@@ -45,42 +45,27 @@ trap cleanup EXIT
 
 # ── Config discovery ───────────────────────────────────────────────────────────
 
-CONFIGS_DIR=".claude/supersaiyan/configs"
-if [ ! -d "$CONFIGS_DIR" ]; then
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_RESOLVER=".claude/bin/platform-config.sh"
+if [ ! -f "$CONFIG_RESOLVER" ]; then
+  CONFIG_RESOLVER="$SCRIPT_DIR/../../../scripts/platform-config.sh"
+fi
+[ -f "$CONFIG_RESOLVER" ] || {
+  echo "platform config resolver not found: $CONFIG_RESOLVER" >&2
+  exit 66
+}
+# shellcheck disable=SC1090
+source "$CONFIG_RESOLVER"
+CONFIG_FILE=$(platform_config_resolve "$PWD" "${CONFIG_PATH:-}") || exit $?
+if [ -z "$CONFIG_FILE" ]; then
   echo "NEEDS_ONBOARD"
   exit 78
 fi
-
-config_count=0
-first_config=""
-while IFS= read -r f; do
-  config_count=$((config_count + 1))
-  [ "$config_count" -eq 1 ] && first_config="$f"
-done < <(find "$CONFIGS_DIR" -maxdepth 1 -name "*.json" 2>/dev/null | sort)
-
-if [ "$config_count" -eq 0 ]; then
-  echo "NEEDS_ONBOARD"
-  exit 78
-fi
-
-CONFIG_SLUG=""
-if [ "$config_count" -eq 1 ]; then
-  CONFIG_SLUG=$(basename "$first_config" .json)
-else
-  ACTIVE_FILE=".claude/supersaiyan/active"
-  if [ ! -f "$ACTIVE_FILE" ]; then
-    echo "Multiple board configs found. Write the active slug to $ACTIVE_FILE." >&2
-    exit 75
-  fi
-  CONFIG_SLUG=$(tr -d '[:space:]' < "$ACTIVE_FILE")
-fi
-
-CONFIG_FILE="$CONFIGS_DIR/$CONFIG_SLUG.json"
-[ -f "$CONFIG_FILE" ] || { echo "Config not found: $CONFIG_FILE" >&2; exit 66; }
+CONFIG_SLUG=$(basename "$CONFIG_FILE" .json)
 
 PROJECT_OWNER=$(jq -r '.project.owner // "@me"' "$CONFIG_FILE")
 PROJECT_NUMBER=$(jq -r '.project.number' "$CONFIG_FILE")
-GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_FILE")
+GIT_PLATFORM=$(platform_config_resolve_platform "$CONFIG_FILE" "${GIT_PLATFORM:-}") || exit $?
 
 # ── Resolve task directory ─────────────────────────────────────────────────────
 
@@ -160,7 +145,6 @@ fi
 
 # ── Platform contract ────────────────────────────────────────────────────────
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_FILE=".claude/bin/platforms/${GIT_PLATFORM}.sh"
 if [ ! -f "$PLATFORM_FILE" ]; then
   PLATFORM_FILE="$SCRIPT_DIR/../../../scripts/platforms/${GIT_PLATFORM}.sh"
@@ -172,7 +156,7 @@ fi
 # shellcheck disable=SC1090
 source "$PLATFORM_FILE"
 export PLATFORM_CONFIG_PATH="$CONFIG_FILE"
-platform_auth_check project || {
+platform_auth_check board || {
   echo "${GIT_PLATFORM} platform authentication check failed (Project access required)" >&2
   exit 69
 }
@@ -195,13 +179,26 @@ REPAIRED=0
 if [ -f "$MAP_FILE" ] && [ "$BEFORE_COUNT" -gt 0 ]; then
   while IFS= read -r stem; do
     issue_num=$(jq -r --arg s "$stem" '.[$s].number' "$MAP_FILE")
-    if ! platform_issue_view "$issue_num" >/dev/null 2>&1; then
-      TMP_WORK=$(mktemp)
-      jq --arg s "$stem" 'del(.[$s])' "$MAP_FILE" > "$TMP_WORK"
-      mv "$TMP_WORK" "$MAP_FILE"
-      TMP_WORK=""
-      REPAIRED=$((REPAIRED + 1))
-    fi
+    lookup_rc=0
+    platform_issue_view "$issue_num" >/dev/null 2>&1 || lookup_rc=$?
+    case "$lookup_rc" in
+      0) ;;
+      44)
+        TMP_WORK=$(mktemp)
+        jq --arg s "$stem" 'del(.[$s])' "$MAP_FILE" > "$TMP_WORK"
+        mv "$TMP_WORK" "$MAP_FILE"
+        TMP_WORK=""
+        REPAIRED=$((REPAIRED + 1))
+        ;;
+      69|70)
+        echo "issue lookup failed for mapped issue #$issue_num (exit $lookup_rc); issue map left unchanged" >&2
+        exit "$lookup_rc"
+        ;;
+      *)
+        echo "issue lookup returned unsupported exit $lookup_rc for mapped issue #$issue_num; issue map left unchanged" >&2
+        exit 70
+        ;;
+    esac
   done < <(jq -r 'keys[]' "$MAP_FILE" 2>/dev/null)
 fi
 
@@ -210,9 +207,9 @@ TASKS_TO_ISSUES="${TASKS_TO_ISSUES:-.claude/bin/tasks-to-issues.sh}"
 [ -x "$TASKS_TO_ISSUES" ] || { echo "tasks-to-issues.sh not executable: $TASKS_TO_ISSUES" >&2; exit 66; }
 
 if [ -n "$PHASE" ]; then
-  "$TASKS_TO_ISSUES" "$TASK_DIR" --config "$CONFIG_FILE"
+  "$TASKS_TO_ISSUES" "$TASK_DIR" --board --config "$CONFIG_FILE"
 else
-  "$TASKS_TO_ISSUES" "$SLUG" --config "$CONFIG_FILE"
+  "$TASKS_TO_ISSUES" "$SLUG" --board --config "$CONFIG_FILE"
 fi
 
 AFTER_COUNT=0

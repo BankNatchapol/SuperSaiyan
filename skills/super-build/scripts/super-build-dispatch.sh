@@ -52,37 +52,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="${SKILL_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 MAX_TURNS="${MAX_TURNS:-250}"
 WORKER_BACKEND="${WORKER_BACKEND:-claude-p}"
-CONFIG_PATH="${CONFIG_PATH:-${PLATFORM_CONFIG_PATH:-}}"
-if [[ -z "$CONFIG_PATH" && -f "$REPO_DIR/.claude/supersaiyan/active" ]]; then
-  active_slug=$(tr -d '[:space:]' < "$REPO_DIR/.claude/supersaiyan/active")
-  if [[ -f "$REPO_DIR/.claude/supersaiyan/configs/${active_slug}.json" ]]; then
-    CONFIG_PATH="$REPO_DIR/.claude/supersaiyan/configs/${active_slug}.json"
-  fi
+EXPLICIT_CONFIG_PATH="${CONFIG_PATH:-}"
+CONFIG_RESOLVER="$REPO_DIR/.claude/bin/platform-config.sh"
+if [[ ! -f "$CONFIG_RESOLVER" ]]; then
+  CONFIG_RESOLVER="$SCRIPT_DIR/../../../scripts/platform-config.sh"
 fi
-if [[ -z "$CONFIG_PATH" && -d "$REPO_DIR/.claude/supersaiyan/configs" ]]; then
-  config_count=0
-  sole_config=""
-  for candidate in "$REPO_DIR/.claude/supersaiyan/configs"/*.json; do
-    [[ -f "$candidate" ]] || continue
-    config_count=$((config_count + 1))
-    sole_config="$candidate"
-  done
-  if [[ "$config_count" -eq 1 ]]; then
-    CONFIG_PATH="$sole_config"
-  elif [[ "$config_count" -gt 1 ]]; then
-    echo "error: multiple supersaiyan configs found; set CONFIG_PATH or .claude/supersaiyan/active" >&2
-    exit 64
-  fi
-fi
-if [[ -n "$CONFIG_PATH" && ! -f "$CONFIG_PATH" ]]; then
-  echo "error: config not found: $CONFIG_PATH" >&2
+if [[ ! -f "$CONFIG_RESOLVER" ]]; then
+  echo "error: platform config resolver not found" >&2
   exit 66
 fi
-GIT_PLATFORM="${GIT_PLATFORM:-}"
-if [[ -z "$GIT_PLATFORM" && -n "$CONFIG_PATH" && -f "$CONFIG_PATH" ]]; then
-  GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_PATH")
-fi
-GIT_PLATFORM="${GIT_PLATFORM:-github}"
+# shellcheck disable=SC1090
+source "$CONFIG_RESOLVER"
+CONFIG_PATH=$(platform_config_resolve "$REPO_DIR" "$EXPLICIT_CONFIG_PATH") || exit $?
+GIT_PLATFORM=$(platform_config_resolve_platform "$CONFIG_PATH" "${GIT_PLATFORM:-}") || exit $?
 export PLATFORM_CONFIG_PATH="$CONFIG_PATH"
 
 # Backend contract (see .claude/skills/super-board/references/backends.md). Installed layout:

@@ -73,8 +73,8 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
 
 3. VERIFY GITHUB AUTH (always)
    ├─ `gh auth status`  — must be authenticated
-   ├─ Scope check: `project`, `read:project`, `repo`
-   ├─ If missing → `gh auth refresh -s project,read:project,repo`
+   ├─ Scope check: `repo`, `project` (`project` already includes Project read access)
+   ├─ If missing → `gh auth refresh -s repo,project`
    └─ Tell user WHY: "needed to move cards on your board and create
        projects on your behalf"
 
@@ -172,7 +172,7 @@ Every onboard step that touches GitHub or the filesystem has a defined recovery 
 |---|---|---|
 | 2. which tool(s) | `codex login status` / `agent status` fails for a selected tool | `🔑 <tool> isn't logged in. Run: \`codex login\` / \`agent login\` — then re-run super-board onboard.` |
 | 3. gh auth | Not logged in | `🔑 You're not signed in to GitHub. Run: \`gh auth login\` — then re-run super-board onboard.` |
-| 3. gh auth | Scope refused (user said no on browser) | `🔑 GitHub asked for project,read:project,repo scopes and you said no. Without them I can't read or move project cards. Re-run: \`gh auth refresh -s project,read:project,repo\`.` |
+| 3. gh auth | Scope refused (user said no on browser) | `🔑 GitHub asked for repo,project scopes and you said no. Without them I can't read or move project cards. Re-run: \`gh auth refresh -s repo,project\`.` |
 | 4. git init | User declined | Halt with: `🛑 super-board needs a git repo. Re-run when ready.` |
 | 5. gh repo create | Quota/perm denied | `📦 GitHub refused to create the repo (org admin required, or you hit your free-repo quota). Options: (a) pick an existing repo, (b) create one in the web UI then re-run, (c) skip repo and run URL-only.` |
 | 6. gh project create | Org project denied | `🔑 You don't have permission to create projects under <org>. Either ask an org admin, or pick your personal account: \`gh project create --owner @me\`.` |

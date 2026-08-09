@@ -14,7 +14,7 @@ Optional Phase B from the adoption plan. SuperSaiyan is set up as a **sandbox**;
 ## Prerequisites (manual)
 
 - [ ] Claude Code with **dynamic workflows** enabled (`/config`)
-- [ ] `gh auth login` with `project`, `read:project`, `repo` scopes
+- [ ] `gh auth login` with `repo`, `project` scopes (`project` includes Project read access)
 - [ ] `jq`, bash 4+, Python 3
 - [ ] GitHub Project v2 with columns: `Backlog`, `Ready`, `Building`, `QA`, `Review`, `Done`, `Blocked`, `Skipped`
 - [ ] superpowers: `/plugin install superpowers@claude-plugins-official` (Claude Code)

@@ -18,7 +18,7 @@ gh auth status --active >/dev/null 2>&1 || echo "NOT_AUTHED"
 
 - Not a git repo → offer `git init` inline, then continue.
 - No config → run `references/setup.md` inline first, then return here.
-- gh not authenticated → `gh auth login` then `gh auth refresh -s project,read:project,repo`.
+- gh not authenticated → `gh auth login` then `gh auth refresh -s repo,project`.
 
 ---
 
