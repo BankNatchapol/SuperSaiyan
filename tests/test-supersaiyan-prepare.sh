@@ -92,7 +92,7 @@ if [ "$cmd $sub" = "auth status" ]; then
   esac
   exit 0
 fi
-if [ "$cmd $sub" = "repo view" ]; then echo "owner/repo"; exit 0; fi
+if [ "$cmd $sub" = "repo view" ]; then echo "https://github.com/owner/repo"; exit 0; fi
 
 if [ "$cmd $sub" = "issue view" ]; then
   number="$3"

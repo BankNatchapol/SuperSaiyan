@@ -216,6 +216,29 @@ list_task_files() {
   fi
 }
 
+reconcile_mapped_issue_ready() {
+  local issue_number="$1" issue_url="$2"
+  local snapshot existing_status
+
+  if [ -n "$CONFIG_PATH" ]; then
+    snapshot=$(platform_board_snapshot "$CONFIG_PATH") || return
+  else
+    snapshot=$(platform_board_snapshot "${GH_PROJECT_NUMBER:-}" "${GH_PROJECT_OWNER:-@me}") || return
+  fi
+  existing_status=$(printf '%s' "$snapshot" | jq -r --argjson n "$issue_number" \
+    '[.items[] | select(.content.number == $n)] | if length > 0 then .[0].status else "" end')
+
+  case "$existing_status" in
+    ""|null|Backlog)
+      platform_card_status_set --add "$CONFIG_PATH" "$issue_url" "Ready" >/dev/null
+      echo "  → reconciled mapped issue to Ready"
+      ;;
+    *)
+      echo "  → preserved mapped issue in ${existing_status}"
+      ;;
+  esac
+}
+
 while IFS= read -r file; do
   [ -n "$file" ] || continue
   stem=$(basename "$file" .md)
@@ -231,6 +254,14 @@ while IFS= read -r file; do
   existing_issue=$(lookup_issue "$stem" || true)
   if [ -n "$existing_issue" ] && [ "$FORCE" != true ]; then
     echo "Skip #$existing_issue (already mapped): $file"
+    if [ "$BOARD" = true ] && [ "$DRY_RUN" != true ]; then
+      existing_url=$(jq -r --arg stem "$stem" '.[$stem].url // empty' "$MAP_FILE")
+      [ -n "$existing_url" ] || {
+        echo "mapped issue #$existing_issue has no URL: $MAP_FILE" >&2
+        exit 65
+      }
+      reconcile_mapped_issue_ready "$existing_issue" "$existing_url"
+    fi
     SKIPPED=$((SKIPPED + 1))
     continue
   fi

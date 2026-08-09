@@ -22,17 +22,26 @@ platform_auth_check() {
     echo "gh CLI not found on PATH — install: https://cli.github.com" >&2
     return 1
   }
-  gh auth status >/dev/null 2>&1 || {
-    echo "gh not authenticated — run: gh auth login" >&2
+  local repo_url target_host auth_json scopes
+  repo_url=$(gh repo view --json url --jq '.url' 2>/dev/null) || {
+    if ! gh auth status >/dev/null 2>&1; then
+      echo "gh not authenticated — run: gh auth login" >&2
+    else
+      echo "GitHub token cannot access the target repository" >&2
+    fi
     return 1
   }
-  local auth_json scopes
-  auth_json=$(gh auth status --active --json hosts 2>/dev/null) || {
-    echo "could not inspect GitHub authentication scopes" >&2
+  target_host=$(printf '%s' "$repo_url" | sed -E 's#^[a-zA-Z]+://([^/@]+@)?([^/:]+).*#\2#')
+  if [ -z "$target_host" ] || [ "$target_host" = "$repo_url" ]; then
+    echo "could not resolve target GitHub host from repository URL: $repo_url" >&2
+    return 1
+  fi
+  auth_json=$(gh auth status --hostname "$target_host" --active --json hosts 2>/dev/null) || {
+    echo "could not inspect GitHub authentication for target host: $target_host" >&2
     return 1
   }
-  scopes=$(printf '%s' "$auth_json" | jq -er \
-    '.hosts | add | map(select(.active == true))[0].scopes // ""' 2>/dev/null) || {
+  scopes=$(printf '%s' "$auth_json" | jq -er --arg host "$target_host" \
+    '.hosts[$host] | map(select(.active == true))[0].scopes // ""' 2>/dev/null) || {
     echo "could not parse GitHub authentication scopes" >&2
     return 1
   }
@@ -43,10 +52,6 @@ platform_auth_check() {
       return 1
       ;;
   esac
-  gh repo view --json nameWithOwner --jq '.nameWithOwner' >/dev/null 2>&1 || {
-    echo "GitHub token cannot access the target repository" >&2
-    return 1
-  }
   [ "$mode" = board ] || return 0
   case ",${scopes// /,}," in
     *,project,*) ;;
@@ -245,22 +250,31 @@ platform_issue_create() {
 
 platform_issue_view() {
   # $1 = issue number. Emits the platform-neutral issue shape consumed by
-  # prepare/dispatch: {number,title,body,labels,state}, with state OPEN/CLOSED.
+  # prepare/dispatch: {number,title,body,labels:string[],state}, with state OPEN/CLOSED.
   # PLATFORM_CONFIG_PATH is available for adapters that need project context;
   # GitHub's issue endpoint does not need it.
-  local issue="$1" output
+  local issue="$1" output normalized
   if output=$(gh issue view "$issue" --json number,title,body,labels,state 2>&1); then
-    if ! printf '%s' "$output" | jq -e \
-      'type == "object" and
-       (.number | type == "number") and
-       (.title | type == "string") and
-       (.body | type == "string") and
-       (.labels | type == "array") and
-       (.state == "OPEN" or .state == "CLOSED")' >/dev/null 2>&1; then
+    if ! normalized=$(printf '%s' "$output" | jq -ce \
+      'if type == "object" and
+          (.number | type == "number") and
+          (.title | type == "string") and
+          (.body | type == "string") and
+          (.labels | type == "array") and
+          (.state == "OPEN" or .state == "CLOSED")
+       then
+         .labels |= map(
+           if type == "string" then .
+           elif type == "object" and (.name | type == "string") then .name
+           else error("invalid label element")
+           end
+         )
+       else error("invalid issue shape")
+       end' 2>/dev/null); then
       echo "GitHub issue response was malformed" >&2
       return 70
     fi
-    printf '%s\n' "$output"
+    printf '%s\n' "$normalized"
     return 0
   fi
 

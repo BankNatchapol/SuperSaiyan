@@ -24,7 +24,7 @@ for adapter selection, authentication, issue lookup, and optional board enqueue.
       unchanged.
 - [ ] AC3 — Normalized issue view: Build dispatch and prepare use
       `platform_issue_view <issue>` with `PLATFORM_CONFIG_PATH` context and consume normalized
-      `{number,title,body,labels,state}` JSON.
+      `{number,title,body,labels:string[],state}` JSON.
 - [ ] AC4 — Prepare regression coverage: all nine scenarios in
       `tests/test-supersaiyan-prepare.sh` pass.
 - [ ] AC5 — Explicit board intent: direct `tasks-to-issues.sh` usage is issue-only by default,
@@ -51,7 +51,7 @@ for adapter selection, authentication, issue lookup, and optional board enqueue.
 
 **Interfaces:**
 - Consumes: `platform_*` functions from `scripts/platforms/github.sh` (task 01)
-- `platform_issue_view <issue>` returns normalized `{number,title,body,labels,state}` JSON;
+- `platform_issue_view <issue>` returns normalized `{number,title,body,labels:string[],state}` JSON;
   adapters absorb forge-specific CLI flags and field names. Callers export
   `PLATFORM_CONFIG_PATH` so the adapter can resolve project context without
   leaking forge-specific arguments into the caller.

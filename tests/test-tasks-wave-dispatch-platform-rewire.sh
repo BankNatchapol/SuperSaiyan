@@ -193,7 +193,7 @@ if [ "$cmd $sub" = "auth status" ]; then
   exit 0
 fi
 if [ "$cmd $sub" = "repo view" ]; then
-  echo "owner/repo"
+  echo "https://github.com/owner/repo"
   exit 0
 fi
 if [ "$cmd $sub" = "label create" ]; then
@@ -248,6 +248,89 @@ grep -q '^ITEM_ADD$' "$ENQUEUE_DIR/state/log" \
 grep -q '^ITEM_EDIT$' "$ENQUEUE_DIR/state/log" \
   || fail "real tasks-to-issues caller did not set Ready"
 rm -rf "$ENQUEUE_DIR"
+
+# ── 8b. Failed Ready enqueue is recoverable on retry ─────────────────────
+# Issue creation and map persistence happen before the remote board write. A
+# retry with --board must reconcile the mapped issue instead of skipping it.
+RETRY_DIR=$(mktemp -d)
+mkdir -p "$RETRY_DIR/app/docs/superpowers/tasks/demo" \
+  "$RETRY_DIR/app/platforms" "$RETRY_DIR/state"
+cp "$TASKS" "$RETRY_DIR/app/tasks-to-issues.sh"
+cp "$CONFIG_RESOLVER" "$RETRY_DIR/app/platform-config.sh"
+cat > "$RETRY_DIR/app/config.json" <<'EOF'
+{"project":{"owner":"owner","number":7},"git_platform":"github"}
+EOF
+cat > "$RETRY_DIR/app/docs/superpowers/tasks/demo/01-first.md" <<'EOF'
+---
+title: Retry enqueue task
+order: 1
+depends_on_task: null
+---
+
+## Goal
+
+Recover Ready enqueue without creating a duplicate issue.
+EOF
+cat > "$RETRY_DIR/app/platforms/github.sh" <<'EOF'
+platform_auth_check() { return 0; }
+platform_issue_create() {
+  count=$(cat "$FAKE_PLATFORM_STATE/create-count")
+  echo $((count + 1)) > "$FAKE_PLATFORM_STATE/create-count"
+  echo "https://github.com/owner/repo/issues/42"
+}
+platform_card_status_set() {
+  count=$(cat "$FAKE_PLATFORM_STATE/board-count")
+  echo $((count + 1)) > "$FAKE_PLATFORM_STATE/board-count"
+  if [ ! -f "$FAKE_PLATFORM_STATE/failed-once" ]; then
+    touch "$FAKE_PLATFORM_STATE/failed-once"
+    return 42
+  fi
+  touch "$FAKE_PLATFORM_STATE/ready-done"
+  return 0
+}
+platform_board_snapshot() {
+  if [ -f "$FAKE_PLATFORM_STATE/ready-done" ]; then
+    echo '{"items":[{"id":"ITEM_42","status":"Ready","content":{"number":42}}]}'
+  elif [ -f "$FAKE_PLATFORM_STATE/failed-once" ]; then
+    echo '{"items":[{"id":"ITEM_42","status":null,"content":{"number":42}}]}'
+  else
+    echo '{"items":[]}'
+  fi
+}
+EOF
+echo 0 > "$RETRY_DIR/state/create-count"
+echo 0 > "$RETRY_DIR/state/board-count"
+set +e
+(
+  cd "$RETRY_DIR/app"
+  FAKE_PLATFORM_STATE="$RETRY_DIR/state" \
+    ./tasks-to-issues.sh demo --board --config "$RETRY_DIR/app/config.json" >/dev/null 2>&1
+)
+FIRST_ENQUEUE_RC=$?
+set -e
+[ "$FIRST_ENQUEUE_RC" -ne 0 ] || fail "first simulated Ready failure returned success"
+[ "$(cat "$RETRY_DIR/state/create-count")" -eq 1 ] \
+  || fail "first enqueue attempt did not create exactly one issue"
+jq -e '."01-first".number == 42' \
+  "$RETRY_DIR/app/docs/superpowers/tasks/demo/.issue-map.json" >/dev/null \
+  || fail "failed enqueue did not preserve the created issue mapping"
+(
+  cd "$RETRY_DIR/app"
+  FAKE_PLATFORM_STATE="$RETRY_DIR/state" \
+    ./tasks-to-issues.sh demo --board --config "$RETRY_DIR/app/config.json" >/dev/null
+) || fail "retry after failed Ready enqueue did not recover"
+[ "$(cat "$RETRY_DIR/state/create-count")" -eq 1 ] \
+  || fail "Ready retry created a duplicate issue"
+[ "$(cat "$RETRY_DIR/state/board-count")" -eq 2 ] \
+  || fail "Ready retry did not reconcile the mapped issue"
+(
+  cd "$RETRY_DIR/app"
+  FAKE_PLATFORM_STATE="$RETRY_DIR/state" \
+    ./tasks-to-issues.sh demo --board --config "$RETRY_DIR/app/config.json" >/dev/null
+) || fail "idempotent Ready reconciliation failed"
+[ "$(cat "$RETRY_DIR/state/board-count")" -eq 2 ] \
+  || fail "already-Ready mapped issue was mutated again"
+rm -rf "$RETRY_DIR"
 
 # ── 9. Dispatch discovers a sole config without an active pointer ──────────
 # A standalone dispatch must honor a single GitLab config instead of silently
@@ -554,7 +637,7 @@ if [ "${1:-} ${2:-}" = "auth status" ]; then
   exit 0
 fi
 if [ "${1:-} ${2:-}" = "repo view" ]; then
-  echo "owner/repo"
+  echo "https://github.com/owner/repo"
   exit 0
 fi
 if [ "${1:-} ${2:-}" = "issue create" ]; then
@@ -634,7 +717,7 @@ if [ "${1:-} ${2:-}" = "auth status" ]; then
   exit 0
 fi
 if [ "${1:-} ${2:-}" = "repo view" ]; then
-  [ "${FAKE_REPO_ACCESS:-yes}" = yes ] && { echo owner/repo; exit 0; }
+  [ "${FAKE_REPO_ACCESS:-yes}" = yes ] && { echo https://github.com/owner/repo; exit 0; }
   echo "HTTP 403: Resource not accessible" >&2
   exit 1
 fi
@@ -670,6 +753,46 @@ if (
 fi
 rm -rf "$AUTH_DIR"
 
+# Auth scope selection must be bound to the repository's target host. The
+# unrelated github.com login is intentionally first and lacks repo scope.
+MULTI_HOST_DIR=$(mktemp -d)
+mkdir -p "$MULTI_HOST_DIR/bin"
+cat > "$MULTI_HOST_DIR/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-} ${2:-}" = "repo view" ]; then
+  echo "https://ghe.example.com/owner/repo"
+  exit 0
+fi
+if [ "${1:-} ${2:-}" = "auth status" ]; then
+  case "$*" in
+    *"--json hosts"*)
+      jq -n --arg target_scopes "${FAKE_TARGET_SCOPES:-repo}" \
+        --arg other_scopes "${FAKE_OTHER_SCOPES:-project}" \
+        '{hosts:{
+          "github.com":[{active:true,host:"github.com",login:"wrong",scopes:$other_scopes}],
+          "ghe.example.com":[{active:true,host:"ghe.example.com",login:"target",scopes:$target_scopes}]
+        }}'
+      ;;
+  esac
+  exit 0
+fi
+echo "unexpected gh call: $*" >&2
+exit 2
+EOF
+chmod +x "$MULTI_HOST_DIR/bin/gh"
+(
+  PATH="$MULTI_HOST_DIR/bin:$PATH" FAKE_TARGET_SCOPES=repo \
+    bash -c 'source "$1"; platform_auth_check issue' _ "$GITHUB_PLATFORM"
+) || fail "multi-host auth rejected valid credentials for the target repository host"
+if (
+  PATH="$MULTI_HOST_DIR/bin:$PATH" FAKE_OTHER_SCOPES=repo FAKE_TARGET_SCOPES=project \
+    bash -c 'source "$1"; platform_auth_check issue' _ "$GITHUB_PLATFORM"
+); then
+  fail "multi-host auth accepted repo scope from a non-target host"
+fi
+rm -rf "$MULTI_HOST_DIR"
+
 # ── 17. GitHub issue lookup normalizes not-found/auth/transport failures ───
 LOOKUP_DIR=$(mktemp -d)
 mkdir -p "$LOOKUP_DIR/bin"
@@ -677,7 +800,7 @@ cat > "$LOOKUP_DIR/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 case "${FAKE_LOOKUP:-ok}" in
-  ok) echo '{"number":4,"title":"T","body":"B","labels":[],"state":"OPEN"}' ;;
+  ok) echo '{"number":4,"title":"T","body":"B","labels":[{"id":"L1","name":"bug","color":"d73a4a"}],"state":"OPEN"}' ;;
   404) echo 'HTTP 404: Not Found' >&2; exit 1 ;;
   401) echo 'HTTP 401: Bad credentials' >&2; exit 1 ;;
   403) echo 'HTTP 403: Resource not accessible' >&2; exit 1 ;;
@@ -698,6 +821,12 @@ lookup_rc() {
 [ "$(lookup_rc 403)" -eq 69 ] || fail "HTTP 403 issue lookup did not return 69"
 [ "$(lookup_rc network)" -eq 70 ] || fail "network issue lookup did not return 70"
 [ "$(lookup_rc malformed)" -eq 70 ] || fail "malformed issue lookup did not return 70"
+normalized_labels=$(
+  PATH="$LOOKUP_DIR/bin:$PATH" FAKE_LOOKUP=ok \
+    bash -c 'source "$1"; platform_issue_view 4' _ "$GITHUB_PLATFORM" | jq -c '.labels'
+)
+[ "$normalized_labels" = '["bug"]' ] \
+  || fail "GitHub issue labels were not normalized to a string array: $normalized_labels"
 rm -rf "$LOOKUP_DIR"
 
 # ── 18. Shared config precedence is deterministic ────────────────────────
