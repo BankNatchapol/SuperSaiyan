@@ -1,0 +1,27 @@
+RUN test-tasks-wave-dispatch-platform-rewire
+PASS: test-tasks-wave-dispatch-platform-rewire.sh
+PASS test-tasks-wave-dispatch-platform-rewire
+RUN test-prepare-platform-rewire
+PASS: test-prepare-platform-rewire.sh
+PASS test-prepare-platform-rewire
+RUN test-supersaiyan-prepare
+PASS: test-supersaiyan-prepare.sh (9 scenarios)
+PASS test-supersaiyan-prepare
+RUN test-platform-contract
+PASS: test-platform-contract.sh (31 contract functions defined)
+PASS test-platform-contract
+RUN test-backend-contract
+PASS: test-backend-contract.sh (all 6 contract functions defined for each backend)
+PASS test-backend-contract
+RUN test-build-safety-contract
+PASS: test-build-safety-contract.sh
+PASS test-build-safety-contract
+RUN test-run-platform-rewire
+PASS: test-run-platform-rewire.sh
+PASS test-run-platform-rewire
+RUN shell-syntax
+PASS shell-syntax
+RUN live-platform-auth
+PASS live-platform-auth
+RUN diff-check
+PASS diff-check
