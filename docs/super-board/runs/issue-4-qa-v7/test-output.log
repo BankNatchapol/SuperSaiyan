@@ -1,0 +1,41 @@
+TESTED product commit ed1099a73fcbbc5f1956aafc57e9d755de5d1485
+
+RUN seven-suite QA command
+PASS: test-tasks-wave-dispatch-platform-rewire.sh
+PASS: test-prepare-platform-rewire.sh
+PASS: test-supersaiyan-prepare.sh (9 scenarios)
+PASS: test-platform-contract.sh (31 contract functions defined)
+PASS: test-backend-contract.sh (all 6 contract functions defined for each backend)
+PASS: test-build-safety-contract.sh
+PASS: test-run-platform-rewire.sh
+PASS seven-suite QA command (exit 0)
+
+RUN issue-4 negative/configuration matrix
+PASS onboarded GitHub issue-only default and explicit --board enqueue
+PASS onboarded GitLab issue-only adapter selection without status mutation
+PASS config precedence, stale/ambiguous/missing config, invalid platform, task/dispatch env conflicts
+PASS issue/board scope and repository-access checks
+PASS issue lookup exits 0/44/69/70 and issue-map preservation
+PASS installer/bootstrap resolver smoke
+
+RUN shell-syntax (all changed .sh files in origin/main...ed1099a)
+PASS shell-syntax (11 files, exit 0)
+
+RUN reference-sync
+PASS test-reference-sync.py (exit 0)
+
+RUN live-platform-auth
+PASS platform_auth_check issue (exit 0)
+PASS platform_auth_check board (exit 0)
+
+RUN diff-check
+PASS git diff --check origin/main...ed1099a (exit 0)
+
+RUN unresolved-review-thread query
+PASS unresolved-review-thread query (0 unresolved threads)
+
+RUN GitHub checks
+PASS backend-contract
+PASS build-safety-contract
+PASS reference-sync
+PASS GitGuardian Security Checks
