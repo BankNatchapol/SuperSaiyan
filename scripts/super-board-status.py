@@ -391,6 +391,19 @@ def field_status(node: dict[str, Any]) -> str:
     return "Backlog"
 
 
+def resolve_worker_backend(cfg: dict[str, Any]) -> dict[str, str]:
+    """Normalize `worker_backend` into an explicit {build, qa, review} map.
+
+    The config field is either a single string (one backend for every lane) or a per-lane
+    object; consumers get the same shape either way. Mirrors the resolution in
+    scripts/super-board-run.sh, including its "claude-p" default for omitted lane keys.
+    """
+    raw = cfg.get("worker_backend", "workflow")
+    if isinstance(raw, dict):
+        return {lane: raw.get(lane, "claude-p") for lane in ("build", "qa", "review")}
+    return {lane: raw for lane in ("build", "qa", "review")}
+
+
 # ───────────────────────────── side-effecting helpers ─────────────────────────────
 
 # Slugs are file-system identifiers (configs/<slug>.json, runs/<date>-<slug>.md),
@@ -645,7 +658,10 @@ def main() -> int:
                 "path": str(config_path),
                 "variant": cfg.get("variant"),
                 "base_branch": cfg.get("base_branch", "main"),
+                # Raw, exactly as configured (string or per-lane object), kept for
+                # back-compat; `worker_backend_resolved` is always {build, qa, review}.
                 "worker_backend": cfg.get("worker_backend", "workflow"),
+                "worker_backend_resolved": resolve_worker_backend(cfg),
                 "human_approves_merge": bool(cfg.get("human_approves_merge")),
                 "truth_gate": tg,
                 "truth_threshold": tt,

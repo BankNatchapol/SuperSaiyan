@@ -64,6 +64,20 @@ function safeJson<T>(text: string, fallback: T): T {
   }
 }
 
+// `worker_backend` is either a single backend name for the whole run, or a per-lane object
+// (see skills/super-board/references/backends.md). Render the object form as a compact
+// `build=… qa=… review=…` summary — String() on it would yield "[object Object]". Lane keys
+// omitted from the object default to claude-p, matching the dispatcher's own resolution.
+function formatWorkerBackend(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const lanes = value as Record<string, unknown>;
+    return ["build", "qa", "review"]
+      .map((lane) => `${lane}=${String(lanes[lane] ?? "claude-p")}`)
+      .join(" ");
+  }
+  return String(value || "workflow");
+}
+
 export class RepositoryRegistry {
   private readonly file: string;
 
@@ -134,7 +148,7 @@ async function discoverConfigs(repoPath: string): Promise<BoardConfigSummary[]> 
           projectTitle: String(config.project.title || slug),
           variant: String(config.variant || "full"),
           baseBranch: String(config.base_branch || "main"),
-          workerBackend: String(config.worker_backend || "workflow"),
+          workerBackend: formatWorkerBackend(config.worker_backend),
         });
       }
     }

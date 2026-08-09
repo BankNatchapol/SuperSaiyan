@@ -36,7 +36,41 @@
   //   "cursor-agent"  — spawns `agent -p` (Cursor CLI) workers.
   // All three are explicit opt-in; the dispatcher refuses to run (exit 78)
   // unless one of them is set here.
+  //
+  // ALTERNATIVE SHAPE — per-lane object. Static (picked once per run, not
+  // adaptive), it drives ONE board with a different bash-dispatcher backend
+  // per lane — e.g. Codex builds, Cursor QAs, Claude reviews:
+  //   "worker_backend": {
+  //     "build":  "codex-exec",
+  //     "qa":     "cursor-agent",
+  //     "review": "claude-p"
+  //   }
+  // Any lane key you omit defaults to "claude-p". "workflow" is never valid
+  // as a per-lane value — it is Claude-Code-session-bound, not a
+  // bash-dispatcher backend. A qa-only board never dispatches a build lane,
+  // so a "build" key is accepted but ignored under that variant. This is
+  // still ONE dispatcher process for the whole config; for genuinely
+  // independent parallel boards (one tool = one full separate run), use the
+  // N-separate-configs path in references/onboard.md step 2 instead.
   "worker_backend": "workflow",
+
+  // Per-tool model overrides for the bash-dispatcher backends. Applied
+  // wherever that TOOL is used across the run — one setting per TOOL, not
+  // per lane x tool, so picking "codex-exec" for two lanes does not mean
+  // configuring the model twice. Empty string = use the CLI's own default.
+  // `reasoning_effort` is passed through as a free-form string; accepted
+  // values are model-specific and are not validated here. Both blocks are
+  // ignored entirely when no lane resolves to that tool. Env vars
+  // CODEX_MODEL / CODEX_REASONING_EFFORT / CURSOR_MODEL override these for
+  // a single run. claude-p has no model field by design — it inherits the
+  // session model, same as the workflow backend's Reviewer lane.
+  "codex": {
+    "model": "",
+    "reasoning_effort": ""
+  },
+  "cursor": {
+    "model": ""
+  },
 
   // Which forge this config drives. "github" (default, back-compat) or "gitlab".
   // Orthogonal to worker_backend — any combination is valid. Selects which

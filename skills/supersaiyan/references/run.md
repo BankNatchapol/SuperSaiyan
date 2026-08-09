@@ -49,26 +49,30 @@ Progress: ✅ onboard  →  ✅ lint  →  🤖 run (you are here)
 | Full variant: clean git working tree on base branch | Halt: "Working tree dirty. Stash or commit before running." |
 | Stale worktree scan | Auto-clean: for each dir in `.worktrees/`, if its branch no longer exists OR no `loop:in-*` label on its issue, `git worktree remove --force` it. Log each removal in the run manifest. Halt only if a removal fails. |
 | Production-merge guard | If `base_branch == "main"` AND `human_approves_merge == false` AND production-detection signals fire (see §5 step 8), halt with: `🛡 Refusing to start: would auto-merge to production main. Either set human_approves_merge: true or switch base_branch to staging.` |
-| Orphan-worker scan (added 2026-05-22 after #381 worker storm) | `pgrep -f 'claude -p .*super-board run'` must return zero. If any super-board worker is already alive from a prior crashed run, halt with: `🛑 ${N} super-board workers already running. Stop them first: pkill -f 'claude -p .*super-board run'`. The dispatcher must never run while orphan workers exist — they will collide on assignee claims and produce duplicate PRs. |
+| Orphan-worker scan (added 2026-05-22 after #381 worker storm; per-backend since per-lane routing) | For every **distinct** backend in use this run — the whole-board `worker_backend` string, or the deduplicated values of a per-lane object, scoped to the lanes this variant dispatches — `pgrep -f '<that backend's orphan pattern>'` must return zero. See `references/backends.md` for the exact pattern per backend (`claude -p .*super-board run`, `codex exec .*for SuperSaiyan`, `agent.*for SuperSaiyan`). If any worker is alive from a prior crashed run, halt with one line per matched backend: `🛑 ${N} <backend> worker(s) already running. Stop them first: pkill -f '<pattern>'`. The dispatcher must never run while orphan workers exist — they will collide on assignee claims and produce duplicate PRs. |
 | GraphQL rate-limit guard | Before each tick, query `gh api rate_limit`. If GraphQL remaining < 200, sleep until reset. Prevents the runner from dying mid-loop when the user has burned quota in another tool. |
 
 ## Lane mapping by variant
+
+`worker` below is the lane's **configured backend** — `claude -p` by default, or `codex exec`
+/ `agent -p` when `worker_backend` names them. A per-lane `worker_backend` object gives each
+lane its own tool within one run; see `references/backends.md`.
 
 Full variant — 3 lanes:
 
 ```
 Builder:   Ready → Building → QA
-           worker   = claude -p with super-build skill
+           worker   = Build lane's backend, with super-build skill
            worktree = .worktrees/issue-<N>-build/
            branch   = issue-<N>-<slug>  (created here, persists across lanes)
 
 Tester:    QA → Review
-           worker   = claude -p with super-qa skill (issue-scoped mode)
+           worker   = QA lane's backend, with super-qa skill (issue-scoped mode)
            worktree = .worktrees/issue-<N>-qa/
            branch   = same issue-<N>-<slug>  (checked out, tests appended)
 
 Reviewer:  Review → Done
-           worker   = claude -p with super-review skill
+           worker   = Review lane's backend, with super-review skill
            worktree = .worktrees/issue-<N>-review/
            branch   = same issue-<N>-<slug>  (squash-merged on approval)
 ```
@@ -77,13 +81,13 @@ QA-only variant — 2 lanes:
 
 ```
 Tester:    Ready → QA → Review
-           worker   = claude -p with super-qa skill
+           worker   = QA lane's backend, with super-qa skill
                        (URL-target mode if target.type=url)
            worktree = .worktrees/issue-<N>-qa/  (or none if URL-only)
            branch   = issue-<N>-<slug>          (or none if URL-only)
 
 Reviewer:  Review → Done
-           worker   = claude -p with super-review skill
+           worker   = Review lane's backend, with super-review skill
                        (QA-only mode: reviews QA report quality, not code diff)
            worktree = .worktrees/issue-<N>-review/  (or none if URL-only)
            branch   = same issue-<N>-<slug>          (or none if URL-only)
@@ -416,7 +420,7 @@ The dispatcher MUST also:
 2. **Write a local in-flight lock** — `.claude/supersaiyan/inflight/<issue-N>` contains the worker PID. `top_card_in_column` skips any issue with a live lock even if the assignee write hasn't propagated yet.
 3. **Cap one worker per lane** — track `BUILD_PID` / `QA_PID` / `REVIEW_PID`; do not dispatch to a lane whose prior PID is still alive.
 4. **Reap stale locks each tick** — `reap_finished_locks` removes any lock whose PID no longer exists.
-5. **Orphan-scan on startup** — refuse to start if any `claude -p .*super-board run` worker is already running from a prior crashed dispatcher.
+5. **Orphan-scan on startup** — refuse to start if any worker from a prior crashed dispatcher is already running, scanning once per distinct backend in use (see the Preconditions table and `references/backends.md` for the per-backend patterns).
 6. **Cache `gh project item-list` per tick** — one API call per tick, not per column lookup. Cuts rate consumption ~7×.
 
 The three locks (assignee, in-flight file, lane PID) are defense in depth: any one of them alone has a race window; together they make a duplicate dispatch effectively impossible.

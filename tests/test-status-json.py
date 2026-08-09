@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import datetime
+import importlib.util
 import json
 import os
 import subprocess
@@ -25,6 +26,13 @@ def main() -> None:
             "variant": "full",
             "base_branch": "main",
             "max_workers": 3,
+            # Per-lane backend map: the JSON boundary must expose both the raw shape and a
+            # normalized {build, qa, review} view.
+            "worker_backend": {
+                "build": "codex-exec",
+                "qa": "cursor-agent",
+                "review": "claude-p",
+            },
             "project": {"owner": "octocat", "number": 7, "title": "Demo Board"},
             "paths": {"runs_dir": "docs/supersaiyan/runs"},
         }))
@@ -77,8 +85,44 @@ def main() -> None:
         assert payload["lanes"]["Ready"][0]["number"] == 12
         assert payload["workers"][0]["issue"] == 12
         assert payload["health"]["run_active"] is True
+        # Raw shape is preserved verbatim for back-compat...
+        assert payload["config"]["worker_backend"] == {
+            "build": "codex-exec",
+            "qa": "cursor-agent",
+            "review": "claude-p",
+        }
+        # ...and the normalized view is always a {build, qa, review} map.
+        assert payload["config"]["worker_backend_resolved"] == {
+            "build": "codex-exec",
+            "qa": "cursor-agent",
+            "review": "claude-p",
+        }
 
+    check_worker_backend_resolution()
     print("PASS: test-status-json.py")
+
+
+def check_worker_backend_resolution() -> None:
+    """The string shorthand and omitted lane keys must normalize the same way the
+    bash dispatcher (scripts/super-board-run.sh) resolves them."""
+    spec = importlib.util.spec_from_file_location("super_board_status", STATUS)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    resolve = module.resolve_worker_backend
+
+    # A single string applies to every lane (back-compat shape).
+    assert resolve({"worker_backend": "codex-exec"}) == {
+        "build": "codex-exec", "qa": "codex-exec", "review": "codex-exec",
+    }
+    # Omitted lane keys fall back to claude-p, matching load_backend's default.
+    assert resolve({"worker_backend": {"qa": "cursor-agent"}}) == {
+        "build": "claude-p", "qa": "cursor-agent", "review": "claude-p",
+    }
+    # No worker_backend at all means the in-session workflow backend.
+    assert resolve({}) == {
+        "build": "workflow", "qa": "workflow", "review": "workflow",
+    }
 
 
 if __name__ == "__main__":

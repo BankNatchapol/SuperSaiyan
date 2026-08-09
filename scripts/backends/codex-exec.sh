@@ -10,15 +10,32 @@
 #   sometimes silently ignore network_access=true on macOS (openai/codex#10390), which breaks
 #   git push / gh. codex exec accepts the prompt as a positional arg.
 
+# Model + reasoning depth. Read here with inline `${VAR:-}` defaulting rather than assuming
+# the caller exported them — super-build-dispatch.sh / super-qa-dispatch.sh source this file
+# under `set -u` and never set these. Both come from the board config (`codex.model`,
+# `codex.reasoning_effort`) via super-board-run.sh, or straight from the env for one-off runs.
+# Unset/empty = use the codex CLI's own configured default.
+codex_flags() {
+  # Emitted one per line so callers can read them into an array.
+  printf '%s\n' "exec" "--sandbox" "danger-full-access"
+  [ -n "${CODEX_MODEL:-}" ] && printf '%s\n' "--model" "$CODEX_MODEL"
+  [ -n "${CODEX_REASONING_EFFORT:-}" ] && printf '%s\n' "-c" "model_reasoning_effort=\"${CODEX_REASONING_EFFORT}\""
+  return 0
+}
+
 backend_launch() {
   # $1 = full prompt text. Backgrounds the worker, echoes its PID.
-  nohup codex exec --sandbox danger-full-access "$1" >/dev/null 2>&1 &
+  local flags=()
+  while IFS= read -r flag; do flags+=("$flag"); done < <(codex_flags)
+  nohup codex "${flags[@]}" "$1" >/dev/null 2>&1 &
   echo $!
 }
 
 backend_run_sync() {
   # $1 = full prompt text. Runs in the foreground; caller captures the exit code.
-  codex exec --sandbox danger-full-access "$1"
+  local flags=()
+  while IFS= read -r flag; do flags+=("$flag"); done < <(codex_flags)
+  codex "${flags[@]}" "$1"
 }
 
 backend_orphan_pattern() {

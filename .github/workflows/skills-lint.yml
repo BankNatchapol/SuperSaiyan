@@ -6,9 +6,11 @@ on:
       - "skills/**"
       - "scripts/generate-supersaiyan-references.sh"
       - "scripts/backends/**"
+      - "scripts/super-board-run.sh"
       - "tests/test-reference-sync.py"
       - "tests/test-backend-contract.sh"
       - "tests/test-build-safety-contract.sh"
+      - "tests/test-multi-backend-dispatch.sh"
       - ".github/workflows/skills-lint.yml"
   push:
     branches: [main]
@@ -16,9 +18,11 @@ on:
       - "skills/**"
       - "scripts/generate-supersaiyan-references.sh"
       - "scripts/backends/**"
+      - "scripts/super-board-run.sh"
       - "tests/test-reference-sync.py"
       - "tests/test-backend-contract.sh"
       - "tests/test-build-safety-contract.sh"
+      - "tests/test-multi-backend-dispatch.sh"
 
 jobs:
   reference-sync:
@@ -38,3 +42,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./tests/test-build-safety-contract.sh
+
+  multi-backend-dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-multi-backend-dispatch.sh
