@@ -44,38 +44,59 @@ cleanup() {
 trap cleanup EXIT
 
 # ── Config discovery ───────────────────────────────────────────────────────────
+# Root search order, highest priority first: vendor-neutral (new onboards write only here),
+# then the two Claude-Code-branded roots this project used before multi-tool worker_backend
+# support (current, then legacy). Same fallback chain as scripts/super-board-run.sh /
+# scripts/super-board-status.py's config_roots() — independent implementations kept in sync
+# deliberately (different tree, no existing cross-sourcing relationship) — see
+# references/config-schema.json.
+CONFIG_ROOTS=".supersaiyan .claude/supersaiyan .claude/super-board"
 
-CONFIGS_DIR=".claude/supersaiyan/configs"
-if [ ! -d "$CONFIGS_DIR" ]; then
-  echo "NEEDS_ONBOARD"
-  exit 78
-fi
+# Merge distinct slugs across roots; a higher-priority root's config wins on a same-slug
+# collision (mirrors discoverConfigs' priority-by-index rule in packages/control-core).
+SLUGS=()
+SLUG_ROOTS=()
+for root in $CONFIG_ROOTS; do
+  configs_dir="$root/configs"
+  [ -d "$configs_dir" ] || continue
+  while IFS= read -r f; do
+    slug=$(basename "$f" .json)
+    claimed=0
+    for existing in ${SLUGS[@]+"${SLUGS[@]}"}; do
+      [ "$existing" = "$slug" ] && claimed=1 && break
+    done
+    [ "$claimed" -eq 1 ] && continue
+    SLUGS+=("$slug")
+    SLUG_ROOTS+=("$root")
+  done < <(find "$configs_dir" -maxdepth 1 -name "*.json" 2>/dev/null | sort)
+done
 
-config_count=0
-first_config=""
-while IFS= read -r f; do
-  config_count=$((config_count + 1))
-  [ "$config_count" -eq 1 ] && first_config="$f"
-done < <(find "$CONFIGS_DIR" -maxdepth 1 -name "*.json" 2>/dev/null | sort)
-
+config_count=${#SLUGS[@]}
 if [ "$config_count" -eq 0 ]; then
   echo "NEEDS_ONBOARD"
   exit 78
 fi
 
 CONFIG_SLUG=""
+CONFIG_ROOT=""
 if [ "$config_count" -eq 1 ]; then
-  CONFIG_SLUG=$(basename "$first_config" .json)
+  CONFIG_SLUG="${SLUGS[0]}"
+  CONFIG_ROOT="${SLUG_ROOTS[0]}"
 else
-  ACTIVE_FILE=".claude/supersaiyan/active"
-  if [ ! -f "$ACTIVE_FILE" ]; then
-    echo "Multiple board configs found. Write the active slug to $ACTIVE_FILE." >&2
+  for root in $CONFIG_ROOTS; do
+    if [ -f "$root/active" ]; then
+      CONFIG_ROOT="$root"
+      CONFIG_SLUG=$(tr -d '[:space:]' < "$root/active")
+      break
+    fi
+  done
+  if [ -z "$CONFIG_SLUG" ]; then
+    echo "Multiple board configs found. Write the active slug to .supersaiyan/active." >&2
     exit 75
   fi
-  CONFIG_SLUG=$(tr -d '[:space:]' < "$ACTIVE_FILE")
 fi
 
-CONFIG_FILE="$CONFIGS_DIR/$CONFIG_SLUG.json"
+CONFIG_FILE="$CONFIG_ROOT/configs/$CONFIG_SLUG.json"
 [ -f "$CONFIG_FILE" ] || { echo "Config not found: $CONFIG_FILE" >&2; exit 66; }
 
 PROJECT_OWNER=$(jq -r '.project.owner // "@me"' "$CONFIG_FILE")
@@ -182,8 +203,16 @@ if [ -f "$MAP_FILE" ] && [ "$BEFORE_COUNT" -gt 0 ]; then
   done < <(jq -r 'keys[]' "$MAP_FILE" 2>/dev/null)
 fi
 
-# Create missing issues via tasks-to-issues.sh
-TASKS_TO_ISSUES="${TASKS_TO_ISSUES:-.claude/bin/tasks-to-issues.sh}"
+# Create missing issues via tasks-to-issues.sh. Same three-tier idea as the backend-contract
+# lookups in super-build-dispatch.sh/super-qa-dispatch.sh: new-installed layout first, then
+# old-installed (pre-migration installs that haven't re-run install.sh yet).
+if [ -z "${TASKS_TO_ISSUES:-}" ]; then
+  if [ -x ".supersaiyan/bin/tasks-to-issues.sh" ]; then
+    TASKS_TO_ISSUES=".supersaiyan/bin/tasks-to-issues.sh"
+  else
+    TASKS_TO_ISSUES=".claude/bin/tasks-to-issues.sh"
+  fi
+fi
 [ -x "$TASKS_TO_ISSUES" ] || { echo "tasks-to-issues.sh not executable: $TASKS_TO_ISSUES" >&2; exit 66; }
 
 if [ -n "$PHASE" ]; then

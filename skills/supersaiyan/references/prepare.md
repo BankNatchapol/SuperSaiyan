@@ -8,9 +8,11 @@ Invoked by `supersaiyan new` (Phase 5) and directly via `/supersaiyan prepare <s
 
 ## How prepare works
 
-1. **Config discovery** — reads `.claude/supersaiyan/configs/<slug>.json` to find the board.
-   - If no config exists, runs inline onboarding (`references/onboard.md`) first.
-   - If multiple configs exist, reads `.claude/supersaiyan/active` for the active slug.
+1. **Config discovery** — reads `<config-root>/configs/<slug>.json` to find the board (checks
+   `.supersaiyan/`, then legacy `.claude/supersaiyan/`/`.claude/super-board/` roots — see
+   `skills/supersaiyan/scripts/prepare.sh`'s `CONFIG_ROOTS`).
+   - If no config exists under any root, runs inline onboarding (`references/onboard.md`) first.
+   - If multiple configs exist, reads the winning root's `active` file for the active slug.
 
 2. **Git validation** — verifies task files are committed and pushed. Uncommitted or unpushed
    task changes are caught here before any GitHub writes.
@@ -18,7 +20,8 @@ Invoked by `supersaiyan new` (Phase 5) and directly via `/supersaiyan prepare <s
 3. **Stale repair** — checks each entry in `.issue-map.json`. If a mapped issue was deleted
    from GitHub, the entry is removed so the issue is recreated.
 
-4. **Issue creation** — runs `.claude/bin/tasks-to-issues.sh` which creates one GitHub issue
+4. **Issue creation** — runs `.supersaiyan/bin/tasks-to-issues.sh` (or a legacy
+   `.claude/bin/tasks-to-issues.sh` for a pre-migration install) which creates one GitHub issue
    per task file and adds it to the board's Ready column.
 
 5. **Backlog reconciliation** — any generated issue in the board's Backlog column that is still
@@ -82,5 +85,5 @@ run the phase-discuss step before filing issues. This is opt-in; most projects s
 |-----------|---------|--------|
 | 0 | Success | Continue |
 | 65 | Validation error | Surface the error message; fix before retrying |
-| 75 | Multiple configs, no active pointer | `echo <slug> > .claude/supersaiyan/active` then retry |
+| 75 | Multiple configs, no active pointer | `echo <slug> > .supersaiyan/active` then retry |
 | 78 | No board config | Run `references/onboard.md` then retry |

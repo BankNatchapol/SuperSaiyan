@@ -25,15 +25,17 @@ Applies everywhere in this file. Before you run `git merge`, `gh pr merge`, `gh 
 
 ```bash
 git rev-parse --show-toplevel | xargs basename
-ls .claude/supersaiyan/configs/*.json 2>/dev/null
+ls .supersaiyan/configs/*.json .claude/supersaiyan/configs/*.json .claude/super-board/configs/*.json 2>/dev/null
 ```
+
+(Three roots, highest priority first: `.supersaiyan/` is where new onboards write; `.claude/supersaiyan/` and `.claude/super-board/` are pre-migration/legacy roots that still work via fallback — see `references/config-schema.json` and `scripts/config-resolve.sh`. Any one of the three having a match means "onboarded.")
 
 Then classify this run:
 
-1. **Pipeline-dispatched.** Your invocation explicitly told you to read `.claude/skills/super-board/references/run.md` → a named lane lifecycle (Builder/Tester/Reviewer), and/or named a `Config: <path>` under `.claude/supersaiyan/configs/`. → Follow **## Pipeline-dispatched mode** below. This always wins, even if an opt-in phrase (case 4) is also present.
+1. **Pipeline-dispatched.** Your invocation explicitly told you to read `.claude/skills/super-board/references/run.md` → a named lane lifecycle (Builder/Tester/Reviewer), and/or named a `Config: <path>` under `.supersaiyan/configs/` (or a legacy `.claude/supersaiyan/configs/`/`.claude/super-board/configs/` path). → Follow **## Pipeline-dispatched mode** below. This always wins, even if an opt-in phrase (case 4) is also present.
 2. **Repo-identity guard.** The toplevel basename is `SuperSaiyan` (the toolkit source repo). → STOP before dispatching any worker. This repo has no GitHub Project `Ready` column to drive and its own `AGENTS.md` documents that the pipeline runs in app repos only. Tell the user: `🛑 This is the SuperSaiyan toolkit repo — it does not run the Build/QA/Review pipeline (see AGENTS.md).` Do not proceed.
-3. **Onboarded but not explicitly dispatched.** A `.claude/supersaiyan/configs/*.json` exists, but this invocation wasn't the explicit pipeline dispatch from case 1. → Tell the user: `🛑 This repo has an onboarded supersaiyan pipeline. Route this through supersaiyan (/supersaiyan run) instead of invoking Super Build standalone.` Still implement, test, commit, push, and open the PR (the default success path below) — just don't merge or close.
-4. **Explicit opt-in.** No onboarded config (case 3 doesn't apply), and the user's current turn contains the exact literal phrase `--standalone-automerge-i-understand-the-risk`. → You may enter **## Standalone Auto-Merge mode** below. Restate the consequence once (no QA, no Review, this session merges and closes on its own) before the first merge/close.
+3. **Onboarded but not explicitly dispatched.** A config exists under any of the three roots above, but this invocation wasn't the explicit pipeline dispatch from case 1. → Tell the user: `🛑 This repo has an onboarded supersaiyan pipeline. Route this through supersaiyan (/supersaiyan run) instead of invoking Super Build standalone.` Still implement, test, commit, push, and open the PR (the default success path below) — just don't merge or close.
+4. **Explicit opt-in.** No onboarded config under any root (case 3 doesn't apply), and the user's current turn contains the exact literal phrase `--standalone-automerge-i-understand-the-risk`. → You may enter **## Standalone Auto-Merge mode** below. Restate the consequence once (no QA, no Review, this session merges and closes on its own) before the first merge/close.
 5. **Anything else** — bare `/super-build`, "Super Build", plain-English "fix the issue," or any other ambiguous match, with none of cases 1–4 applying. → **The default.** Implement, test, commit, push, open a PR, stop. Do not merge or close.
 
 ## Configuration
@@ -245,7 +247,7 @@ If the user invokes `/super-build` after a partial run:
 - `Super Build` / `/super-build` → process all GitHub Project `Ready` issues in board order. **Default outcome per issue: an open PR, no merge, no close** (see Autonomy preflight).
 - `/super-build --only N` → same PR-only default, scoped to a single issue (smoke-test mode, ignores `loop:in-progress` label on that issue if you set `FORCE=1`). `--only` scopes which issue, not merge authority.
 - `/super-build --dry-run` → print the dispatch plan (issues, order, parallelism waves) without invoking workers, without setting labels, without commenting
-- `/super-build --only N --standalone-automerge-i-understand-the-risk` → the only way to get the old merge+close+Done behavior for issue N. Requires no onboarded `.claude/supersaiyan/configs/` and one explicit confirmation (Autonomy preflight case 4).
+- `/super-build --only N --standalone-automerge-i-understand-the-risk` → the only way to get the old merge+close+Done behavior for issue N. Requires no onboarded config under `.supersaiyan/configs/` (or the legacy roots) and one explicit confirmation (Autonomy preflight case 4).
 
 ## Standalone Auto-Merge mode (opt-in, unsafe)
 
@@ -271,7 +273,7 @@ The WIP-PARTIAL, worker-failure, and HUMAN GATE reconcile branches are unchanged
 
 This is how supersaiyan/super-board actually calls you — treat it as the common case, not a special one. Enter this mode whenever ANY of these is true:
 - Your invocation explicitly instructs you to read `.claude/skills/super-board/references/run.md` and follow a named lane lifecycle (Builder/Tester/Reviewer). **Both dispatch backends always say this** (`super-board-run.sh`'s legacy dispatcher and the default `super-board-wave.js` workflow backend) — this is the authoritative, always-present signal. Prefer it over the signals below.
-- Your invocation names a `Config: <path>` under `.claude/supersaiyan/configs/`.
+- Your invocation names a `Config: <path>` under `.supersaiyan/configs/` (or a legacy `.claude/supersaiyan/configs/`/`.claude/super-board/configs/` path).
 - Env `SUPER_BOARD_RUN=1` is set, or the invocation text contains `"super-board run"` or `"super-board workflow wave"` (both real strings the two backends send; kept as back-compat signals — don't rely on these alone).
 
 When any of the above holds, follow these rules instead of the standalone defaults:

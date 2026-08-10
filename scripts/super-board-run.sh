@@ -6,7 +6,7 @@
 #
 # Anti-zombie controls (added 2026-05-22 after #381 worker-storm incident):
 #   1. Orphan scan on startup — refuses to start if super-board claude workers already running.
-#   2. Issue-level lock files in .claude/supersaiyan/inflight/<N> — survives runner restart.
+#   2. Issue-level lock files in <config-root>/inflight/<N> — survives runner restart.
 #   3. Atomic GitHub assignee claim BEFORE spawning worker (closes 10-30s claude -p cold-start race).
 #   4. Rate-limit guard — sleeps until reset when GraphQL remaining < 200.
 #   5. Per-tick project-items cache — one gh call per tick, not per column lookup.
@@ -19,26 +19,53 @@
 set -euo pipefail
 
 # ───────────────────────────── args + paths ─────────────────────────────
+# Root search order, highest priority first: vendor-neutral (new onboards write only here),
+# then the two Claude-Code-branded roots this project used before multi-tool worker_backend
+# support (current, then legacy). See scripts/super-board-status.py's config_roots() — same
+# fallback chain, independent Python implementation — and references/config-schema.json.
+CONFIG_ROOTS=".supersaiyan .claude/supersaiyan .claude/super-board"
+
 CONFIG_SLUG="${1:-}"
 if [ -z "$CONFIG_SLUG" ]; then
-  if [ -f .claude/supersaiyan/active ]; then
-    CONFIG_SLUG=$(cat .claude/supersaiyan/active)
-  else
-    echo "usage: $0 <config-slug>  (or set .claude/supersaiyan/active)" >&2
+  # No slug given: the active pointer supplies it. Probe roots for a readable `active` file —
+  # whichever root wins is ALSO the root the config lives under (one onboard always writes
+  # `active` and `configs/` to the same root together), so CONFIG_ROOT is settled here, not
+  # re-derived from config existence below.
+  CONFIG_ROOT=""
+  for root in $CONFIG_ROOTS; do
+    if [ -f "$root/active" ]; then
+      CONFIG_ROOT="$root"
+      CONFIG_SLUG=$(cat "$root/active")
+      break
+    fi
+  done
+  if [ -z "$CONFIG_SLUG" ]; then
+    echo "usage: $0 <config-slug>  (or set .supersaiyan/active)" >&2
     exit 64
   fi
+else
+  # Slug given explicitly (the documented preferred path — see references/onboard.md: "Always
+  # pass the slug explicitly"): probe roots for that slug's config directly.
+  CONFIG_ROOT=""
+  for root in $CONFIG_ROOTS; do
+    if [ -f "$root/configs/${CONFIG_SLUG}.json" ]; then
+      CONFIG_ROOT="$root"
+      break
+    fi
+  done
+  : "${CONFIG_ROOT:=.supersaiyan}"   # not found under any root — new run; error follows below
 fi
 
-CONFIG_PATH=".claude/supersaiyan/configs/${CONFIG_SLUG}.json"
+CONFIG_PATH="$CONFIG_ROOT/configs/${CONFIG_SLUG}.json"
 if [ ! -f "$CONFIG_PATH" ]; then
   echo "config not found: $CONFIG_PATH" >&2
   exit 66
 fi
 
-# scripts/backends/<name>.sh in this dev repo, .claude/bin/backends/<name>.sh once installed
-# (install.sh copies scripts/backends/, scripts/platforms/, and scripts/config-resolve.sh
-# alongside this script). Computed early so config-resolve.sh can be sourced before any field
-# is read; reused again below for the backend/platform contract files.
+# scripts/backends/<name>.sh in this dev repo, .supersaiyan/bin/backends/<name>.sh once
+# installed (install.sh copies scripts/backends/, scripts/platforms/, and
+# scripts/config-resolve.sh alongside this script). Computed early so config-resolve.sh can be
+# sourced before any field is read; reused again below for the backend/platform contract files.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Resolve an optional `extends` link (shared base config for multi-tool boards — see
@@ -121,7 +148,7 @@ else
   fi
 fi
 
-# Backend contract: scripts/backends/<name>.sh in this dev repo, .claude/bin/backends/<name>.sh
+# Backend contract: scripts/backends/<name>.sh in this dev repo, .supersaiyan/bin/backends/<name>.sh
 # once installed (install.sh copies scripts/backends/ alongside this script). SCRIPT_DIR was
 # already computed above, before extends resolution.
 
@@ -174,7 +201,7 @@ for backend_name in $DISTINCT_BACKENDS; do
   fi
 done
 
-# Platform contract: scripts/platforms/<name>.sh in this dev repo, .claude/bin/platforms/<name>.sh
+# Platform contract: scripts/platforms/<name>.sh in this dev repo, .supersaiyan/bin/platforms/<name>.sh
 # once installed (install.sh copies scripts/platforms/ alongside this script).
 # Sibling of the backends/ axis above — not an alternative. git_platform and worker_backend compose.
 PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
@@ -187,7 +214,10 @@ source "$PLATFORM_FILE"
 
 RUN_DATE=$(date +%Y-%m-%d)
 RUN_MANIFEST="docs/supersaiyan/runs/${RUN_DATE}-${CONFIG_SLUG}.md"
-INFLIGHT_DIR=".claude/supersaiyan/inflight"
+# Colocated with CONFIG_PATH's resolved root, not always .supersaiyan — inflight locks are a
+# byproduct of a specific run of a specific config; splitting config-root from state-root would
+# let two invocations against an old-root config race on locks nobody's watching in the new root.
+INFLIGHT_DIR="$CONFIG_ROOT/inflight"
 mkdir -p "docs/supersaiyan/runs" .worktrees "$INFLIGHT_DIR"
 
 # ───────────────────────────── helpers ─────────────────────────────
@@ -424,7 +454,10 @@ if [ "$ORPHAN_TOTAL" -gt 0 ]; then
 fi
 
 # Workflow-backend mutual exclusion (see references/run-workflow.md §Preconditions).
-WAVE_LOCK=".claude/supersaiyan/inflight/workflow-wave.lock"
+# Colocated with the resolved CONFIG_ROOT (see INFLIGHT_DIR above) — the workflow backend and
+# this bash dispatcher must contend for the same lock file regardless of which root a given
+# board's config happens to live under.
+WAVE_LOCK="$INFLIGHT_DIR/workflow-wave.lock"
 if [ -f "$WAVE_LOCK" ]; then
   log "🛑 refusing to start: workflow-backend wave in flight ($WAVE_LOCK exists)."
   log "    If no wave is actually running, remove the stale lock: rm $WAVE_LOCK"

@@ -79,10 +79,10 @@ my-first-agent-app/
     superpowers/tasks/<feature>/     board task files (writing-board-tasks output)
     templates/                       issue.md, task-file.md
   scripts/gstack-env.sh              optional GSTACK_HOME=<repo>/.gstack
-  .claude/skills/                    super-board + refining-spec + writing-board-tasks
-  .claude/bin/                       super-board dispatcher scripts
-  .claude/workflows/                 super-board-wave.js
-  .claude/supersaiyan/configs/       onboard writes <slug>.json here
+  .claude/skills/                    super-board + refining-spec + writing-board-tasks (Claude Code's own skill-discovery path — stays under .claude/)
+  .supersaiyan/bin/                  super-board dispatcher scripts
+  .supersaiyan/workflows/            super-board-wave.js
+  .supersaiyan/configs/              onboard writes <slug>.json here (legacy: .claude/supersaiyan/configs/, .claude/super-board/configs/ — still read via fallback)
 ```
 
 ---
@@ -269,7 +269,7 @@ Trigger phrases for supersaiyan include plain English (“fix the first issue”
 4. **bash 3.2** — scripts must run on macOS default bash (`mapfile` / `declare -A` break).
 5. **Upstream submodules** — `gstack/`, `superpowers/`, `super-board/` may be upstream clones; avoid drive-by edits.
 6. **Control Center stays optional** — UI code lives in `apps/` and `packages/`; never make it a prerequisite for skills or CLI use.
-7. **This repo has an onboarded `.claude/supersaiyan/configs/supersaiyan.json`** (added 2026-08-08), linked to GitHub Project #3 ("SuperSaiyan") which is used for real issue tracking here. `/supersaiyan run` drives the full autonomous Build → QA → Review loop in this repo now, same as any onboarded app repo — hand-driving branch → PR → Super QA → Super Review is no longer the only path, just still fine for ad hoc asks. That config sets `human_approves_merge: true`, though: even a clean Review pass only marks the PR ready, it does not squash-merge — a human still clicks merge. Don't flip that to auto-merge without asking; this repo ships as a pinned-commit Claude Code plugin, so a bad auto-merge to `main` doesn't go live until someone updates the plugin, but it then moves everyone on that pin at once. **Each arrow is a separate turn** still applies to manual/ad-hoc lane work done outside the autonomous loop: do one lane (Build, QA, or Review), post its result, then stop and report back — never chain two lanes (e.g. QA straight into Review) in the same response. The automated pipeline enforces this via separate worker dispatches per lane; collapsing lanes into one pass turns Review from an independent re-check of QA into the same reasoning re-approving itself, and removes the checkpoint where the user would otherwise see one lane's result before the next begins.
+7. **This repo has an onboarded `.supersaiyan/configs/supersaiyan.json`** (added 2026-08-08, moved from `.claude/supersaiyan/configs/` 2026-08-10), linked to GitHub Project #3 ("SuperSaiyan") which is used for real issue tracking here. `/supersaiyan run` drives the full autonomous Build → QA → Review loop in this repo now, same as any onboarded app repo — hand-driving branch → PR → Super QA → Super Review is no longer the only path, just still fine for ad hoc asks. That config sets `human_approves_merge: true`, though: even a clean Review pass only marks the PR ready, it does not squash-merge — a human still clicks merge. Don't flip that to auto-merge without asking; this repo ships as a pinned-commit Claude Code plugin, so a bad auto-merge to `main` doesn't go live until someone updates the plugin, but it then moves everyone on that pin at once. **Each arrow is a separate turn** still applies to manual/ad-hoc lane work done outside the autonomous loop: do one lane (Build, QA, or Review), post its result, then stop and report back — never chain two lanes (e.g. QA straight into Review) in the same response. The automated pipeline enforces this via separate worker dispatches per lane; collapsing lanes into one pass turns Review from an independent re-check of QA into the same reasoning re-approving itself, and removes the checkpoint where the user would otherwise see one lane's result before the next begins.
 8. **Never implement issue work directly on `main` in the primary worktree** — always create an issue-scoped branch first (`issue-N-<slug>`), even for a quick ad hoc "implement issue #N" ask that isn't going through a full `run` dispatch. See `skills/supersaiyan/SKILL.md` → "Golden rule: never implement issue work directly on the primary branch."
 
 ---

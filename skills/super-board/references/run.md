@@ -415,7 +415,7 @@ Worker-side assignee claim alone is **not sufficient** — `claude -p` cold-star
 The dispatcher MUST also:
 
 1. **Claim BEFORE spawning the worker** — `try_claim_assignee` runs in the dispatcher and only proceeds to `nohup claude -p` if it wins the assignee write. Closes the cold-start race.
-2. **Write a local in-flight lock** — `.claude/supersaiyan/inflight/<issue-N>` contains the worker PID. `top_card_in_column` skips any issue with a live lock even if the assignee write hasn't propagated yet.
+2. **Write a local in-flight lock** — `<config-root>/inflight/<issue-N>` (whichever root the config resolved from — `.supersaiyan/` for a fresh onboard, a legacy root for a pre-migration install) contains the worker PID. `top_card_in_column` skips any issue with a live lock even if the assignee write hasn't propagated yet.
 3. **Cap one worker per lane** — track `BUILD_PID` / `QA_PID` / `REVIEW_PID`; do not dispatch to a lane whose prior PID is still alive.
 4. **Reap stale locks each tick** — `reap_finished_locks` removes any lock whose PID no longer exists.
 5. **Orphan-scan on startup** — refuse to start if any worker from a prior crashed dispatcher is already running, scanning once per distinct backend in use (see the Preconditions table and `references/backends.md` for the per-backend patterns).

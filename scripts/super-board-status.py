@@ -11,7 +11,7 @@ view impractical in practice. This script renders it in ≈1.3 s by doing
 the layout as a single Python pass.
 
 What it does:
-  1. Resolve config slug: arg | `.claude/supersaiyan/active` | sole config.
+  1. Resolve config slug: arg | `.supersaiyan/active` (or a legacy root) | sole config.
   2. ONE GraphQL call for project items (number, title, labels, Status).
   3. ONE `gh issue view` per card that needs it: Blocked/Skipped cards (for
      reason-tag extraction) and any card with a `loop:rebuild-N` label (for
@@ -30,7 +30,7 @@ Cross-platform: pure Python 3 stdlib + `gh` CLI. Works on macOS, Linux,
 Windows (PowerShell / CMD / Git Bash / WSL). No bash, no jq.
 
 Usage:
-  python .claude/bin/super-board-status.py [<config-slug>] [--json]
+  python .supersaiyan/bin/super-board-status.py [<config-slug>] [--json]
 
 Exit codes:
   0  ok
@@ -57,7 +57,7 @@ except Exception:
     pass
 
 # Platform adapters live next to this script (scripts/platforms/ in-repo,
-# .claude/bin/platforms/ when installed).
+# .supersaiyan/bin/platforms/ when installed).
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
@@ -428,8 +428,12 @@ def valid_slug(slug: str) -> bool:
 
 
 def config_roots() -> list[Path]:
-    """Current SuperSaiyan config root first, then legacy super-board."""
+    """Vendor-neutral root first, then the Claude-Code-branded roots this project used
+    before multi-tool worker_backend support: current `.claude/supersaiyan`, then legacy
+    `.claude/super-board`. Every existing install keeps resolving via fallback; new onboards
+    write only to the first root."""
     return [
+        Path(".supersaiyan"),
         Path(".claude/supersaiyan"),
         Path(".claude/super-board"),
     ]

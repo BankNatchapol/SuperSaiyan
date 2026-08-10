@@ -6,8 +6,12 @@
 // the schema. Strip comments before validating an actual config file as JSON.
 //
 // One config per GitHub project this repo drives, written to
-// `.claude/supersaiyan/configs/<slug>.json` (committed). The active
-// pointer `.claude/supersaiyan/active` is gitignored and per-machine.
+// `.supersaiyan/configs/<slug>.json` (committed). The active
+// pointer `.supersaiyan/active` is gitignored and per-machine. Vendor-neutral root —
+// `.claude/supersaiyan/configs/` and `.claude/super-board/configs/` are legacy roots still
+// read via fallback for installs from before this path moved; new onboards write only to
+// `.supersaiyan/`. See scripts/config-resolve.sh and scripts/super-board-status.py's
+// config_roots().
 
 {
   "version": 1,
@@ -50,7 +54,7 @@
   // the super-board-wave dynamic workflow (references/run-workflow.md);
   // Claude-Code-only — requires dynamic workflows enabled in /config. The
   // remaining three values share one headless bash dispatcher
-  // (.claude/bin/super-board-run.sh) via scripts/backends/<name>.sh — see
+  // (.supersaiyan/bin/super-board-run.sh) via scripts/backends/<name>.sh — see
   // references/backends.md for the full contract and per-tool setup:
   //   "claude-p"      — legacy, spawns `claude -p` workers.
   //   "codex-exec"    — spawns `codex exec` workers.

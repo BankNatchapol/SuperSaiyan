@@ -10,11 +10,18 @@ on:
       - "scripts/super-board-wave-plan.sh"
       - "scripts/super-board-status.py"
       - "scripts/config-resolve.sh"
+      - "install.sh"
+      - "scripts/bootstrap-app.sh"
+      - "skills/supersaiyan/scripts/prepare.sh"
+      - "skills/super-build/scripts/super-build-dispatch.sh"
+      - "skills/super-qa/scripts/super-qa-dispatch.sh"
+      - ".gitignore"
       - "tests/test-reference-sync.py"
       - "tests/test-backend-contract.sh"
       - "tests/test-build-safety-contract.sh"
       - "tests/test-multi-backend-dispatch.sh"
       - "tests/test-config-extends.sh"
+      - "tests/test-config-root-fallback.sh"
       - "tests/test-status-json.py"
       - ".github/workflows/skills-lint.yml"
   push:
@@ -27,11 +34,18 @@ on:
       - "scripts/super-board-wave-plan.sh"
       - "scripts/super-board-status.py"
       - "scripts/config-resolve.sh"
+      - "install.sh"
+      - "scripts/bootstrap-app.sh"
+      - "skills/supersaiyan/scripts/prepare.sh"
+      - "skills/super-build/scripts/super-build-dispatch.sh"
+      - "skills/super-qa/scripts/super-qa-dispatch.sh"
+      - ".gitignore"
       - "tests/test-reference-sync.py"
       - "tests/test-backend-contract.sh"
       - "tests/test-build-safety-contract.sh"
       - "tests/test-multi-backend-dispatch.sh"
       - "tests/test-config-extends.sh"
+      - "tests/test-config-root-fallback.sh"
       - "tests/test-status-json.py"
 
 jobs:
@@ -64,6 +78,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./tests/test-config-extends.sh
+
+  config-root-fallback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-config-root-fallback.sh
 
   status-json:
     runs-on: ubuntu-latest

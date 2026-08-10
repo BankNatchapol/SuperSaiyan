@@ -85,9 +85,9 @@ test("@live creates and cleans a private GitHub repository and Project", async (
       if (status === "Done") await gh(repoPath, ["issue", "close", String(issueNumber), "--repo", `${owner}/${repoName}`]);
     }
 
-    const configDir = join(repoPath, ".claude", "supersaiyan", "configs");
+    const configDir = join(repoPath, ".supersaiyan", "configs");
     await mkdir(configDir, { recursive: true });
-    await writeFile(join(repoPath, ".claude", "supersaiyan", "active"), "live\n");
+    await writeFile(join(repoPath, ".supersaiyan", "active"), "live\n");
     await writeFile(join(configDir, "live.json"), JSON.stringify({
       variant: "full",
       base_branch: "main",

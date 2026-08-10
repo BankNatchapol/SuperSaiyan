@@ -11,7 +11,7 @@ Spec: `docs/superpowers/specs/2026-05-21-super-board-design.md`
 
 | Verb | Where | What it does |
 |---|---|---|
-| `super-board onboard` | interactive | one-time setup wizard; writes `.claude/supersaiyan/configs/<slug>.json` |
+| `super-board onboard` | interactive | one-time setup wizard; writes `.supersaiyan/configs/<slug>.json` |
 | `super-board lint` | interactive | walks active-pipeline issues, flags vague ACs, runs pre-flight readiness |
 | `super-board status` | interactive (read-only) | snapshot of active config, column counts, in-flight workers |
 | `super-board run` | headless | the autonomous loop; spawned via `scripts/super-board-run.sh`. Also the resume command — state lives on the board, not in process memory. Accepts a model-tier flag: `--low` (haiku/sonnet/opus ladder), default = medium (sonnet/opus/session), `--high` (opus/session — strongest models only). |

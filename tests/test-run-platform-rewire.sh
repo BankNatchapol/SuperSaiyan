@@ -64,15 +64,15 @@ fi
 SMOKE_DIR=$(mktemp -d)
 trap 'rm -rf "$SMOKE_DIR"' EXIT
 
-mkdir -p "$SMOKE_DIR/.claude/supersaiyan/configs" \
-         "$SMOKE_DIR/.claude/supersaiyan/inflight" \
+mkdir -p "$SMOKE_DIR/.supersaiyan/configs" \
+         "$SMOKE_DIR/.supersaiyan/inflight" \
          "$SMOKE_DIR/docs/supersaiyan/runs" \
          "$SMOKE_DIR/.worktrees" \
          "$SMOKE_DIR/scripts/platforms" \
          "$SMOKE_DIR/scripts/backends"
 
 # Installed-layout mirror: run.sh beside platforms/ + backends/ (install.sh copies all three
-# into .claude/bin/). worker_backend gate runs before the platform gate, so both contracts
+# into .supersaiyan/bin/). worker_backend gate runs before the platform gate, so both contracts
 # must be present for the smoke run to reach the platform-rewire behavior under test.
 cp "$RUN_SH" "$SMOKE_DIR/scripts/super-board-run.sh"
 cp "$ROOT/scripts/config-resolve.sh" "$SMOKE_DIR/scripts/config-resolve.sh"
@@ -80,7 +80,7 @@ cp "$ROOT/scripts/platforms/github.sh" "$SMOKE_DIR/scripts/platforms/github.sh"
 cp "$ROOT/scripts/backends/claude-p.sh" "$SMOKE_DIR/scripts/backends/claude-p.sh"
 chmod +x "$SMOKE_DIR/scripts/super-board-run.sh"
 
-cat > "$SMOKE_DIR/.claude/supersaiyan/configs/smoke.json" <<'EOF'
+cat > "$SMOKE_DIR/.supersaiyan/configs/smoke.json" <<'EOF'
 {
   "variant": "full",
   "base_branch": "develop",
@@ -102,7 +102,7 @@ cat > "$SMOKE_DIR/.claude/supersaiyan/configs/smoke.json" <<'EOF'
 EOF
 
 printf 'SLUG=smoke\nSTARTED=1970-01-01T00:00:00Z\n' \
-  > "$SMOKE_DIR/.claude/supersaiyan/inflight/workflow-wave.lock"
+  > "$SMOKE_DIR/.supersaiyan/inflight/workflow-wave.lock"
 
 set +e
 SMOKE_OUT=$(

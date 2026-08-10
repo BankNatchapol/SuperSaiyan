@@ -8,7 +8,7 @@ split into two families:
 | Family | Values | Dispatched by |
 |---|---|---|
 | Claude-Code-native | `workflow` (default) | Claude Code's own `/workflows` primitive — see `references/run-workflow.md`. Session-bound; no equivalent exists in Codex or Cursor, so this family stays Claude-Code-only. |
-| Bash dispatcher | `claude-p`, `codex-exec`, `cursor-agent` | `.claude/bin/super-board-run.sh` (or, for the standalone loops, `super-build-dispatch.sh` / `super-qa-dispatch.sh`), via `scripts/backends/<worker_backend>.sh` |
+| Bash dispatcher | `claude-p`, `codex-exec`, `cursor-agent` | `.supersaiyan/bin/super-board-run.sh` (or, for the standalone loops, `super-build-dispatch.sh` / `super-qa-dispatch.sh`), via `scripts/backends/<worker_backend>.sh` |
 
 All three bash-dispatcher backends are explicit opt-in; the dispatcher refuses to run
 (exit 78) unless `worker_backend` is set to one of them.

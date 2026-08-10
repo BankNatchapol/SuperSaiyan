@@ -165,13 +165,19 @@ export async function registerRepository(path: string): Promise<RepositoryRecord
   };
 }
 
+// Config/state root search order, highest priority first: the vendor-neutral root (new
+// onboards write only here), then the two Claude-Code-branded roots this project used before
+// multi-tool worker_backend support (current, then legacy). Full relative paths, not bare
+// names — `.supersaiyan` has no `.claude/` prefix, the other two do, so every consumer of this
+// list can `join(repoPath, root, ...)` directly with no per-entry special-casing. See
+// scripts/super-board-status.py's config_roots() (Python's independent, but semantically
+// identical, resolver) and references/config-schema.json.
+const CONFIG_ROOTS: readonly string[] = [".supersaiyan", ".claude/supersaiyan", ".claude/super-board"];
+
 async function discoverConfigs(repoPath: string): Promise<BoardConfigSummary[]> {
-  const candidates = [
-    join(repoPath, ".claude", "supersaiyan", "configs"),
-    join(repoPath, ".claude", "super-board", "configs"),
-  ];
-  const found = new Map<string, BoardConfigSummary>();
-  for (const directory of candidates) {
+  const found = new Map<string, { summary: BoardConfigSummary; rootIndex: number }>();
+  for (let rootIndex = 0; rootIndex < CONFIG_ROOTS.length; rootIndex++) {
+    const directory = join(repoPath, CONFIG_ROOTS[rootIndex], "configs");
     if (!(await exists(directory))) continue;
     for (const file of (await readdir(directory)).filter((name) => name.endsWith(".json")).sort()) {
       const path = join(directory, file);
@@ -179,8 +185,15 @@ async function discoverConfigs(repoPath: string): Promise<BoardConfigSummary[]> 
       config = await resolveExtends(directory, config);
       const slug = file.slice(0, -5);
       if (!config.project?.number || !config.project?.owner) continue;
-      if (!found.has(slug) || directory.includes("supersaiyan")) {
-        found.set(slug, {
+      // Results merge across roots; on a same-slug collision the higher-priority root (lower
+      // rootIndex) wins. A substring check like `directory.includes("supersaiyan")` would be
+      // ambiguous here — `.supersaiyan` and `.claude/supersaiyan` both contain "supersaiyan" —
+      // so priority is tracked by index into CONFIG_ROOTS instead.
+      const existing = found.get(slug);
+      if (existing && existing.rootIndex <= rootIndex) continue;
+      found.set(slug, {
+        rootIndex,
+        summary: {
           slug,
           path,
           projectOwner: String(config.project.owner),
@@ -189,16 +202,16 @@ async function discoverConfigs(repoPath: string): Promise<BoardConfigSummary[]> 
           variant: String(config.variant || "full"),
           baseBranch: String(config.base_branch || "main"),
           workerBackend: formatWorkerBackend(config.worker_backend),
-        });
-      }
+        },
+      });
     }
   }
-  return [...found.values()];
+  return [...found.values()].map((entry) => entry.summary);
 }
 
 async function activeConfig(repoPath: string, configs: BoardConfigSummary[]): Promise<BoardConfigSummary | undefined> {
-  for (const base of ["supersaiyan", "super-board"]) {
-    const active = join(repoPath, ".claude", base, "active");
+  for (const root of CONFIG_ROOTS) {
+    const active = join(repoPath, root, "active");
     if (await exists(active)) {
       const slug = (await readFile(active, "utf8")).trim();
       const match = configs.find((config) => config.slug === slug);
@@ -526,8 +539,7 @@ export class RepositoryWatchService {
   watch(repository: RepositoryRecord, onChange: () => void): void {
     if (this.watchers.has(repository.id)) return;
     const targets = [
-      join(repository.path, ".claude", "supersaiyan"),
-      join(repository.path, ".claude", "super-board"),
+      ...CONFIG_ROOTS.map((root) => join(repository.path, root)),
       join(repository.path, "docs", "superpowers"),
       join(repository.path, "docs", "supersaiyan"),
       join(repository.path, "docs", "super-board"),

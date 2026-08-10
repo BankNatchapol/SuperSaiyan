@@ -104,8 +104,8 @@ rm -f /tmp/wave-err.txt
 # ── 4. super-board-run.sh smoke: extends-linked config reaches the wave-lock gate ───────────
 SMOKE_DIR=$(mktemp -d)
 
-mkdir -p "$SMOKE_DIR/.claude/supersaiyan/configs" \
-         "$SMOKE_DIR/.claude/supersaiyan/inflight" \
+mkdir -p "$SMOKE_DIR/.supersaiyan/configs" \
+         "$SMOKE_DIR/.supersaiyan/inflight" \
          "$SMOKE_DIR/docs/supersaiyan/runs" \
          "$SMOKE_DIR/.worktrees" \
          "$SMOKE_DIR/scripts/platforms" \
@@ -118,7 +118,7 @@ chmod +x "$SMOKE_DIR/scripts/super-board-run.sh"
 
 # Base carries the fields that matter for the startup log + gating; the overlay only sets
 # description/worker_backend/extends, proving the dispatcher actually reads through the link.
-cat > "$SMOKE_DIR/.claude/supersaiyan/configs/smoke-base.json" <<'EOF'
+cat > "$SMOKE_DIR/.supersaiyan/configs/smoke-base.json" <<'EOF'
 {
   "variant": "full",
   "base_branch": "develop",
@@ -130,11 +130,11 @@ cat > "$SMOKE_DIR/.claude/supersaiyan/configs/smoke-base.json" <<'EOF'
   "notifications": { "bot_identity": "" }
 }
 EOF
-cat > "$SMOKE_DIR/.claude/supersaiyan/configs/smoke.json" <<'EOF'
+cat > "$SMOKE_DIR/.supersaiyan/configs/smoke.json" <<'EOF'
 { "extends": "smoke-base", "description": "overlay smoke", "worker_backend": "claude-p" }
 EOF
 printf 'SLUG=smoke\nSTARTED=1970-01-01T00:00:00Z\n' \
-  > "$SMOKE_DIR/.claude/supersaiyan/inflight/workflow-wave.lock"
+  > "$SMOKE_DIR/.supersaiyan/inflight/workflow-wave.lock"
 
 set +e
 SMOKE_OUT=$(cd "$SMOKE_DIR" && bash scripts/super-board-run.sh smoke 2>&1)
@@ -147,7 +147,7 @@ echo "$SMOKE_OUT" | grep -q 'super-board run started — config=smoke variant=fu
 
 # Scenario: overlay's extends target is missing entirely — must fail loudly, not silently
 # fall back to workflow-backend defaults.
-cat > "$SMOKE_DIR/.claude/supersaiyan/configs/smoke.json" <<'EOF'
+cat > "$SMOKE_DIR/.supersaiyan/configs/smoke.json" <<'EOF'
 { "extends": "no-such-base", "worker_backend": "claude-p" }
 EOF
 set +e

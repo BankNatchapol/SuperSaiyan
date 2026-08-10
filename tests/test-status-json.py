@@ -19,9 +19,9 @@ STATUS = ROOT / "scripts" / "super-board-status.py"
 def main() -> None:
     with tempfile.TemporaryDirectory() as temp:
         repo = Path(temp)
-        config_dir = repo / ".claude" / "supersaiyan" / "configs"
+        config_dir = repo / ".supersaiyan" / "configs"
         config_dir.mkdir(parents=True)
-        (repo / ".claude" / "supersaiyan" / "active").write_text("demo\n")
+        (repo / ".supersaiyan" / "active").write_text("demo\n")
         (config_dir / "demo.json").write_text(json.dumps({
             "variant": "full",
             "base_branch": "main",
@@ -100,6 +100,7 @@ def main() -> None:
 
     check_worker_backend_resolution()
     check_extends_resolution()
+    check_config_root_fallback()
     print("PASS: test-status-json.py")
 
 
@@ -176,6 +177,48 @@ def check_extends_resolution() -> None:
                 raise AssertionError(f"expected SystemExit for {why} ({name})")
             except SystemExit as exc:
                 assert exc.code == 66, f"{why} ({name}) should exit 66, got {exc.code}"
+
+
+def check_config_root_fallback() -> None:
+    """config_roots()/resolve_config_path() three-tier fallback: .supersaiyan (new) ->
+    .claude/supersaiyan (current-becomes-legacy) -> .claude/super-board (oldest legacy).
+    Mirrors the bash resolver in scripts/super-board-run.sh — see tests/test-config-root-fallback.sh
+    for that side. Both are independent implementations that could silently diverge."""
+    spec = importlib.util.spec_from_file_location("super_board_status", STATUS)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    original_cwd = os.getcwd()
+    try:
+        with tempfile.TemporaryDirectory() as temp:
+            os.chdir(temp)
+
+            # Tier 2 only (.claude/supersaiyan) — must still resolve.
+            (Path(".claude/supersaiyan/configs")).mkdir(parents=True)
+            (Path(".claude/supersaiyan/configs/board.json")).write_text("{}")
+            found = module.resolve_config_path("board")
+            assert found == Path(".claude/supersaiyan/configs/board.json"), found
+
+            # Tier 3 only (.claude/super-board) — must still resolve for a different slug.
+            (Path(".claude/super-board/configs")).mkdir(parents=True)
+            (Path(".claude/super-board/configs/legacyboard.json")).write_text("{}")
+            found = module.resolve_config_path("legacyboard")
+            assert found == Path(".claude/super-board/configs/legacyboard.json"), found
+
+            # Same slug under both the new root and tier 2 — new root must win.
+            (Path(".supersaiyan/configs")).mkdir(parents=True)
+            (Path(".supersaiyan/configs/board.json")).write_text('{"owner": "new"}')
+            found = module.resolve_config_path("board")
+            assert found == Path(".supersaiyan/configs/board.json"), \
+                f"expected the new root to win on collision, got {found}"
+
+            # No slug given: active pointer under the oldest legacy root supplies it.
+            (Path(".claude/super-board/active")).write_text("legacyboard\n")
+            slug = module.resolve_config_slug(["prog"])
+            assert slug == "legacyboard", slug
+    finally:
+        os.chdir(original_cwd)
 
 
 if __name__ == "__main__":

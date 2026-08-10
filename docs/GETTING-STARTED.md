@@ -29,7 +29,7 @@ claude plugin install supersaiyan
 
 **Option B — Direct install into a specific repo**
 
-Use this if you also want the pipeline scripts (`.claude/bin/`) and docs layout dropped into a repo.
+Use this if you also want the pipeline scripts (`.supersaiyan/bin/`) and docs layout dropped into a repo.
 
 ```bash
 git clone https://github.com/BankNatchapol/SuperSaiyan.git
@@ -61,7 +61,7 @@ This will:
 - Verify `git`, `gh`, and Claude are authenticated
 - Create `docs/superpowers/specs/`, `docs/superpowers/tasks/`, and related directories
 - Walk you through creating a **GitHub Project board** (or linking to an existing one)
-- Write a board config to `.claude/super-board/configs/<slug>.json`
+- Write a board config to `.supersaiyan/configs/<slug>.json`
 
 **What's next:** Run `supersaiyan new <feature>` to start your first feature or project.
 

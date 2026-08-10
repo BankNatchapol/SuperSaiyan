@@ -39,10 +39,12 @@ catching drift if you miss one.
 
 Introduce an optional `"extends": "<slug>"` field. A config with `extends` set supplies only
 the fields that differ for that tool (`description`, `worker_backend`, and its own model
-block); everything else is inherited from the base config at `.claude/supersaiyan/configs/<slug>.json`.
+block); everything else is inherited from the base config at `.supersaiyan/configs/<slug>.json`
+(the vendor-neutral config root — see `scripts/super-board-status.py`'s `config_roots()` for
+the full fallback chain, including legacy `.claude/`-prefixed roots).
 
 ```
-.claude/supersaiyan/configs/
+.supersaiyan/configs/
   myboard.json          ← base: project, variant, base_branch, columns, paths,
                            human_approves_merge, truth_gate, rebuild_cap, notifications, ...
   myboard-claude.json   ← { "extends": "myboard", "worker_backend": "workflow" }

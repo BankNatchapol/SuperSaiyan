@@ -73,7 +73,7 @@ fi
 echo
 echo "Installing skills"
 
-mkdir -p "$TARGET/.claude/skills" "$TARGET/.claude/bin" "$TARGET/.claude/workflows"
+mkdir -p "$TARGET/.claude/skills" "$TARGET/.supersaiyan/bin" "$TARGET/.supersaiyan/workflows"
 
 same_path() {
   [ "$(cd "$(dirname "$1")" 2>/dev/null && pwd)/$(basename "$1")" = \
@@ -126,20 +126,20 @@ echo
 echo "Installing pipeline scripts"
 
 if [ -d "$SAIYAN/scripts/platforms" ]; then
-  rm -rf "$TARGET/.claude/bin/platforms"
-  cp -RL "$SAIYAN/scripts/platforms" "$TARGET/.claude/bin/platforms"
+  rm -rf "$TARGET/.supersaiyan/bin/platforms"
+  cp -RL "$SAIYAN/scripts/platforms" "$TARGET/.supersaiyan/bin/platforms"
   # Bash platform contracts are sourced; Python status_adapter is imported by
   # super-board-status.py from this same directory.
-  chmod +x "$TARGET/.claude/bin/platforms/"*.sh 2>/dev/null || true
+  chmod +x "$TARGET/.supersaiyan/bin/platforms/"*.sh 2>/dev/null || true
   ok "platforms/ (git_platform contract + status_adapter.py)"
 else
   fail "scripts/platforms/ not found"
 fi
 
 if [ -d "$SAIYAN/scripts/backends" ]; then
-  rm -rf "$TARGET/.claude/bin/backends"
-  cp -RL "$SAIYAN/scripts/backends" "$TARGET/.claude/bin/backends"
-  chmod +x "$TARGET/.claude/bin/backends/"*.sh
+  rm -rf "$TARGET/.supersaiyan/bin/backends"
+  cp -RL "$SAIYAN/scripts/backends" "$TARGET/.supersaiyan/bin/backends"
+  chmod +x "$TARGET/.supersaiyan/bin/backends/"*.sh
   ok "backends/ (worker_backend contract: claude-p, codex-exec, cursor-agent)"
 else
   fail "scripts/backends/ not found"
@@ -147,7 +147,7 @@ fi
 
 for script in super-board-run.sh super-board-gh-guard.sh super-board-status.py super-board-wave-plan.sh config-resolve.sh tasks-to-issues.sh; do
   src="$SAIYAN/scripts/$script"
-  dst="$TARGET/.claude/bin/$script"
+  dst="$TARGET/.supersaiyan/bin/$script"
   if [ -f "$src" ]; then
     cp "$src" "$dst"
     chmod +x "$dst"
@@ -158,7 +158,7 @@ for script in super-board-run.sh super-board-gh-guard.sh super-board-status.py s
 done
 
 if [ -f "$SAIYAN/scripts/super-board-wave.js" ]; then
-  cp "$SAIYAN/scripts/super-board-wave.js" "$TARGET/.claude/workflows/"
+  cp "$SAIYAN/scripts/super-board-wave.js" "$TARGET/.supersaiyan/workflows/"
   ok "super-board-wave.js"
 else
   fail "scripts/super-board-wave.js not found"
@@ -246,9 +246,9 @@ fi
 
 for path in \
   $SKILL_PATHS \
-  ".claude/bin/super-board-wave-plan.sh" \
-  ".claude/bin/tasks-to-issues.sh" \
-  ".claude/workflows/super-board-wave.js"; do
+  ".supersaiyan/bin/super-board-wave-plan.sh" \
+  ".supersaiyan/bin/tasks-to-issues.sh" \
+  ".supersaiyan/workflows/super-board-wave.js"; do
   if [ -e "$TARGET/$path" ]; then
     ok "$path"
   else

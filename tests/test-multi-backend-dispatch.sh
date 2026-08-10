@@ -126,22 +126,22 @@ SMOKE_DIR=$(mktemp -d)
 setup_smoke() {
   # $1 = config JSON body
   rm -rf "${SMOKE_DIR:?}"/*
-  mkdir -p "$SMOKE_DIR/.claude/supersaiyan/configs" \
-           "$SMOKE_DIR/.claude/supersaiyan/inflight" \
+  mkdir -p "$SMOKE_DIR/.supersaiyan/configs" \
+           "$SMOKE_DIR/.supersaiyan/inflight" \
            "$SMOKE_DIR/docs/supersaiyan/runs" \
            "$SMOKE_DIR/.worktrees" \
            "$SMOKE_DIR/scripts/platforms" \
            "$SMOKE_DIR/scripts/backends"
   # Installed-layout mirror: run.sh beside platforms/ + backends/ (install.sh copies all three
-  # into .claude/bin/). All three backend contracts must be present for a per-lane config.
+  # into .supersaiyan/bin/). All three backend contracts must be present for a per-lane config.
   cp "$RUN_SH" "$SMOKE_DIR/scripts/super-board-run.sh"
   cp "$ROOT/scripts/config-resolve.sh" "$SMOKE_DIR/scripts/config-resolve.sh"
   cp "$ROOT/scripts/platforms/github.sh" "$SMOKE_DIR/scripts/platforms/github.sh"
   cp "$ROOT"/scripts/backends/*.sh "$SMOKE_DIR/scripts/backends/"
   chmod +x "$SMOKE_DIR/scripts/super-board-run.sh"
-  printf '%s' "$1" > "$SMOKE_DIR/.claude/supersaiyan/configs/smoke.json"
+  printf '%s' "$1" > "$SMOKE_DIR/.supersaiyan/configs/smoke.json"
   printf 'SLUG=smoke\nSTARTED=1970-01-01T00:00:00Z\n' \
-    > "$SMOKE_DIR/.claude/supersaiyan/inflight/workflow-wave.lock"
+    > "$SMOKE_DIR/.supersaiyan/inflight/workflow-wave.lock"
 }
 
 run_smoke() {

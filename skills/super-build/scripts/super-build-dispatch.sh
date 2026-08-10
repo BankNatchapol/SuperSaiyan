@@ -51,16 +51,21 @@ SKILL_DIR="${SKILL_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 MAX_TURNS="${MAX_TURNS:-250}"
 WORKER_BACKEND="${WORKER_BACKEND:-claude-p}"
 
-# Backend contract (see .claude/skills/super-board/references/backends.md). Installed layout:
-# .claude/bin/backends/<name>.sh (repo-root-relative, same dir install.sh copies alongside
-# super-board-run.sh). Dev-repo fallback: scripts/backends/<name>.sh relative to this script's
-# own location (skills/super-build/scripts/ -> repo root -> scripts/backends/).
-BACKEND_FILE="$REPO_DIR/.claude/bin/backends/${WORKER_BACKEND}.sh"
+# Backend contract (see .claude/skills/super-board/references/backends.md). Three-tier lookup,
+# repo-root-relative: .supersaiyan/bin/backends/<name>.sh (new installs, install.sh's current
+# copy target) -> .claude/bin/backends/<name>.sh (installs from before the .claude/ -> vendor-
+# neutral migration that haven't re-run install.sh yet) -> scripts/backends/<name>.sh relative
+# to this script's own location (dev-repo fallback: skills/super-build/scripts/ -> repo root ->
+# scripts/backends/).
+BACKEND_FILE="$REPO_DIR/.supersaiyan/bin/backends/${WORKER_BACKEND}.sh"
+if [[ ! -f "$BACKEND_FILE" ]]; then
+  BACKEND_FILE="$REPO_DIR/.claude/bin/backends/${WORKER_BACKEND}.sh"
+fi
 if [[ ! -f "$BACKEND_FILE" ]]; then
   BACKEND_FILE="$SCRIPT_DIR/../../../scripts/backends/${WORKER_BACKEND}.sh"
 fi
 if [[ ! -f "$BACKEND_FILE" ]]; then
-  echo "error: backend contract not found for worker_backend=${WORKER_BACKEND} (looked in .claude/bin/backends/ and scripts/backends/)" >&2
+  echo "error: backend contract not found for worker_backend=${WORKER_BACKEND} (looked in .supersaiyan/bin/backends/, .claude/bin/backends/, and scripts/backends/)" >&2
   exit 64
 fi
 # shellcheck disable=SC1090

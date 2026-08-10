@@ -11,7 +11,7 @@ export const meta = {
 }
 
 // args = {
-//   configPath: '.claude/supersaiyan/configs/<slug>.json',
+//   configPath: '.supersaiyan/configs/<slug>.json',
 //   variant: 'full' | 'qa-only',
 //   cards: [{ number, status, title }],     // output of super-board-wave-plan.sh
 //   humanApprovesMerge: boolean (optional, default false),
