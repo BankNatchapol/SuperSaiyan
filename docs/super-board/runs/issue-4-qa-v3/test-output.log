@@ -1,0 +1,14 @@
+QA v3 — issue #4 — tested commit 80f3edf
+
+PASS: test-tasks-wave-dispatch-platform-rewire.sh
+PASS: test-prepare-platform-rewire.sh
+PASS: test-supersaiyan-prepare.sh (9 scenarios)
+PASS: test-platform-contract.sh (31 contract functions defined)
+PASS: test-backend-contract.sh (all 3 backends, 6 functions each)
+PASS: test-build-safety-contract.sh
+PASS: test-run-platform-rewire.sh
+PASS: bash -n on all changed shell files
+PASS: git diff --check origin/main...HEAD
+
+Exact combined command:
+bash tests/test-tasks-wave-dispatch-platform-rewire.sh && bash tests/test-prepare-platform-rewire.sh && bash tests/test-supersaiyan-prepare.sh && bash tests/test-platform-contract.sh && bash tests/test-backend-contract.sh && bash tests/test-build-safety-contract.sh && bash tests/test-run-platform-rewire.sh && bash -n scripts/platforms/github.sh scripts/super-board-wave-plan.sh scripts/tasks-to-issues.sh skills/super-build/scripts/super-build-dispatch.sh skills/supersaiyan/scripts/prepare.sh tests/test-prepare-platform-rewire.sh tests/test-supersaiyan-prepare.sh tests/test-tasks-wave-dispatch-platform-rewire.sh && git diff --check origin/main...HEAD

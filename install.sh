@@ -174,7 +174,7 @@ else
   fail "scripts/backends/ not found"
 fi
 
-for script in super-board-run.sh super-board-gh-guard.sh super-board-status.py super-board-wave-plan.sh config-resolve.sh tasks-to-issues.sh; do
+for script in super-board-run.sh super-board-gh-guard.sh super-board-status.py super-board-wave-plan.sh config-resolve.sh platform-config.sh tasks-to-issues.sh; do
   src="$SAIYAN/scripts/$script"
   dst="$TARGET/.supersaiyan/bin/$script"
   if [ -f "$src" ]; then
@@ -299,6 +299,7 @@ for path in \
   $SKILL_PATHS \
   ".supersaiyan/bin/super-board-wave-plan.sh" \
   ".supersaiyan/bin/tasks-to-issues.sh" \
+  ".supersaiyan/bin/platform-config.sh" \
   ".supersaiyan/workflows/super-board-wave.js"; do
   if [ -e "$TARGET/$path" ]; then
     ok "$path"

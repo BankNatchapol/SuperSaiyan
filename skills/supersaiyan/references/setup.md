@@ -29,9 +29,10 @@ Then ask if they want a GitHub remote: `gh repo create --public --source=. --pus
 
 **If `gh` not authenticated:** Run `gh auth login` interactively, then:
 ```bash
-gh auth refresh -s project,read:project,repo
+gh auth refresh -s repo,project
 ```
-Verify: `gh auth status` shows `project`, `read:project`, `repo` scopes.
+Verify: `gh auth status` shows `repo` and `project` scopes. The `project` scope includes Project
+read and write access, so `read:project` is not separately required.
 
 **If `claude` missing:** "Install Claude Code from https://claude.ai/code then rerun setup."
 

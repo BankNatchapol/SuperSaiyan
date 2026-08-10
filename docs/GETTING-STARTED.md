@@ -220,7 +220,7 @@ docs/superpowers/projects/<slug>/
 | Symptom | Fix |
 |---------|-----|
 | `command not found: claude` | Install from [claude.ai/code](https://claude.ai/code) |
-| `gh auth` errors | `gh auth login` then `gh auth refresh -s project,read:project,repo` |
+| `gh auth` errors | `gh auth login` then `gh auth refresh -s repo,project` |
 | "No config" on run | Run `/supersaiyan setup` first |
 | Card stuck in **Blocked** | Read issue comments — usually a merge conflict. Run `/supersaiyan stop`, fix the branch, then resume |
 | QA keeps failing | Read QA comment on the issue; adjust acceptance criteria with `/supersaiyan lint` |

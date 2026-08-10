@@ -91,8 +91,14 @@ mirroring the existing `tests/test-backend-contract.sh`.
 
 | Function | GitHub | GitLab |
 |---|---|---|
-| `platform_auth_check` | `gh auth status` + scope check (`project`,`read:project`,`repo`) | `glab auth status` + scope check (`api`,`write_repository`) |
+| `platform_auth_check issue|board` | `issue` requires `repo` scope plus access to the target repository; `board` additionally requires `project` | `issue` requires repository API access; `board` additionally requires board-write capability (`api`,`write_repository`) |
 | `platform_bot_identity_resolve` | GitHub App install vs. personal login | Project/Group Access Token → auto-created bot user (`project_<id>_bot_<random>`) vs. personal token |
+
+The auth argument is an operation-level requirement, not a platform selection signal.
+No argument defaults to `issue` for backward compatibility. Standalone issue creation passes
+`issue`; board enqueue/reconciliation passes `board` and fails before mutation when the required
+capability is absent. GitHub's `project` OAuth scope includes Project read and write access, so a
+separate `read:project` scope is not required alongside it.
 
 **Group B — Rate limit / quota**
 
@@ -152,10 +158,40 @@ plus the one addition above given documented flakiness of concurrent label/assig
 | Function | GitHub | GitLab |
 |---|---|---|
 | `platform_issue_create` | `gh issue create --title --body-file` | `glab issue create --title "<t>" --description-file <f>` |
-| `platform_issue_view` | `gh issue view N --json <fields>` | `glab api "projects/:id/issues/:iid"` (raw REST, for the same machine-parsing reason `super-board-status.py` already prefers raw GraphQL over `gh project item-list`'s formatted output) |
+| `platform_issue_view <issue>` → normalized `{number,title,body,labels:string[],state}` with `state` in `OPEN|CLOSED` | `gh issue view N --json number,title,body,labels,state`, projecting label objects to their names | `glab api "projects/:id/issues/:iid"` followed inside the adapter by normalization from `iid`/`description`/lowercase `state` (raw REST is still the source, for the same machine-parsing reason `super-board-status.py` already prefers raw GraphQL over `gh project item-list`'s formatted output) |
 | `platform_issue_comment` | `gh issue comment N --body` | `glab issue note <iid> -m "<body>"` (GitLab calls comments "notes") |
 | `platform_issue_close` | `gh issue close N --comment "<c>"` | `glab issue close <iid> --note "<c>"` — clean 1:1 |
 | `platform_issue_edit_labels` | `gh issue edit N --add-label a,b --remove-label c` | `glab issue update <iid> --label "a,b" --unlabel "c"` |
+
+For callers whose public signature is only `platform_issue_view <issue>`, the
+selected adapter receives the project context through the exported
+`PLATFORM_CONFIG_PATH` environment variable. It points to the same config file
+used to select the adapter; adapters must resolve forge-specific project
+coordinates from that file and still return the normalized shape above.
+
+`platform_issue_view` has normalized exits as well as normalized JSON: `0` means found, `44`
+means a confirmed 404/not-found response, `69` means authentication or permission failure, and
+`70` means network/API failure or malformed output. A caller may treat an issue as deleted only
+after `44`; all other failures must preserve local state.
+
+### Issue #4 delivery contract
+
+The task, issue, PR, and QA evidence use these same seven acceptance criteria:
+
+1. **AC1 — Adapter-specific Ready enqueue:** explicit board filing resolves forge-specific Ready
+   metadata and uses `platform_card_status_set --add`.
+2. **AC2 — Platform board snapshot:** wave planning uses `platform_board_snapshot` without
+   changing dependency parsing.
+3. **AC3 — Normalized issue view:** dispatch and prepare consume normalized issue JSON with the
+   selected config exported as context.
+4. **AC4 — Prepare regression coverage:** all existing nine prepare scenarios pass.
+5. **AC5 — Explicit board intent:** direct task filing is issue-only by default; only `--board`
+   enables board authentication and enqueue, and prepare supplies it.
+6. **AC6 — Strict shared config resolution:** task filing, dispatch, and prepare share one
+   Bash 3.2-compatible resolver and reject stale, ambiguous, missing, unsupported, or conflicting
+   selections before adapter use.
+7. **AC7 — Auth and lookup safety:** issue/board capabilities are checked explicitly, lookup
+   exits are normalized, and issue-map deletion occurs only after confirmed not-found.
 
 **Group G — MR/PR CRUD**
 
@@ -261,11 +297,17 @@ a nested `project.gitlab{}` sub-object — see Open Judgment Call 8 for the alte
   `status::` label-projection rule must not be reimplemented independently from the bash
   version (see Open Judgment Call 4) — recommend the Python adapter shells out to a small
   bash helper for just that one derivation.
-- `scripts/tasks-to-issues.sh`: swap `gh project view`/`field-list`/`item-add`/`item-edit
+- `scripts/tasks-to-issues.sh`: default to issue-only filing; `--board` swaps the former inline
+  `gh project view`/`field-list`/`item-add`/`item-edit
   --single-select-option-id` (resolve Project GraphQL ID, find Status field + Ready option,
-  add item, set status) for `platform_label_ensure` (resolve `status::ready` label id) +
-  `platform_card_status_set`'s add-only case — GitLab has no separate "add item to project"
-  step since an issue is "on the board" the instant it exists.
+  add item, set status) for the adapter's logical Ready enqueue plus
+  `platform_card_status_set`'s add-only case. GitHub resolves Project Status metadata through
+  `platform_board_ensure`; GitLab resolves the `status::ready` label through
+  `platform_label_ensure`, and has no separate "add item to project" step since an issue is "on
+  the board" the instant it exists.
+- `scripts/platform-config.sh`: resolve explicit config, `PLATFORM_CONFIG_PATH`, active pointer,
+  sole config, or GitHub default in that order; reject config/`GIT_PLATFORM` conflicts and
+  unsupported platforms before any adapter is sourced.
 - `scripts/super-board-wave-plan.sh`: same board-snapshot swap as `super-board-run.sh`; the
   `Depends on: #N` jq parsing needs zero changes if `platform_board_snapshot`'s output shape
   genuinely matches today's `.content.*`/`.status` fields.

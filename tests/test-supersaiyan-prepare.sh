@@ -56,6 +56,7 @@ feature="$1"
 dir="docs/superpowers/tasks/$feature"
 map="$dir/.issue-map.json"
 state="${FAKE_GH_STATE:?}"
+echo "HELPER_ARGS $*" >> "$state/log"
 [ -f "$map" ] || printf '{}\n' > "$map"
 for file in "$dir"/*.md; do
   stem=$(basename "$file" .md)
@@ -75,6 +76,15 @@ EOF
   chmod +x "$app/.supersaiyan/bin/tasks-to-issues.sh"
 }
 
+install_real_helper() {
+  local app="$1"
+  mkdir -p "$app/.claude/bin/platforms"
+  cp "$ROOT/scripts/tasks-to-issues.sh" "$app/.claude/bin/tasks-to-issues.sh"
+  cp "$ROOT/scripts/platform-config.sh" "$app/.claude/bin/platform-config.sh"
+  cp "$ROOT/scripts/platforms/github.sh" "$app/.claude/bin/platforms/github.sh"
+  chmod +x "$app/.claude/bin/tasks-to-issues.sh"
+}
+
 install_fake_gh() {
   local bin="$1"
   cat > "$bin/gh" <<'EOF'
@@ -83,14 +93,27 @@ set -euo pipefail
 state="${FAKE_GH_STATE:?}"
 cmd="${1:-}"; sub="${2:-}"
 
-if [ "$cmd $sub" = "auth status" ]; then exit 0; fi
-if [ "$cmd $sub" = "repo view" ]; then echo "owner/repo"; exit 0; fi
+if [ "$cmd $sub" = "auth status" ]; then
+  case "$*" in
+    *"--json hosts"*)
+      echo '{"hosts":{"github.com":[{"active":true,"host":"github.com","login":"octocat","scopes":"gist, project, read:org, repo"}]}}'
+      ;;
+  esac
+  exit 0
+fi
+if [ "$cmd $sub" = "repo view" ]; then echo "https://github.com/owner/repo"; exit 0; fi
 
 if [ "$cmd $sub" = "issue view" ]; then
   number="$3"
   file="$state/issues/$number"
-  [ -f "$file" ] || { echo "issue not found" >&2; exit 1; }
+  [ -f "$file" ] || { echo "HTTP 404: Not Found" >&2; exit 1; }
   issue_state=$(sed -n '1p' "$file")
+  case "$issue_state" in
+    ERROR_401) echo "HTTP 401: Bad credentials" >&2; exit 1 ;;
+    ERROR_403) echo "HTTP 403: Resource not accessible" >&2; exit 1 ;;
+    ERROR_NETWORK) echo "failed to connect to github.com" >&2; exit 1 ;;
+    ERROR_MALFORMED) echo '{not-json'; exit 0 ;;
+  esac
   url=$(sed -n '2p' "$file")
   body=$(sed -n '3,$p' "$file")
   args="$*"
@@ -99,8 +122,8 @@ if [ "$cmd $sub" = "issue view" ]; then
     *"--jq .body"*) echo "$body" ;;
     *"--json state,url"*) jq -n --arg state "$issue_state" --arg url "$url" \
       '{state:$state,url:$url}' ;;
-    *) jq -n --argjson number "$number" --arg state "$issue_state" --arg url "$url" \
-      '{number:$number,state:$state,url:$url}' ;;
+    *) jq -n --argjson number "$number" --arg state "$issue_state" --arg body "$body" \
+      '{number:$number,title:("Issue " + ($number | tostring)),body:$body,labels:[],state:$state}' ;;
   esac
   exit 0
 fi
@@ -241,12 +264,15 @@ out=$(run_prepare)
 echo "$out" | grep -q 'created=2' || fail "fresh run did not create two issues"
 [ "$(grep -c '^CREATE ' "$STATE/log")" -eq 2 ] || fail "wrong create count"
 [ "$(grep -c '^ITEM_ADD ' "$STATE/log")" -eq 2 ] || fail "wrong item-add count"
+grep -q '^HELPER_ARGS demo --board --config ' "$STATE/log" ||
+  fail "prepare did not request explicit board enqueue from tasks-to-issues"
 out=$(run_prepare)
 echo "$out" | grep -q 'created=0' || fail "repeat run created issues"
 [ "$(grep -c '^CREATE ' "$STATE/log")" -eq 2 ] || fail "repeat was not idempotent"
 [ "$(grep -c '^ITEM_ADD ' "$STATE/log")" -eq 2 ] || fail "repeat re-added cards"
 
-# 7. Confirmed-deleted mappings are repaired.
+# 7. Only confirmed-deleted mappings are repaired; other lookup failures
+# abort and preserve the map.
 new_fixture stale
 cat > "$APP/docs/superpowers/tasks/demo/.issue-map.json" <<'EOF'
 {"01-first":{"number":50,"url":"https://github.com/owner/repo/issues/50","order":1}}
@@ -256,24 +282,49 @@ echo "$out" | grep -q 'repaired=1' || fail "stale mapping was not repaired"
 [ "$(jq -r '."01-first".number' "$APP/docs/superpowers/tasks/demo/.issue-map.json")" != 50 ] ||
   fail "stale issue number remains mapped"
 
-# 8. Backlog generated cards move to Ready; active/final/manual cards are preserved.
+for lookup_failure in ERROR_401 ERROR_403 ERROR_NETWORK ERROR_MALFORMED; do
+  new_fixture "lookup-$lookup_failure"
+  cat > "$APP/docs/superpowers/tasks/demo/.issue-map.json" <<'EOF'
+{"01-first":{"number":50,"url":"https://github.com/owner/repo/issues/50","order":1}}
+EOF
+  printf '%s\nhttps://github.com/owner/repo/issues/50\nBody\n' "$lookup_failure" \
+    > "$STATE/issues/50"
+  case "$lookup_failure" in
+    ERROR_401|ERROR_403) expected_lookup_rc=69 ;;
+    *) expected_lookup_rc=70 ;;
+  esac
+  run_expect "$expected_lookup_rc" run_prepare
+  [ "$(jq -r '."01-first".number' "$APP/docs/superpowers/tasks/demo/.issue-map.json")" = 50 ] ||
+    fail "$lookup_failure removed a mapped issue without a confirmed 404"
+done
+
+# 8. The real filing helper moves only OPEN mapped issues in this repository.
+# CLOSED mapped issues remain untouched whether they are in Backlog or absent,
+# and an issue with the same number from another repository cannot mask the
+# target card's status in a shared Project.
 new_fixture statuses
 write_task "$APP/docs/superpowers/tasks/demo/03-closed.md" "Closed task" 3 02-second
-git -C "$APP" add docs/superpowers/tasks/demo/03-closed.md
+write_task "$APP/docs/superpowers/tasks/demo/04-closed-absent.md" "Closed absent task" 4 03-closed
+install_real_helper "$APP"
+git -C "$APP" add docs/superpowers/tasks/demo/03-closed.md \
+  docs/superpowers/tasks/demo/04-closed-absent.md .claude/bin
 git -C "$APP" commit -m closed-task >/dev/null
 git -C "$APP" push >/dev/null
 cat > "$APP/docs/superpowers/tasks/demo/.issue-map.json" <<'EOF'
 {
   "01-first":{"number":10,"url":"https://github.com/owner/repo/issues/10","order":1},
   "02-second":{"number":11,"url":"https://github.com/owner/repo/issues/11","order":2},
-  "03-closed":{"number":12,"url":"https://github.com/owner/repo/issues/12","order":3}
+  "03-closed":{"number":12,"url":"https://github.com/owner/repo/issues/12","order":3},
+  "04-closed-absent":{"number":13,"url":"https://github.com/owner/repo/issues/13","order":4}
 }
 EOF
 printf 'OPEN\nhttps://github.com/owner/repo/issues/10\nBody\n' > "$STATE/issues/10"
 printf 'OPEN\nhttps://github.com/owner/repo/issues/11\n- Depends on: #10\n' > "$STATE/issues/11"
 printf 'CLOSED\nhttps://github.com/owner/repo/issues/12\n- Depends on: #11\n' > "$STATE/issues/12"
+printf 'CLOSED\nhttps://github.com/owner/repo/issues/13\n- Depends on: #12\n' > "$STATE/issues/13"
 cat > "$STATE/items.json" <<'EOF'
 [
+  {"id":"OTHER_ITEM_10","status":"Ready","content":{"type":"Issue","repository":"other/repo","number":10,"url":"https://github.com/other/repo/issues/10"}},
   {"id":"ITEM_10","status":"Backlog","content":{"type":"Issue","repository":"owner/repo","number":10,"url":"https://github.com/owner/repo/issues/10"}},
   {"id":"ITEM_11","status":"Building","content":{"type":"Issue","repository":"owner/repo","number":11,"url":"https://github.com/owner/repo/issues/11"}},
   {"id":"ITEM_12","status":"Backlog","content":{"type":"Issue","repository":"owner/repo","number":12,"url":"https://github.com/owner/repo/issues/12"}},
@@ -287,6 +338,10 @@ run_prepare >/dev/null
   fail "active generated card was changed"
 [ "$(jq -r '.[] | select(.id=="ITEM_12") | .status' "$STATE/items.json")" = Backlog ] ||
   fail "closed generated card was changed"
+[ "$(jq '[.[] | select(.content.url=="https://github.com/owner/repo/issues/13")] | length' "$STATE/items.json")" -eq 0 ] ||
+  fail "closed mapped issue absent from the board was re-enqueued"
+[ "$(jq -r '.[] | select(.id=="OTHER_ITEM_10") | .status' "$STATE/items.json")" = Ready ] ||
+  fail "same-number card from another repository was changed"
 [ "$(jq -r '.[] | select(.id=="ITEM_99") | .status' "$STATE/items.json")" = Backlog ] ||
   fail "manual card was changed"
 

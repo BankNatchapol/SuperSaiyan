@@ -289,7 +289,7 @@ waits for each prerequisite card to reach Done.
 | `subagent-driven-development` | No | Executes plan | N/A | No |
 | **`writing-board-tasks`** skill | No | **Re-decomposes plan** | **One .md per board task** | No |
 | **`split-plan-to-tasks.sh`** | No | **Mechanical `### Task` split (stubs)** | One .md per plan task | No |
-| **`tasks-to-issues.sh`** | **Yes** (`gh issue create`) | **From task .md files** | **Yes** | **Optional** (`GH_PROJECT_*`) |
+| **`tasks-to-issues.sh`** | **Yes** (`platform_issue_create`) | **From task .md files** | **Yes** | **Optional, explicit** (`--board`) |
 | gstack `/spec` | **Yes** (`gh issue create`) | No | 1 (today) | No |
 | gstack `/spec --epic` | Planned | No | **Epic + children** | No |
 | Claude draft + `gh issue create` | You publish | **Yes** (prompt) | You decide | Manual |

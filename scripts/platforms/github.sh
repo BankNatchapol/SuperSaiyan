@@ -1,28 +1,62 @@
 #!/usr/bin/env bash
 # scripts/platforms/github.sh — Platform interface for git_platform "github".
 # Sourced (not executed) by dispatcher/helpers once tasks 03–04 rewire call sites.
-# Thin wrappers around today's literal `gh` commands — zero behavior change.
+# Thin wrappers around today's literal `gh` commands. Board reads preserve the
+# normalized output shape while propagating command failures to callers.
 # Contract: docs/superpowers/specs/gitlab-integration-design.md § Platform interface.
 
 # ───────────────────────────── Group A — Auth & identity ─────────────────────────────
 
 platform_auth_check() {
-  # gh auth status + scope check (project, read:project, repo).
+  # Modes: issue (default) requires repo scope and target-repository access;
+  # board additionally requires Project read/write scope.
+  local mode="${1:-issue}"
+  case "$mode" in
+    issue|board) ;;
+    *)
+      echo "platform_auth_check: unknown auth mode '$mode'" >&2
+      return 64
+      ;;
+  esac
   command -v gh >/dev/null 2>&1 || {
     echo "gh CLI not found on PATH — install: https://cli.github.com" >&2
     return 1
   }
-  gh auth status >/dev/null 2>&1 || {
-    echo "gh not authenticated — run: gh auth login" >&2
+  local repo_url target_host auth_json scopes
+  repo_url=$(gh repo view --json url --jq '.url' 2>/dev/null) || {
+    if ! gh auth status >/dev/null 2>&1; then
+      echo "gh not authenticated — run: gh auth login" >&2
+    else
+      echo "GitHub token cannot access the target repository" >&2
+    fi
     return 1
   }
-  local scopes
-  scopes=$(gh auth status --active --json hosts --jq \
-    '.hosts | add | map(select(.active == true))[0].scopes // ""' 2>/dev/null || true)
-  case ",${scopes// /}," in
+  target_host=$(printf '%s' "$repo_url" | sed -E 's#^[a-zA-Z]+://([^/@]+@)?([^/:]+).*#\2#')
+  if [ -z "$target_host" ] || [ "$target_host" = "$repo_url" ]; then
+    echo "could not resolve target GitHub host from repository URL: $repo_url" >&2
+    return 1
+  fi
+  auth_json=$(gh auth status --hostname "$target_host" --active --json hosts 2>/dev/null) || {
+    echo "could not inspect GitHub authentication for target host: $target_host" >&2
+    return 1
+  }
+  scopes=$(printf '%s' "$auth_json" | jq -er --arg host "$target_host" \
+    '.hosts[$host] | map(select(.active == true))[0].scopes // ""' 2>/dev/null) || {
+    echo "could not parse GitHub authentication scopes" >&2
+    return 1
+  }
+  case ",${scopes// /,}," in
+    *,repo,*) ;;
+    *)
+      echo "GitHub repository scope missing; run: gh auth refresh -s repo" >&2
+      return 1
+      ;;
+  esac
+  [ "$mode" = board ] || return 0
+  case ",${scopes// /,}," in
     *,project,*) ;;
     *)
-      echo "GitHub Project write scope missing; run: gh auth refresh -s project,read:project,repo" >&2
+      echo "GitHub Project write scope missing; run: gh auth refresh -s repo,project" >&2
       return 1
       ;;
   esac
@@ -93,10 +127,16 @@ platform_rate_guard() {
 # ───────────────────────────── Group C — Board read ─────────────────────────────
 
 platform_board_snapshot() {
-  # $1 = project number, $2 = owner. Emits gh project item-list JSON
-  # (status already present as single-select field value).
-  local number="$1" owner="$2"
-  gh project item-list "$number" --owner "$owner" --format json --limit 500 2>/dev/null || echo '{"items":[]}'
+  # Usage A: <project-number> <owner> (dispatcher compatibility).
+  # Usage B: <config-path> (prepare/tasks-to-issues logical context).
+  local number owner
+  if [ -f "${1:-}" ]; then
+    number=$(jq -r '.project.number // empty' "$1")
+    owner=$(jq -r '.project.owner // "@me"' "$1")
+  else
+    number="$1" owner="$2"
+  fi
+  gh project item-list "$number" --owner "$owner" --format json --limit 500
 }
 
 platform_column_count() {
@@ -126,10 +166,54 @@ platform_top_unclaimed_card() {
 # ───────────────────────────── Group D — Board write / move-card ─────────────────────────────
 
 platform_card_status_set() {
-  # GitHub ProjectV2 single-select write. Args match today's gh project item-edit:
-  # $1 = item_id, $2 = project_id, $3 = field_id, $4 = single-select-option-id.
-  # (Logical <issue> <target-status> is resolved to these IDs by the caller /
-  # tasks-to-issues load_project_ready_metadata — same as today.)
+  # GitHub ProjectV2 single-select write.
+  # Usage A (existing): <item_id> <project_id> <field_id> <option_id>
+  # Usage B (add-only — tasks-to-issues Ready enqueue):
+  #   --add <config-path> <issue_url> <target-status>
+  #   → resolves board metadata inside this adapter, then adds and moves the item.
+  if [ "${1:-}" = "--add" ]; then
+    shift
+    # Keep the pre-adapter add-only signature source-compatible for installed
+    # callers that still pass resolved GitHub IDs.
+    if [ "$#" -ge 6 ]; then
+      local legacy_number="$1" legacy_owner="$2" legacy_url="$3"
+      local legacy_project_id="$4" legacy_field_id="$5" legacy_option_id="$6"
+      local legacy_item_id
+      legacy_item_id=$(gh project item-add "$legacy_number" --owner "$legacy_owner" \
+        --url "$legacy_url" --format json --jq '.id')
+      gh project item-edit --id "$legacy_item_id" --project-id "$legacy_project_id" \
+        --field-id "$legacy_field_id" --single-select-option-id "$legacy_option_id" >/dev/null
+      echo "$legacy_item_id"
+      return 0
+    fi
+    local config_path="$1" url="$2" target_status="$3"
+    local number owner metadata project_id field_id option_id item_id existing_id snapshot
+    if [ -n "$config_path" ] && [ -f "$config_path" ]; then
+      number=$(jq -r '.project.number // empty' "$config_path")
+      owner=$(jq -r '.project.owner // "@me"' "$config_path")
+    else
+      number="${GH_PROJECT_NUMBER:-}"
+      owner="${GH_PROJECT_OWNER:-@me}"
+    fi
+    [ -n "$number" ] || { echo "GitHub Project number is required for Ready enqueue" >&2; return 64; }
+    metadata=$(platform_board_ensure "$number" "$owner" "$target_status") || return
+    project_id=$(printf '%s\n' "$metadata" | sed -n '1p')
+    field_id=$(printf '%s\n' "$metadata" | sed -n '2p')
+    option_id=$(printf '%s\n' "$metadata" | sed -n '3p')
+    snapshot=$(platform_board_snapshot "$number" "$owner")
+    existing_id=$(printf '%s' "$snapshot" | jq -r --arg url "$url" \
+      '.items[] | select(.content.url == $url) | .id' | head -1)
+    if [ -n "$existing_id" ]; then
+      item_id="$existing_id"
+    else
+      item_id=$(gh project item-add "$number" --owner "$owner" \
+        --url "$url" --format json --jq '.id')
+    fi
+    gh project item-edit --id "$item_id" --project-id "$project_id" \
+      --field-id "$field_id" --single-select-option-id "$option_id" >/dev/null
+    echo "$item_id"
+    return 0
+  fi
   local item_id="$1" project_id="$2" field_id="$3" option_id="$4"
   gh project item-edit --id "$item_id" --project-id "$project_id" \
     --field-id "$field_id" --single-select-option-id "$option_id"
@@ -165,10 +249,43 @@ platform_issue_create() {
 }
 
 platform_issue_view() {
-  # $1 = issue number, remaining args forwarded (e.g. --json fields).
-  local issue="$1"
-  shift
-  gh issue view "$issue" "$@"
+  # $1 = issue number. Emits the platform-neutral issue shape consumed by
+  # prepare/dispatch: {number,title,body,labels:string[],state}, with state OPEN/CLOSED.
+  # PLATFORM_CONFIG_PATH is available for adapters that need project context;
+  # GitHub's issue endpoint does not need it.
+  local issue="$1" output normalized
+  if output=$(gh issue view "$issue" --json number,title,body,labels,state 2>&1); then
+    if ! normalized=$(printf '%s' "$output" | jq -ce \
+      'if type == "object" and
+          (.number | type == "number") and
+          (.title | type == "string") and
+          (.body | type == "string") and
+          (.labels | type == "array") and
+          (.state == "OPEN" or .state == "CLOSED")
+       then
+         .labels |= map(
+           if type == "string" then .
+           elif type == "object" and (.name | type == "string") then .name
+           else error("invalid label element")
+           end
+         )
+       else error("invalid issue shape")
+       end' 2>/dev/null); then
+      echo "GitHub issue response was malformed" >&2
+      return 70
+    fi
+    printf '%s\n' "$normalized"
+    return 0
+  fi
+
+  printf '%s\n' "$output" >&2
+  case "$output" in
+    *"HTTP 404"*|*"404 Not Found"*|*"Could not resolve to an issue"*|*"Could not resolve to an Issue"*) return 44 ;;
+    *"HTTP 401"*|*"HTTP 403"*|*"Bad credentials"*|*"Resource not accessible"*|*"Forbidden"*)
+      return 69
+      ;;
+    *) return 70 ;;
+  esac
 }
 
 platform_issue_comment() {
@@ -337,8 +454,8 @@ platform_label_ensure() {
 platform_board_ensure() {
   # Validate Status field options for a GitHub Project.
   # $1 = project number, $2 = owner, remaining args = required option names.
-  # Fails (exit 65) if Status field or any required option is missing — same
-  # gate as tasks-to-issues.sh load_project_ready_metadata.
+  # Fails (exit 65) if Status field or any required option is missing — the
+  # adapter-level gate used by logical Ready enqueue operations.
   local number="$1" owner="$2"
   shift 2
   local fields status_id missing="" opt
@@ -360,6 +477,11 @@ platform_board_ensure() {
     echo "Project ${owner}#${number} Status field missing options:$missing" >&2
     return 65
   fi
-  # Echo project_id + status field id for callers that need them next.
+  # Echo project_id, status field id, then one option id per required option name
+  # (so tasks-to-issues can resolve Ready without a second field-list round-trip).
   printf '%s\n%s\n' "$project_id" "$status_id"
+  for opt in "$@"; do
+    echo "$fields" | jq -r --arg n "$opt" \
+      '.fields[] | select(.name == "Status") | .options[] | select(.name == $n) | .id' | head -1
+  done
 }

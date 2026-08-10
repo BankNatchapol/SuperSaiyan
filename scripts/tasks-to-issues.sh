@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# tasks-to-issues.sh — create one GitHub issue per task markdown file.
+# tasks-to-issues.sh — create one platform issue per task markdown file.
 #
-# Run from your APP REPO root (git remote = target repo). Requires gh auth.
+# Run from your APP REPO root (git remote = target repo). Requires the selected
+# platform CLI to be authenticated.
 #
 # Usage (run from the app repo):
-#   tasks-to-issues.sh <feature-slug> [--dry-run] [--force]
-#   tasks-to-issues.sh <task-folder> [--dry-run] [--force]
-#   tasks-to-issues.sh <task-file.md> [--dry-run] [--force]
+#   tasks-to-issues.sh <feature-slug> [--config path] [--board] [--dry-run] [--force]
+#   tasks-to-issues.sh <task-folder> [--config path] [--board] [--dry-run] [--force]
+#   tasks-to-issues.sh <task-file.md> [--config path] [--board] [--dry-run] [--force]
 #
 # Env (optional):
-#   GH_PROJECT_OWNER=@me   GH_PROJECT_NUMBER=3   → add generated issues to Project Ready
+#   GH_PROJECT_OWNER=@me   GH_PROJECT_NUMBER=3   → legacy context used with --board
+#   PLATFORM_CONFIG_PATH=...                    → platform config path
 #   TASKS_DIR=docs/superpowers/tasks
 #
 # A slug resolves to docs/superpowers/tasks/<feature-slug>/.
@@ -21,24 +23,26 @@ set -euo pipefail
 SOURCE="${1:-}"
 DRY_RUN=false
 FORCE=false
+BOARD=false
+CLI_CONFIG_PATH=""
 
 shift || true
-for arg in "$@"; do
-  case "$arg" in
-    --dry-run) DRY_RUN=true ;;
-    --force) FORCE=true ;;
-    *) echo "Unknown flag: $arg" >&2; exit 64 ;;
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY_RUN=true; shift ;;
+    --force) FORCE=true; shift ;;
+    --board) BOARD=true; shift ;;
+    --config)
+      [ $# -ge 2 ] || { echo "--config requires a path" >&2; exit 64; }
+      CLI_CONFIG_PATH="$2"; shift 2 ;;
+    --config=*) CLI_CONFIG_PATH="${1#--config=}"; shift ;;
+    *) echo "Unknown flag: $1" >&2; exit 64 ;;
   esac
 done
 
 if [ -z "$SOURCE" ]; then
-  echo "Usage: $0 <feature-slug|task-folder|task-file.md> [--dry-run] [--force]" >&2
+  echo "Usage: $0 <feature-slug|task-folder|task-file.md> [--config path] [--board] [--dry-run] [--force]" >&2
   exit 64
-fi
-
-if ! command -v gh >/dev/null 2>&1; then
-  echo "gh CLI required" >&2
-  exit 69
 fi
 
 if ! command -v jq >/dev/null 2>&1; then
@@ -46,10 +50,37 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 69
 fi
 
-if ! gh auth status >/dev/null 2>&1; then
-  echo "gh not authenticated — run: gh auth login" >&2
-  exit 69
+# Platform contract: scripts/platforms/<name>.sh in this repo, .supersaiyan/bin/platforms/
+# once installed (install.sh copies platforms/ alongside this script).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_RESOLVER="$SCRIPT_DIR/platform-config.sh"
+[ -f "$CONFIG_RESOLVER" ] || {
+  echo "platform config resolver not found: $CONFIG_RESOLVER" >&2
+  exit 66
+}
+# shellcheck disable=SC1090
+source "$CONFIG_RESOLVER"
+CONFIG_PATH=$(platform_config_resolve "$PWD" "$CLI_CONFIG_PATH") || exit $?
+GIT_PLATFORM=$(platform_config_resolve_platform "$CONFIG_PATH" "${GIT_PLATFORM:-}") || exit $?
+PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
+if [ ! -f "$PLATFORM_FILE" ]; then
+  echo "platform contract not found: $PLATFORM_FILE (git_platform=${GIT_PLATFORM})" >&2
+  exit 77
 fi
+# shellcheck disable=SC1090
+source "$PLATFORM_FILE"
+
+export PLATFORM_CONFIG_PATH="$CONFIG_PATH"
+if [ "$BOARD" = true ] && [ -z "$CONFIG_PATH" ] && [ -z "${GH_PROJECT_NUMBER:-}" ]; then
+  echo "--board requires --config, PLATFORM_CONFIG_PATH, an onboarded config, or GH_PROJECT_NUMBER" >&2
+  exit 64
+fi
+AUTH_MODE=issue
+[ "$BOARD" = true ] && AUTH_MODE=board
+platform_auth_check "$AUTH_MODE" || {
+  echo "${GIT_PLATFORM} platform authentication check failed (${AUTH_MODE} access required)" >&2
+  exit 69
+}
 
 TASKS_DIR="${TASKS_DIR:-docs/superpowers/tasks}"
 SINGLE_FILE=""
@@ -176,26 +207,6 @@ fi
 
 CREATED=0
 SKIPPED=0
-PROJECT_ID=""
-STATUS_FIELD_ID=""
-READY_OPTION_ID=""
-
-load_project_ready_metadata() {
-  local owner="$1" number="$2" fields
-
-  [ -n "$PROJECT_ID" ] && return
-
-  PROJECT_ID=$(gh project view "$number" --owner "$owner" --format json --jq '.id')
-  fields=$(gh project field-list "$number" --owner "$owner" --format json)
-  STATUS_FIELD_ID=$(echo "$fields" | jq -r '.fields[] | select(.name == "Status") | .id' | head -1)
-  READY_OPTION_ID=$(echo "$fields" | jq -r \
-    '.fields[] | select(.name == "Status") | .options[] | select(.name == "Ready") | .id' | head -1)
-
-  if [ -z "$PROJECT_ID" ] || [ -z "$STATUS_FIELD_ID" ] || [ -z "$READY_OPTION_ID" ]; then
-    echo "Project $owner#$number must have a Status field with a Ready option." >&2
-    exit 65
-  fi
-}
 
 list_task_files() {
   if [ -n "$SINGLE_FILE" ]; then
@@ -203,6 +214,59 @@ list_task_files() {
   else
     find "$DIR" -maxdepth 1 -name '*.md' ! -name 'README.md' | sort
   fi
+}
+
+reconcile_mapped_issue_ready() {
+  local issue_number="$1" issue_url="$2"
+  local issue_json issue_state lookup_rc snapshot existing_status
+
+  lookup_rc=0
+  issue_json=$(platform_issue_view "$issue_number") || lookup_rc=$?
+  case "$lookup_rc" in
+    0)
+      issue_state=$(printf '%s' "$issue_json" | jq -er '.state | strings') || {
+        echo "mapped issue #$issue_number returned a malformed normalized state" >&2
+        return 70
+      }
+      case "$issue_state" in
+        OPEN) ;;
+        CLOSED)
+          echo "  → preserved mapped CLOSED issue"
+          return 0
+          ;;
+        *)
+          echo "mapped issue #$issue_number returned unsupported state: $issue_state" >&2
+          return 70
+          ;;
+      esac
+      ;;
+    44|69|70)
+      echo "mapped issue #$issue_number lookup failed (exit $lookup_rc); Ready reconciliation aborted" >&2
+      return "$lookup_rc"
+      ;;
+    *)
+      echo "mapped issue #$issue_number lookup returned unsupported exit $lookup_rc" >&2
+      return 70
+      ;;
+  esac
+
+  if [ -n "$CONFIG_PATH" ]; then
+    snapshot=$(platform_board_snapshot "$CONFIG_PATH") || return
+  else
+    snapshot=$(platform_board_snapshot "${GH_PROJECT_NUMBER:-}" "${GH_PROJECT_OWNER:-@me}") || return
+  fi
+  existing_status=$(printf '%s' "$snapshot" | jq -r --arg url "$issue_url" \
+    '[.items[] | select(.content.url == $url)] | if length > 0 then .[0].status else "" end')
+
+  case "$existing_status" in
+    ""|null|Backlog)
+      platform_card_status_set --add "$CONFIG_PATH" "$issue_url" "Ready" >/dev/null
+      echo "  → reconciled mapped issue to Ready"
+      ;;
+    *)
+      echo "  → preserved mapped issue in ${existing_status}"
+      ;;
+  esac
 }
 
 while IFS= read -r file; do
@@ -220,6 +284,14 @@ while IFS= read -r file; do
   existing_issue=$(lookup_issue "$stem" || true)
   if [ -n "$existing_issue" ] && [ "$FORCE" != true ]; then
     echo "Skip #$existing_issue (already mapped): $file"
+    if [ "$BOARD" = true ] && [ "$DRY_RUN" != true ]; then
+      existing_url=$(jq -r --arg stem "$stem" '.[$stem].url // empty' "$MAP_FILE")
+      [ -n "$existing_url" ] || {
+        echo "mapped issue #$existing_issue has no URL: $MAP_FILE" >&2
+        exit 65
+      }
+      reconcile_mapped_issue_ready "$existing_issue" "$existing_url"
+    fi
     SKIPPED=$((SKIPPED + 1))
     continue
   fi
@@ -247,7 +319,7 @@ while IFS= read -r file; do
     continue
   fi
 
-  url=$(gh issue create --title "$title" --body-file "$body_file")
+  url=$(platform_issue_create "$title" "$body_file")
   rm -f "$body_file"
   num=$(echo "$url" | sed -E 's|.*/issues/([0-9]+)$|\1|')
   remember_issue "$stem" "$num"
@@ -255,15 +327,9 @@ while IFS= read -r file; do
   CREATED=$((CREATED + 1))
   echo "Created #$num — $title"
 
-  if [ -n "${GH_PROJECT_NUMBER:-}" ]; then
-    owner="${GH_PROJECT_OWNER:-@me}"
-    load_project_ready_metadata "$owner" "$GH_PROJECT_NUMBER"
-    item_id=$(gh project item-add "$GH_PROJECT_NUMBER" --owner "$owner" \
-      --url "$url" --format json --jq '.id')
-    gh project item-edit --id "$item_id" --project-id "$PROJECT_ID" \
-      --field-id "$STATUS_FIELD_ID" \
-      --single-select-option-id "$READY_OPTION_ID" >/dev/null
-    echo "  → added to project $owner#$GH_PROJECT_NUMBER in Ready"
+  if [ "$BOARD" = true ]; then
+    platform_card_status_set --add "$CONFIG_PATH" "$url" "Ready" >/dev/null
+    echo "  → added to platform board in Ready"
   fi
 done < <(list_task_files)
 
@@ -285,6 +351,10 @@ else
   echo "No new issues; all selected tasks were already mapped in $MAP_FILE"
 fi
 echo "Next:"
-echo "  1. Open GitHub Project → confirm generated cards are in Ready"
+if [ "$BOARD" = true ]; then
+  echo "  1. Open the configured board → confirm generated cards are in Ready"
+else
+  echo "  1. Issues were filed only; pass --board to enqueue them in Ready"
+fi
 echo "  2. Preferred: run /supersaiyan prepare <feature-slug> for reconciliation + lint"
 echo "  3. Then run /super-board run <slug>"

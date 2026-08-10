@@ -150,7 +150,7 @@ check_authentication() {
       case ",${scopes// /}," in
         *,project,*) ok "GitHub Project read/write scope available" ;;
         *)
-          warn "GitHub Project write scope missing; run: gh auth refresh -s project,read:project,repo"
+          warn "GitHub Project write scope missing; run: gh auth refresh -s repo,project"
           ;;
       esac
     else
@@ -270,6 +270,7 @@ verify_app_install() {
   local path
   for path in \
     ".supersaiyan/bin/tasks-to-issues.sh" \
+    ".supersaiyan/bin/platform-config.sh" \
     ".supersaiyan/workflows/super-board-wave.js" \
     "docs/templates/task-file.md" \
     "docs/templates/issue.md" \

@@ -20,9 +20,9 @@ Invoked by `supersaiyan new` (Phase 5) and directly via `/supersaiyan prepare <s
 3. **Stale repair** — checks each entry in `.issue-map.json`. If a mapped issue was deleted
    from GitHub, the entry is removed so the issue is recreated.
 
-4. **Issue creation** — runs `.supersaiyan/bin/tasks-to-issues.sh` (or a legacy
-   `.claude/bin/tasks-to-issues.sh` for a pre-migration install) which creates one GitHub issue
-   per task file and adds it to the board's Ready column.
+4. **Issue creation** — runs `.supersaiyan/bin/tasks-to-issues.sh --board --config <resolved-config>`
+   (or a legacy `.claude/bin/tasks-to-issues.sh` for a pre-migration install), which creates one
+   platform issue per task file and explicitly adds it to Ready.
 
 5. **Backlog reconciliation** — any generated issue in the board's Backlog column that is still
    open moves to Ready. Active (Building/QA/Review), closed, and manual cards are untouched.
