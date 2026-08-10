@@ -176,8 +176,10 @@ const CONFIG_ROOTS: readonly string[] = [".supersaiyan", ".claude/supersaiyan", 
 
 async function discoverConfigs(repoPath: string): Promise<BoardConfigSummary[]> {
   const found = new Map<string, { summary: BoardConfigSummary; rootIndex: number }>();
-  for (let rootIndex = 0; rootIndex < CONFIG_ROOTS.length; rootIndex++) {
-    const directory = join(repoPath, CONFIG_ROOTS[rootIndex], "configs");
+  // `.entries()` rather than an index loop: indexing a readonly array yields `string | undefined`
+  // under the strict-index checks this package compiles with, and `root` here is always defined.
+  for (const [rootIndex, root] of CONFIG_ROOTS.entries()) {
+    const directory = join(repoPath, root, "configs");
     if (!(await exists(directory))) continue;
     for (const file of (await readdir(directory)).filter((name) => name.endsWith(".json")).sort()) {
       const path = join(directory, file);

@@ -23,6 +23,20 @@ echo "checking AGENTS.md install wiring"
 TD=$(mktemp -d)
 trap 'rm -rf "$TD"' EXIT
 
+# install.sh hard-requires `claude` on PATH (prerequisite gate) and calls `claude plugin list`
+# to decide whether to copy skills locally. CI runners have git and gh but not claude, so stub
+# it — this test is about install.sh's file-writing behavior, not about whether Claude Code
+# happens to be installed on the machine. Empty `plugin list` output => PLUGIN_INSTALLED=false,
+# which also exercises the local-skill-copy branch.
+STUB_BIN="$TD/stub-bin"
+mkdir -p "$STUB_BIN"
+cat > "$STUB_BIN/claude" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$STUB_BIN/claude"
+export PATH="$STUB_BIN:$PATH"
+
 new_repo() {
   # $1 = name. Echoes the repo path.
   local dir="$TD/$1"
@@ -37,7 +51,10 @@ BEGIN_GSTACK='<!-- supersaiyan:begin id=gstack-paths -->'
 
 # ── 1. Greenfield: no CLAUDE.md, no AGENTS.md ──────────────────────────────────────────────
 REPO=$(new_repo greenfield)
-bash "$INSTALL" "$REPO" >/dev/null 2>&1 || fail "1: install.sh failed on a greenfield repo"
+# Capture rather than discard: a prerequisite failure here (e.g. a missing CLI on a CI runner)
+# is otherwise invisible and shows up only as a cascade of confusing missing-file errors.
+bash "$INSTALL" "$REPO" >"$TD/install.log" 2>&1 \
+  || fail "1: install.sh failed on a greenfield repo — $(tail -3 "$TD/install.log" | tr '\n' ' ')"
 grep -qF "$BEGIN_PIPE" "$REPO/AGENTS.md" || fail "1: AGENTS.md missing the fenced pipeline-paths block"
 grep -q '^## SuperSaiyan pipeline paths$' "$REPO/AGENTS.md" || fail "1: AGENTS.md missing the block content"
 [ "$(cat "$REPO/CLAUDE.md")" = "@AGENTS.md" ] || fail "1: CLAUDE.md should be exactly '@AGENTS.md', got: $(cat "$REPO/CLAUDE.md")"

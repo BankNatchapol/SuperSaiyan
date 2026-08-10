@@ -35,6 +35,18 @@ done
 TD=$(mktemp -d)
 trap 'rm -rf "$TD"' EXIT
 
+# The smoke configs below use worker_backend "claude-p", whose backend_auth_check is
+# `command -v claude`. CI runners don't have Claude Code installed, and this test is about
+# `extends` resolution, not CLI availability — so stub it and stay hermetic.
+STUB_BIN="$TD/stub-bin"
+mkdir -p "$STUB_BIN"
+cat > "$STUB_BIN/claude" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$STUB_BIN/claude"
+export PATH="$STUB_BIN:$PATH"
+
 cat > "$TD/base.json" <<'EOF'
 {"project":{"owner":"o","number":1},"variant":"full","rebuild_cap":2,"notifications":{"bot_identity":"bob"}}
 EOF
