@@ -1,0 +1,24 @@
+---
+description: SuperSaiyan generated-file registry — these paths are machine-written; edit the named source and re-run the generator instead
+globs: skills/supersaiyan/references/**,scripts/backends/codex-exec.sh,scripts/backends/cursor-agent.sh,.cursor/rules/**
+alwaysApply: false
+---
+
+<!-- GENERATED FILE — edit scripts/generate-agent-configs.sh's registry, then run
+     scripts/generate-agent-configs.sh to regenerate. Do not hand-edit. -->
+
+# Generated files in this repo
+
+The paths below are written by a generator. Editing them directly is silently undone the next
+time the generator runs — change the source instead, then regenerate.
+
+| Generated path | Hand-edited source | Regenerate with |
+|---|---|---|
+| `scripts/backends/codex-exec.sh` (worker-addendum region) | `docs/templates/agent-blocks/worker-addendum.md` | `scripts/generate-agent-configs.sh` |
+| `scripts/backends/cursor-agent.sh` (worker-addendum region) | `docs/templates/agent-blocks/worker-addendum.md` | `scripts/generate-agent-configs.sh` |
+| `.cursor/rules/supersaiyan-generated-files.mdc` | `scripts/generate-agent-configs.sh` (registry) | `scripts/generate-agent-configs.sh` |
+| `skills/supersaiyan/references/*` | `skills/super-board/references/*` | `scripts/generate-supersaiyan-references.sh` |
+
+Agent-instruction blocks installed into a target repo's `AGENTS.md` come from
+`docs/templates/agent-blocks/` and are written by `install.sh` /
+`scripts/setup-gstack-artifacts-path.sh`; edit the block source, not the installed copy.

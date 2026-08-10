@@ -57,42 +57,52 @@ echo "GSTACK_HOME=$GSTACK_HOME"
 EOF
 chmod +x "$TARGET/scripts/gstack-env.sh"
 
-# --- CLAUDE.md snippet ---
-SNIPPET_FILE="$TARGET/docs/gstack/CLAUDE-snippet.md"
-cat > "$SNIPPET_FILE" << 'EOF'
-## gstack artifact paths (SuperSaiyan)
+# --- Agent instructions ---
+# Same contract as install.sh: canonical block goes to AGENTS.md (read natively by Codex and
+# Cursor), Claude Code gets a pointer. Source of truth is
+# docs/templates/agent-blocks/gstack-paths.md — this script no longer embeds the prose.
 
-When you run **gstack** `/office-hours` or `/spec` in this repo, **also save a copy** in the repo:
+# shellcheck disable=SC1091
+source "$REPO_ROOT/scripts/lib/md-block.sh"
 
-| Skill | Primary gstack path (default) | **Repo copy (required)** |
-|-------|------------------------------|---------------------------|
-| `/office-hours` | `~/.gstack/projects/<slug>/*-design-*.md` | `docs/gstack/designs/<feature-slug>-design.md` |
-| `/spec` | `~/.gstack/projects/<slug>/specs/*.md` | `docs/gstack/specs/<feature-slug>-spec.md` |
-
-**Super-board / superpowers pipeline** uses the refined spec at:
-
-`docs/superpowers/specs/<feature-slug>-design.md`
-
-After `/office-hours`, run **refining-spec** (or copy) so that file exists before **writing-board-tasks**.
-
-Do not skip the repo copy — agents and git only see files under this repository.
-EOF
-
+AGENTS="$TARGET/AGENTS.md"
 CLAUDE="$TARGET/CLAUDE.md"
-if [ ! -f "$CLAUDE" ]; then
-  cat > "$CLAUDE" << 'EOF'
-# Agent notes
 
-EOF
-fi
-if ! grep -q "gstack artifact paths (SuperSaiyan)" "$CLAUDE" 2>/dev/null; then
-  {
-    echo ""
-    cat "$SNIPPET_FILE"
-  } >> "$CLAUDE"
-  echo "    ✓ appended gstack paths to CLAUDE.md"
+if md_block_upsert "$AGENTS" gstack-paths "$REPO_ROOT/docs/templates/agent-blocks/gstack-paths.md"; then
+  echo "    ✓ gstack paths block in AGENTS.md"
 else
-  echo "    · CLAUDE.md already has gstack paths section"
+  echo "    ✗ could not write the gstack-paths block to AGENTS.md" >&2
+  exit 1
+fi
+
+# Migrate the pre-fence section this script used to append directly to CLAUDE.md (backup first
+# — a user may have hand-edited inside it).
+LEGACY_BACKUP="$TARGET/docs/supersaiyan/migrations/CLAUDE.md-gstack-paths-$(date -u +%Y%m%dT%H%M%SZ).md"
+if md_block_excise_legacy "$CLAUDE" "gstack artifact paths (SuperSaiyan)" "$LEGACY_BACKUP" 2>/dev/null; then
+  echo "    ✓ moved legacy gstack section out of CLAUDE.md (backup: ${LEGACY_BACKUP#"$TARGET"/})"
+fi
+
+if [ ! -f "$CLAUDE" ]; then
+  printf '@AGENTS.md\n' > "$CLAUDE"
+  echo "    ✓ created CLAUDE.md as an @AGENTS.md pointer"
+elif [ "$(grep -cvE '^\s*$' "$CLAUDE")" -eq 1 ] && grep -qE '^\s*@AGENTS\.md\s*$' "$CLAUDE"; then
+  echo "    · CLAUDE.md already an @AGENTS.md pointer"
+else
+  POINTER_SRC="$(mktemp)"
+  cat > "$POINTER_SRC" << 'EOF'
+<!-- Claude Code does not read AGENTS.md natively; this import bridges it. SuperSaiyan's
+     canonical agent instructions live in AGENTS.md, which Codex and Cursor read directly. -->
+@AGENTS.md
+EOF
+  md_block_upsert "$CLAUDE" claude-pointer "$POINTER_SRC" \
+    && echo "    ✓ @AGENTS.md pointer block in CLAUDE.md"
+  rm -f "$POINTER_SRC"
+fi
+
+# The old docs/gstack/CLAUDE-snippet.md was an implementation detail of the previous
+# materialize-then-append approach. Don't delete it (users may link to it), just say it's dead.
+if [ -f "$TARGET/docs/gstack/CLAUDE-snippet.md" ]; then
+  echo "    · docs/gstack/CLAUDE-snippet.md is obsolete (content now in AGENTS.md); safe to delete"
 fi
 
 echo "→ created docs/gstack/{designs,specs}/"

@@ -180,31 +180,53 @@ if [ ! -f "$TARGET/docs/templates/task-file.md" ] && [ -f "$SAIYAN/docs/template
   ok "docs/templates/task-file.md"
 fi
 
-# ── CLAUDE.md ─────────────────────────────────────────────────────────────────
+# ── Agent instructions ────────────────────────────────────────────────────────
+# Canonical target is AGENTS.md: Codex and Cursor read it natively, with zero config. Claude
+# Code does not read AGENTS.md, so it gets a CLAUDE.md pointer. One source
+# (docs/templates/agent-blocks/pipeline-paths.md) reaches all three tools.
 
+# shellcheck disable=SC1091
+source "$SAIYAN/scripts/lib/md-block.sh"
+
+AGENTS="$TARGET/AGENTS.md"
 CLAUDE="$TARGET/CLAUDE.md"
-SNIPPET="## SuperSaiyan pipeline paths"
+BLOCK_SRC="$SAIYAN/docs/templates/agent-blocks/pipeline-paths.md"
 
-[ -f "$CLAUDE" ] || printf '# Agent notes\n' > "$CLAUDE"
-
-if ! grep -q "$SNIPPET" "$CLAUDE" 2>/dev/null; then
-  cat >> "$CLAUDE" << 'EOF'
-
-## SuperSaiyan pipeline paths
-
-| Artifact | Path |
-|----------|------|
-| Feature specs | `docs/superpowers/specs/<slug>-design.md` |
-| Board tasks | `docs/superpowers/tasks/<slug>/NN-*.md` |
-| Issue map | `docs/superpowers/tasks/<slug>/.issue-map.json` |
-| Designs | `docs/supersaiyan/designs/<slug>-design.md` |
-
-When saving design docs from external tools, also save a copy to
-`docs/supersaiyan/designs/<name>-design.md`.
-EOF
-  ok "CLAUDE.md — SuperSaiyan paths added"
+if md_block_upsert "$AGENTS" pipeline-paths "$BLOCK_SRC"; then
+  ok "AGENTS.md — SuperSaiyan pipeline paths"
 else
-  ok "CLAUDE.md — already has SuperSaiyan paths"
+  fail "AGENTS.md — could not write the pipeline-paths block"
+fi
+
+# Migrate the pre-fence section this installer used to append straight to CLAUDE.md. Leaving it
+# would duplicate the content now living in AGENTS.md; deleting it outright could destroy a
+# hand-edit, so back it up first and say where it went.
+MIGRATION_DIR="$TARGET/docs/supersaiyan/migrations"
+LEGACY_BACKUP="$MIGRATION_DIR/CLAUDE.md-pipeline-paths-$(date -u +%Y%m%dT%H%M%SZ).md"
+if md_block_excise_legacy "$CLAUDE" "SuperSaiyan pipeline paths" "$LEGACY_BACKUP" 2>/dev/null; then
+  ok "CLAUDE.md — moved legacy pipeline-paths section to AGENTS.md (backup: ${LEGACY_BACKUP#"$TARGET"/})"
+fi
+
+# Claude pointer. A bare `@AGENTS.md` when we own the file; a fenced block appended at the end
+# when the user has their own content, so their structure is left alone.
+if [ ! -f "$CLAUDE" ]; then
+  printf '@AGENTS.md\n' > "$CLAUDE"
+  ok "CLAUDE.md — created as an @AGENTS.md pointer"
+elif [ "$(grep -cvE '^\s*$' "$CLAUDE")" -eq 1 ] && grep -qE '^\s*@AGENTS\.md\s*$' "$CLAUDE"; then
+  ok "CLAUDE.md — already an @AGENTS.md pointer"
+else
+  POINTER_SRC="$(mktemp)"
+  cat > "$POINTER_SRC" << 'EOF'
+<!-- Claude Code does not read AGENTS.md natively; this import bridges it. SuperSaiyan's
+     canonical agent instructions live in AGENTS.md, which Codex and Cursor read directly. -->
+@AGENTS.md
+EOF
+  if md_block_upsert "$CLAUDE" claude-pointer "$POINTER_SRC"; then
+    ok "CLAUDE.md — @AGENTS.md pointer block"
+  else
+    fail "CLAUDE.md — could not write the pointer block"
+  fi
+  rm -f "$POINTER_SRC"
 fi
 
 # ── Dynamic workflows ──────────────────────────────────────────────────────────

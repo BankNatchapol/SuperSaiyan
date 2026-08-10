@@ -54,7 +54,7 @@ SuperSaiyan/
   scripts/
     bootstrap-app.sh                 check/install dependencies + configure app repo
     install-bridge-skills.sh         copy bridge skills + templates → app repo
-    setup-gstack-artifacts-path.sh   docs/gstack/ layout + CLAUDE.md rules → app repo
+    setup-gstack-artifacts-path.sh   docs/gstack/ layout + AGENTS.md rules → app repo
     tasks-to-issues.sh               task .md → gh issue create (run from app repo)
     split-plan-to-tasks.sh           stub only — prefer writing-board-tasks agent
     verify-super-board-setup.sh      smoke check for toolkit clones
@@ -71,8 +71,11 @@ Created by `super-board/install.sh` + `install-bridge-skills.sh` + `setup-gstack
 
 ```text
 my-first-agent-app/
-  CLAUDE.md                          gstack “save artifacts to repo” rules
+  AGENTS.md                          canonical agent instructions (fenced supersaiyan blocks) — Codex + Cursor read this natively
+  CLAUDE.md                          `@AGENTS.md` pointer — Claude Code does not read AGENTS.md natively
   docs/
+    templates/agent-blocks/          (in SuperSaiyan, not here) the single source for the AGENTS.md blocks above
+    supersaiyan/migrations/          backups of legacy CLAUDE.md sections moved into AGENTS.md
     gstack/designs/                  /office-hours copies
     gstack/specs/                    /spec copies (optional)
     superpowers/specs/               feature specs (refining-spec output)
@@ -113,7 +116,7 @@ SAIYAN=/path/to/SuperSaiyan
 |--------|-------------|-------|
 | `bootstrap-app.sh` | Yes | Checks/installs dependencies, then runs all three app installers; defaults target to cwd |
 | `install-bridge-skills.sh` | Yes | Copies `docs/templates/issue.md` + `docs/superpowers/tasks/README.md` (skills come from `install.sh`); target defaults to cwd |
-| `setup-gstack-artifacts-path.sh` | Yes | Appends CLAUDE.md section once; creates doc dirs |
+| `setup-gstack-artifacts-path.sh` | Yes | Upserts a fenced `gstack-paths` block into the app's AGENTS.md (updates in place on re-run); migrates the legacy CLAUDE.md section with a backup; creates doc dirs |
 | `tasks-to-issues.sh` | Mostly | Low-level helper; prefer `/supersaiyan prepare` |
 | `split-plan-to-tasks.sh` | With `--force` | Mechanical stub — not recommended alone |
 
@@ -209,6 +212,8 @@ Issue template: [docs/templates/issue.md](docs/templates/issue.md)
 | Tutorial steps, human onboarding | `docs/GETTING-STARTED.md` |
 | Bridge skill behavior | `.claude/skills/refining-spec/`, `writing-board-tasks/` |
 | Issue/task file shape | `docs/templates/` |
+| Agent instructions installed into an app repo (AGENTS.md blocks) | `docs/templates/agent-blocks/` — never the installed copy |
+| Anything under a generated path | The source named in `.cursor/rules/supersaiyan-generated-files.mdc`, then re-run that generator |
 | Plan → issues analysis | `docs/super-board-analysis/plan-to-issues-bridge.md` |
 | super-board upstream behavior | `super-board/` (fork/vendor) |
 | gstack upstream behavior | `gstack/` — prefer SuperSaiyan bridge over patching |
