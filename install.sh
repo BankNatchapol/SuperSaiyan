@@ -120,6 +120,35 @@ else
   done
 fi
 
+# ── Skills for Codex + Cursor ──────────────────────────────────────────────────
+# `.agents/skills/` is the vendor-neutral path in the Agent Skills open standard. Codex scans
+# it from cwd up to the repo root, and Cursor picks it up anywhere in the repo — so one real
+# copy gives both tools the same auto-discovery Claude Code gets from its plugin cache.
+# SKILL.md is identical across all three (open standard), so nothing is per-tool here.
+#
+# Always populated, unlike .claude/skills/ above: Claude Code can fall back to the plugin
+# cache, but Codex and Cursor have no cache and can only read files that exist in the repo.
+echo
+echo "Installing skills for Codex + Cursor (.agents/skills/)"
+
+mkdir -p "$TARGET/.agents/skills"
+for skill in supersaiyan super-board super-build super-qa super-review refining-spec writing-board-tasks test-driven-development verification-before-completion; do
+  src="$SAIYAN/skills/$skill"
+  dst="$TARGET/.agents/skills/$skill"
+  if [ ! -d "$src" ]; then
+    fail "$skill: source not found at $src"
+    continue
+  fi
+  if same_path "$src" "$dst"; then
+    ok "$skill (same path — skipped)"
+    continue
+  fi
+  rm -rf "$dst"
+  cp -RL "$src" "$dst"
+  if [ -f "$dst/scripts/prepare.sh" ]; then chmod +x "$dst/scripts/prepare.sh"; fi
+  ok "$skill"
+done
+
 # ── Pipeline scripts ───────────────────────────────────────────────────────────
 
 echo

@@ -1,6 +1,7 @@
 {
+  "_generated": "GENERATED FILE — edit docs/templates/agent-blocks/plugin-manifest.json, then run scripts/generate-agent-configs.sh. Do not hand-edit.",
   "name": "supersaiyan",
-  "description": "SuperSaiyan — AI dev pipeline for Claude Code. Idea to merged PR with one command set.",
+  "description": "SuperSaiyan — AI dev pipeline for Claude Code, Codex, and Cursor. Idea to merged PR with one command set.",
   "owner": {
     "name": "Natchapol Patamawisut",
     "email": "natchapol.pat@gmail.com"

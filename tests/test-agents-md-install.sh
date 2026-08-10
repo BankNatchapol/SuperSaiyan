@@ -42,6 +42,19 @@ grep -qF "$BEGIN_PIPE" "$REPO/AGENTS.md" || fail "1: AGENTS.md missing the fence
 grep -q '^## SuperSaiyan pipeline paths$' "$REPO/AGENTS.md" || fail "1: AGENTS.md missing the block content"
 [ "$(cat "$REPO/CLAUDE.md")" = "@AGENTS.md" ] || fail "1: CLAUDE.md should be exactly '@AGENTS.md', got: $(cat "$REPO/CLAUDE.md")"
 
+# ── 1b. Skills reach Codex and Cursor via the neutral .agents/skills/ path ─────────────────
+# Codex scans .agents/skills/ from cwd up to the repo root; Cursor picks it up anywhere in the
+# repo. Unlike .claude/skills/ (which Claude Code can serve from its plugin cache instead),
+# this must ALWAYS be populated — Codex and Cursor have no cache and read only real files.
+[ -d "$REPO/.agents/skills" ] || fail "1b: .agents/skills/ not created — Codex/Cursor get no skills"
+for skill in supersaiyan super-board super-build super-qa super-review; do
+  [ -f "$REPO/.agents/skills/$skill/SKILL.md" ] \
+    || fail "1b: .agents/skills/$skill/SKILL.md missing"
+done
+# The frontmatter is what drives auto-discovery in all three tools — assert it survived the copy.
+grep -q '^name: supersaiyan$' "$REPO/.agents/skills/supersaiyan/SKILL.md" \
+  || fail "1b: skill frontmatter lost in the copy (auto-discovery would not fire)"
+
 # ── 2. Idempotency: a second run changes nothing ───────────────────────────────────────────
 cp "$REPO/AGENTS.md" "$TD/agents.before"
 cp "$REPO/CLAUDE.md" "$TD/claude.before"

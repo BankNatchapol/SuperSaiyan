@@ -18,6 +18,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BLOCKS="$ROOT/docs/templates/agent-blocks"
 ADDENDUM_SRC="$BLOCKS/worker-addendum.md"
+MANIFEST_SRC="$BLOCKS/plugin-manifest.json"
 MDC="$ROOT/.cursor/rules/supersaiyan-generated-files.mdc"
 
 CHECK=false
@@ -29,6 +30,7 @@ if [ $# -gt 0 ]; then
 fi
 
 [ -f "$ADDENDUM_SRC" ] || { echo "source not found: $ADDENDUM_SRC" >&2; exit 66; }
+[ -f "$MANIFEST_SRC" ] || { echo "source not found: $MANIFEST_SRC" >&2; exit 66; }
 
 DRIFTED=false
 
@@ -104,6 +106,51 @@ render_backend() {
   rm -f "$regionfile"
 }
 
+render_plugin_manifest() {
+  # Both Claude Code and Codex use a near-identical plugin manifest — same name/description/
+  # version/author/license/keywords, different directory. Generating both from one source is
+  # what keeps "publish for two tools" from becoming two places to bump a version.
+  # Content is the source verbatim; only the leading comment differs, and JSON has no comment
+  # syntax — so the provenance note goes in a "_generated" key instead of a banner line.
+  local from="$1"
+  python3 - "$MANIFEST_SRC" "$from" <<'PY'
+import json, sys
+src, frm = sys.argv[1], sys.argv[2]
+with open(src) as f:
+    data = json.load(f)
+# marketplace_description belongs only to marketplace.json — not a plugin.json field.
+data.pop("marketplace_description", None)
+out = {"_generated": f"GENERATED FILE — edit {frm}, then run scripts/generate-agent-configs.sh. Do not hand-edit."}
+out.update(data)
+print(json.dumps(out, indent=2, ensure_ascii=False))
+PY
+}
+
+render_marketplace() {
+  # Claude Code additionally needs a marketplace.json wrapping the same plugin entry.
+  python3 - "$MANIFEST_SRC" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    d = json.load(f)
+out = {
+    "_generated": "GENERATED FILE — edit docs/templates/agent-blocks/plugin-manifest.json, then run scripts/generate-agent-configs.sh. Do not hand-edit.",
+    "name": d["name"],
+    "description": d["marketplace_description"],
+    "owner": d["author"],
+    "plugins": [
+        {
+            "name": d["name"],
+            "description": d["description"],
+            "version": d["version"],
+            "source": "./",
+            "author": d["author"],
+        }
+    ],
+}
+print(json.dumps(out, indent=2, ensure_ascii=False))
+PY
+}
+
 render_mdc() {
   # Whole-file emission. Frontmatter MUST be line 1 — Cursor does not parse the rule otherwise —
   # so unlike generate-supersaiyan-references.sh's banner_for(), the GENERATED banner is the
@@ -111,7 +158,7 @@ render_mdc() {
   cat <<'EOF'
 ---
 description: SuperSaiyan generated-file registry — these paths are machine-written; edit the named source and re-run the generator instead
-globs: skills/supersaiyan/references/**,scripts/backends/codex-exec.sh,scripts/backends/cursor-agent.sh,.cursor/rules/**
+globs: skills/supersaiyan/references/**,scripts/backends/codex-exec.sh,scripts/backends/cursor-agent.sh,.cursor/rules/**,.claude-plugin/**,.codex-plugin/**
 alwaysApply: false
 ---
 
@@ -133,6 +180,9 @@ EOF
     i=$((i + 1))
   done
   cat <<'EOF'
+| `.claude-plugin/plugin.json` | `docs/templates/agent-blocks/plugin-manifest.json` | `scripts/generate-agent-configs.sh` |
+| `.claude-plugin/marketplace.json` | `docs/templates/agent-blocks/plugin-manifest.json` | `scripts/generate-agent-configs.sh` |
+| `.codex-plugin/plugin.json` | `docs/templates/agent-blocks/plugin-manifest.json` | `scripts/generate-agent-configs.sh` |
 | `.cursor/rules/supersaiyan-generated-files.mdc` | `scripts/generate-agent-configs.sh` (registry) | `scripts/generate-agent-configs.sh` |
 | `skills/supersaiyan/references/*` | `skills/super-board/references/*` | `scripts/generate-supersaiyan-references.sh` |
 
@@ -172,6 +222,15 @@ while [ "$i" -lt "${#REG_BACKEND_FILE[@]}" ]; do
   emit "$abs" "$out" "docs/templates/agent-blocks/worker-addendum.md"
   i=$((i + 1))
 done
+
+render_plugin_manifest "docs/templates/agent-blocks/plugin-manifest.json" > "$TMPDIR_GEN/claude-plugin.json"
+emit "$ROOT/.claude-plugin/plugin.json" "$TMPDIR_GEN/claude-plugin.json" "docs/templates/agent-blocks/plugin-manifest.json"
+
+render_plugin_manifest "docs/templates/agent-blocks/plugin-manifest.json" > "$TMPDIR_GEN/codex-plugin.json"
+emit "$ROOT/.codex-plugin/plugin.json" "$TMPDIR_GEN/codex-plugin.json" "docs/templates/agent-blocks/plugin-manifest.json"
+
+render_marketplace > "$TMPDIR_GEN/marketplace.json"
+emit "$ROOT/.claude-plugin/marketplace.json" "$TMPDIR_GEN/marketplace.json" "docs/templates/agent-blocks/plugin-manifest.json"
 
 render_mdc > "$TMPDIR_GEN/rule.mdc"
 emit "$MDC" "$TMPDIR_GEN/rule.mdc" "scripts/generate-agent-configs.sh (registry)"

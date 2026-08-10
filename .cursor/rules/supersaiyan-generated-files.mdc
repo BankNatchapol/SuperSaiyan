@@ -1,6 +1,6 @@
 ---
 description: SuperSaiyan generated-file registry — these paths are machine-written; edit the named source and re-run the generator instead
-globs: skills/supersaiyan/references/**,scripts/backends/codex-exec.sh,scripts/backends/cursor-agent.sh,.cursor/rules/**
+globs: skills/supersaiyan/references/**,scripts/backends/codex-exec.sh,scripts/backends/cursor-agent.sh,.cursor/rules/**,.claude-plugin/**,.codex-plugin/**
 alwaysApply: false
 ---
 
@@ -16,6 +16,9 @@ time the generator runs — change the source instead, then regenerate.
 |---|---|---|
 | `scripts/backends/codex-exec.sh` (worker-addendum region) | `docs/templates/agent-blocks/worker-addendum.md` | `scripts/generate-agent-configs.sh` |
 | `scripts/backends/cursor-agent.sh` (worker-addendum region) | `docs/templates/agent-blocks/worker-addendum.md` | `scripts/generate-agent-configs.sh` |
+| `.claude-plugin/plugin.json` | `docs/templates/agent-blocks/plugin-manifest.json` | `scripts/generate-agent-configs.sh` |
+| `.claude-plugin/marketplace.json` | `docs/templates/agent-blocks/plugin-manifest.json` | `scripts/generate-agent-configs.sh` |
+| `.codex-plugin/plugin.json` | `docs/templates/agent-blocks/plugin-manifest.json` | `scripts/generate-agent-configs.sh` |
 | `.cursor/rules/supersaiyan-generated-files.mdc` | `scripts/generate-agent-configs.sh` (registry) | `scripts/generate-agent-configs.sh` |
 | `skills/supersaiyan/references/*` | `skills/super-board/references/*` | `scripts/generate-supersaiyan-references.sh` |
 

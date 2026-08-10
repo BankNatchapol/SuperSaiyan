@@ -175,6 +175,37 @@ own default save location inside the app repo instead of the home directory.
 
 ---
 
+## Tool parity — Claude Code / Codex / Cursor
+
+The goal is that anything you can do here in Claude Code, you can do in Codex and Cursor.
+Where that isn't true yet, it's stated plainly rather than implied.
+
+| Capability | Claude Code | Codex | Cursor |
+|---|---|---|---|
+| Skill format (`SKILL.md`) | ✅ | ✅ | ✅ — Agent Skills open standard, byte-identical files, no per-tool variants |
+| Skill auto-discovery in an app repo | ✅ plugin cache, or `.claude/skills/` | ✅ `.agents/skills/` | ✅ `.agents/skills/` |
+| Project instructions | ✅ `CLAUDE.md` → `@AGENTS.md` | ✅ `AGENTS.md` (native) | ✅ `AGENTS.md` (native) |
+| Headless Build/QA/Review lanes | ✅ `claude-p` | ✅ `codex-exec` | ✅ `cursor-agent` |
+| Plugin manifest | ✅ `.claude-plugin/` | ✅ `.codex-plugin/` | ➖ no plugin concept; uses skills + rules |
+| Published marketplace install | ✅ `claude plugin install` | ⚠️ manifest ships, but OpenAI self-serve publishing was still "coming soon" as of 2026-05 — install by cloning + `install.sh` | ➖ n/a |
+| In-session wave orchestration | ✅ workflow backend | ➖ no equivalent primitive | ➖ no equivalent primitive |
+
+Two asymmetries are real and not worth pretending away:
+
+- **The workflow backend is Claude-Code-only** — it uses Claude Code's own `/workflows`
+  primitive. Codex and Cursor get the same Build → QA → Review lanes through the bash
+  dispatcher (`worker_backend: codex-exec` / `cursor-agent`), which is a complete substitute
+  for draining a board; it just isn't the same in-session mechanism.
+- **Headless workers still read `.claude/skills/`**, not `.agents/skills/` — that path is
+  baked into `dispatch_lane`'s prompt and doubles as super-build's pipeline-dispatched mode
+  signal (see `references/backends.md`). So a codex/cursor **worker** still needs
+  `./install.sh --keep-local-skills`. `.agents/skills/` fixes **interactive** discovery, which
+  is where the gap actually was.
+
+`.claude/skills/` itself can't move: Claude Code's own loader requires that exact path.
+
+---
+
 ## super-board essentials
 
 - **Verbs:** `onboard`, `lint`, `status`, `run`, `stop`

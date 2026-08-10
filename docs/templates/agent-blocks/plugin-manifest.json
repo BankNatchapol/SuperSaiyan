@@ -1,7 +1,7 @@
 {
-  "_generated": "GENERATED FILE — edit docs/templates/agent-blocks/plugin-manifest.json, then run scripts/generate-agent-configs.sh. Do not hand-edit.",
   "name": "supersaiyan",
   "description": "End-to-end AI development pipeline — idea to merged PR with one command. Handles brainstorming, spec writing, task decomposition, GitHub issue filing, and autonomous Build → QA → Review execution.",
+  "marketplace_description": "SuperSaiyan — AI dev pipeline for Claude Code, Codex, and Cursor. Idea to merged PR with one command set.",
   "version": "1.0.0",
   "author": {
     "name": "Natchapol Patamawisut",
