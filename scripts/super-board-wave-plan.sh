@@ -24,6 +24,21 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$CONFIG" ] && [ -e "$CONFIG" ] || { echo "config not found: ${CONFIG:-<unset>}" >&2; exit 66; }
 
+# Resolve an optional `extends` link (see references/config-schema.json) before the config is
+# read — only when $CONFIG is a real regular file. Test mode passes a process-substitution
+# FIFO, which `resolve_config_extends` would consume with its own `.extends` check, leaving
+# nothing for the read below (a FIFO can only be read once); skipping resolution there is safe
+# because extends requires locating a sibling file by directory, which a synthetic test
+# fixture never has anyway.
+if [ -f "$CONFIG" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/config-resolve.sh"
+  RESOLVED_CONFIG=$(resolve_config_extends "$CONFIG") || exit 66
+  [ "$RESOLVED_CONFIG" != "$CONFIG" ] && trap 'rm -f "$RESOLVED_CONFIG"' EXIT
+  CONFIG="$RESOLVED_CONFIG"
+fi
+
 # Read the config ONCE — $CONFIG may be a process substitution (test mode),
 # which is a FIFO and cannot be read twice.
 CONFIG_JSON=$(cat "$CONFIG")

@@ -145,7 +145,7 @@ else
   fail "scripts/backends/ not found"
 fi
 
-for script in super-board-run.sh super-board-gh-guard.sh super-board-status.py super-board-wave-plan.sh tasks-to-issues.sh; do
+for script in super-board-run.sh super-board-gh-guard.sh super-board-status.py super-board-wave-plan.sh config-resolve.sh tasks-to-issues.sh; do
   src="$SAIYAN/scripts/$script"
   dst="$TARGET/.claude/bin/$script"
   if [ -f "$src" ]; then

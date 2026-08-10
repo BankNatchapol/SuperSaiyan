@@ -7,10 +7,15 @@ on:
       - "scripts/generate-supersaiyan-references.sh"
       - "scripts/backends/**"
       - "scripts/super-board-run.sh"
+      - "scripts/super-board-wave-plan.sh"
+      - "scripts/super-board-status.py"
+      - "scripts/config-resolve.sh"
       - "tests/test-reference-sync.py"
       - "tests/test-backend-contract.sh"
       - "tests/test-build-safety-contract.sh"
       - "tests/test-multi-backend-dispatch.sh"
+      - "tests/test-config-extends.sh"
+      - "tests/test-status-json.py"
       - ".github/workflows/skills-lint.yml"
   push:
     branches: [main]
@@ -19,10 +24,15 @@ on:
       - "scripts/generate-supersaiyan-references.sh"
       - "scripts/backends/**"
       - "scripts/super-board-run.sh"
+      - "scripts/super-board-wave-plan.sh"
+      - "scripts/super-board-status.py"
+      - "scripts/config-resolve.sh"
       - "tests/test-reference-sync.py"
       - "tests/test-backend-contract.sh"
       - "tests/test-build-safety-contract.sh"
       - "tests/test-multi-backend-dispatch.sh"
+      - "tests/test-config-extends.sh"
+      - "tests/test-status-json.py"
 
 jobs:
   reference-sync:
@@ -48,3 +58,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./tests/test-multi-backend-dispatch.sh
+
+  config-extends:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-config-extends.sh
+
+  status-json:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/test-status-json.py

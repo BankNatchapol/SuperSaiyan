@@ -461,6 +461,44 @@ def resolve_config_path(slug: str) -> Path | None:
     return None
 
 
+def _deep_merge(base: Any, overlay: Any) -> Any:
+    """Recursive merge matching the bash dispatcher's `jq -s '.[0] * .[1]'`: overlay wins
+    per-key; when both sides are dicts at a key, merge recursively; otherwise overlay
+    replaces base outright (this includes lists — they are never concatenated)."""
+    if isinstance(base, dict) and isinstance(overlay, dict):
+        merged = dict(base)
+        for key, value in overlay.items():
+            merged[key] = _deep_merge(base[key], value) if key in base else value
+        return merged
+    return overlay
+
+
+def resolve_extends(cfg: dict[str, Any], config_path: Path) -> dict[str, Any]:
+    """Merge an optional `extends` link (shared base config for multi-tool boards) into cfg.
+    See references/config-schema.json (`extends`). No-op, zero I/O, when `extends` is unset."""
+    ext = cfg.get("extends")
+    if not ext:
+        return cfg
+    base_path = config_path.parent / f"{ext}.json"
+    if not base_path.is_file():
+        print(
+            f"config error: {config_path} sets \"extends\": \"{ext}\" but {base_path} does not exist",
+            file=sys.stderr,
+        )
+        sys.exit(66)
+    base_cfg = json.loads(base_path.read_text())
+    if base_cfg.get("extends"):
+        print(
+            f"config error: {base_path} (the base for {config_path}) itself sets "
+            "\"extends\" — chained extends are not supported",
+            file=sys.stderr,
+        )
+        sys.exit(66)
+    merged = _deep_merge(base_cfg, cfg)
+    merged.pop("extends", None)
+    return merged
+
+
 # ───────────────────────────── main ─────────────────────────────
 
 
@@ -480,6 +518,7 @@ def main() -> int:
         return 66
 
     cfg = json.loads(config_path.read_text())
+    cfg = resolve_extends(cfg, config_path)
     project_owner: str = cfg["project"]["owner"]
     project_number: int = int(cfg["project"]["number"])
     adapter = get_status_adapter(cfg.get("git_platform", "github"))

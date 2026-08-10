@@ -68,6 +68,45 @@ function safeJson<T>(text: string, fallback: T): T {
 // (see skills/super-board/references/backends.md). Render the object form as a compact
 // `build=… qa=… review=…` summary — String() on it would yield "[object Object]". Lane keys
 // omitted from the object default to claude-p, matching the dispatcher's own resolution.
+// Recursive merge matching the bash dispatcher's `jq -s '.[0] * .[1]'`: overlay wins per-key;
+// when both sides are plain objects at a key, merge recursively, otherwise overlay replaces
+// base outright (this includes arrays — they are never concatenated).
+function deepMerge(base: unknown, overlay: unknown): unknown {
+  const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+  if (isPlainObject(base) && isPlainObject(overlay)) {
+    const merged: Record<string, unknown> = { ...base };
+    for (const [key, value] of Object.entries(overlay)) {
+      merged[key] = key in base ? deepMerge(base[key], value) : value;
+    }
+    return merged;
+  }
+  return overlay;
+}
+
+// A config may set `extends: "<slug>"` to inherit shared fields (project, variant,
+// rebuild_cap, notifications, ...) from another config file in the same directory — see
+// skills/super-board/references/config-schema.json (`extends`). Without this, an overlay
+// config (which never sets `project` itself) would silently fail discoverConfigs' `project.number`
+// check and never appear in the Control Center at all. Resolution failures (missing/chained
+// base) return the config unchanged — this is a display path, not a dispatcher, so a broken
+// overlay should just fall out of the same "missing project fields" skip below it always had,
+// not crash discovery for every other board.
+async function resolveExtends(
+  directory: string,
+  config: Record<string, any>,
+): Promise<Record<string, any>> {
+  const ext = config.extends;
+  if (!ext || typeof ext !== "string") return config;
+  const basePath = join(directory, `${ext}.json`);
+  if (!(await exists(basePath))) return config;
+  const base = safeJson<Record<string, any>>(await readFile(basePath, "utf8"), {});
+  if (base.extends) return config;
+  const merged = deepMerge(base, config) as Record<string, any>;
+  delete merged.extends;
+  return merged;
+}
+
 function formatWorkerBackend(value: unknown): string {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const lanes = value as Record<string, unknown>;
@@ -136,7 +175,8 @@ async function discoverConfigs(repoPath: string): Promise<BoardConfigSummary[]> 
     if (!(await exists(directory))) continue;
     for (const file of (await readdir(directory)).filter((name) => name.endsWith(".json")).sort()) {
       const path = join(directory, file);
-      const config = safeJson<Record<string, any>>(await readFile(path, "utf8"), {});
+      let config = safeJson<Record<string, any>>(await readFile(path, "utf8"), {});
+      config = await resolveExtends(directory, config);
       const slug = file.slice(0, -5);
       if (!config.project?.number || !config.project?.owner) continue;
       if (!found.has(slug) || directory.includes("supersaiyan")) {
@@ -314,7 +354,11 @@ function parseManifest(text: string): { workers: WorkerState[]; events: RunEvent
 
 async function runState(repoPath: string, config?: BoardConfigSummary): Promise<{ workers: WorkerState[]; events: RunEvent[]; runActive: boolean }> {
   if (!config) return { workers: [], events: [], runActive: false };
-  const configJson = safeJson<Record<string, any>>(await readFile(config.path, "utf8"), {});
+  let configJson = safeJson<Record<string, any>>(await readFile(config.path, "utf8"), {});
+  // `paths.runs_dir` may live in the base config for an `extends`-linked overlay — resolve it
+  // the same way discoverConfigs does, or a customized (non-default) runs_dir silently shows
+  // no active run for this board.
+  configJson = await resolveExtends(dirname(config.path), configJson);
   const runsDir = resolve(repoPath, configJson.paths?.runs_dir || "docs/supersaiyan/runs");
   if (!(await exists(runsDir))) return { workers: [], events: [], runActive: false };
   const files = (await readdir(runsDir)).filter((file) => file.endsWith(".md") && file.includes(config.slug)).sort();

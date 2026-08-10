@@ -135,6 +135,7 @@ setup_smoke() {
   # Installed-layout mirror: run.sh beside platforms/ + backends/ (install.sh copies all three
   # into .claude/bin/). All three backend contracts must be present for a per-lane config.
   cp "$RUN_SH" "$SMOKE_DIR/scripts/super-board-run.sh"
+  cp "$ROOT/scripts/config-resolve.sh" "$SMOKE_DIR/scripts/config-resolve.sh"
   cp "$ROOT/scripts/platforms/github.sh" "$SMOKE_DIR/scripts/platforms/github.sh"
   cp "$ROOT"/scripts/backends/*.sh "$SMOKE_DIR/scripts/backends/"
   chmod +x "$SMOKE_DIR/scripts/super-board-run.sh"

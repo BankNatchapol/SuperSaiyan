@@ -35,6 +35,24 @@ if [ ! -f "$CONFIG_PATH" ]; then
   exit 66
 fi
 
+# scripts/backends/<name>.sh in this dev repo, .claude/bin/backends/<name>.sh once installed
+# (install.sh copies scripts/backends/, scripts/platforms/, and scripts/config-resolve.sh
+# alongside this script). Computed early so config-resolve.sh can be sourced before any field
+# is read; reused again below for the backend/platform contract files.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Resolve an optional `extends` link (shared base config for multi-tool boards — see
+# references/config-schema.json) before ANY field below is read. On success this may
+# reassign CONFIG_PATH to a merged temp file; every jq call below keeps reading "$CONFIG_PATH"
+# completely unchanged either way. The temp file (if any) is cleaned up on exit.
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/config-resolve.sh"
+RESOLVED_CONFIG_PATH=$(resolve_config_extends "$CONFIG_PATH") || exit 66
+if [ "$RESOLVED_CONFIG_PATH" != "$CONFIG_PATH" ]; then
+  trap 'rm -f "$RESOLVED_CONFIG_PATH"' EXIT
+fi
+CONFIG_PATH="$RESOLVED_CONFIG_PATH"
+
 # ───────────────────────────── config read ─────────────────────────────
 VARIANT=$(jq -r '.variant' "$CONFIG_PATH")
 PROJECT_OWNER=$(jq -r '.project.owner' "$CONFIG_PATH")
@@ -104,8 +122,8 @@ else
 fi
 
 # Backend contract: scripts/backends/<name>.sh in this dev repo, .claude/bin/backends/<name>.sh
-# once installed (install.sh copies scripts/backends/ alongside this script).
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# once installed (install.sh copies scripts/backends/ alongside this script). SCRIPT_DIR was
+# already computed above, before extends resolution.
 
 # `source`-ing a backend file overwrites every backend_* function in the current shell —
 # the contract has no namespacing. load_backend() is therefore the ONLY place that sources a

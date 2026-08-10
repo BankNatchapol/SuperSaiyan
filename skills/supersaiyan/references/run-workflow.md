@@ -21,7 +21,16 @@ The interactive session that runs this backend is the orchestrator. It:
 ## Preconditions (before the first wave)
 
 Run the same preconditions as `run.md` §Preconditions, minus PID checks:
-1. Config exists and validates against `config-schema.json`.
+1. Config exists and validates against `config-schema.json`. If it sets `extends`, resolve
+   it FIRST — read the base config at the same directory, merge (base defaults, overlay
+   wins per key), and validate/use that resolved view for every field read from here on
+   (`variant`, `human_approves_merge`, `tier`/`model_tier`, everything `configPath` implies
+   downstream). Halt if the named base is missing or itself sets `extends` (chains aren't
+   supported). `scripts/super-board-wave-plan.sh` (step 2 below) already does this
+   resolution itself when given a real config file — see `scripts/config-resolve.sh` and
+   `references/config-schema.json` (`extends`) — but the orchestrator's own reads of
+   `human_approves_merge`/`tier` for the `Workflow` args in step 4 happen independently and
+   must resolve `extends` too, or an overlay config silently loses its inherited settings.
 2. Production-merge guard: refuse `base_branch: main` + `human_approves_merge:
    false` when deploy markers exist (same rule as super-board-run.sh).
 3. Stale-worktree scan: remove `.worktrees/*` whose branch is gone.

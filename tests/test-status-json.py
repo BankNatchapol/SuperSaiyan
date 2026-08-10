@@ -99,6 +99,7 @@ def main() -> None:
         }
 
     check_worker_backend_resolution()
+    check_extends_resolution()
     print("PASS: test-status-json.py")
 
 
@@ -123,6 +124,58 @@ def check_worker_backend_resolution() -> None:
     assert resolve({}) == {
         "build": "workflow", "qa": "workflow", "review": "workflow",
     }
+
+
+def check_extends_resolution() -> None:
+    """A config's `extends` link inherits shared fields from a base config in the same
+    directory (references/config-schema.json `extends`), matching the bash dispatcher's
+    scripts/config-resolve.sh: overlay wins per-key, nested objects deep-merge, `extends`
+    itself is stripped from the result, and chained/missing bases are hard errors."""
+    spec = importlib.util.spec_from_file_location("super_board_status", STATUS)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    resolve_extends = module.resolve_extends
+
+    with tempfile.TemporaryDirectory() as temp:
+        configs_dir = Path(temp)
+        (configs_dir / "base.json").write_text(json.dumps({
+            "project": {"owner": "o", "number": 1},
+            "variant": "full",
+            "notifications": {"bot_identity": "bob"},
+        }))
+        overlay_path = configs_dir / "overlay.json"
+        overlay_path.write_text(json.dumps({
+            "extends": "base",
+            "description": "overlay",
+            "worker_backend": "codex-exec",
+            "notifications": {"channel": "slack"},
+        }))
+        (configs_dir / "chain-base.json").write_text(json.dumps({
+            "extends": "base",
+            "project": {"owner": "o", "number": 2},
+        }))
+        (configs_dir / "chain-overlay.json").write_text(json.dumps({"extends": "chain-base"}))
+        (configs_dir / "broken.json").write_text(json.dumps({"extends": "missing"}))
+
+        merged = resolve_extends(json.loads(overlay_path.read_text()), overlay_path)
+        assert merged["project"] == {"owner": "o", "number": 1}, "base field not inherited"
+        assert merged["notifications"] == {"bot_identity": "bob", "channel": "slack"}, \
+            "notifications did not deep-merge (overlay key + inherited key)"
+        assert merged["worker_backend"] == "codex-exec", "overlay's own field was lost"
+        assert "extends" not in merged, "extends key should be stripped after resolution"
+
+        # No-op, zero I/O, when extends is absent — same dict object returned.
+        plain = {"project": {"owner": "o", "number": 9}}
+        assert resolve_extends(plain, configs_dir / "plain.json") is plain
+
+        for name, why in [("broken.json", "missing base"), ("chain-overlay.json", "chained extends")]:
+            path = configs_dir / name
+            try:
+                resolve_extends(json.loads(path.read_text()), path)
+                raise AssertionError(f"expected SystemExit for {why} ({name})")
+            except SystemExit as exc:
+                assert exc.code == 66, f"{why} ({name}) should exit 66, got {exc.code}"
 
 
 if __name__ == "__main__":

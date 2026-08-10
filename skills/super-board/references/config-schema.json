@@ -15,6 +15,26 @@
   // E.g. "staging QA" or "admin build pipeline".
   "description": "<short scannable label, e.g. 'staging QA' or 'admin build pipeline'>",
 
+  // Optional. A slug (no ".json") naming ANOTHER config file in this same `configs/`
+  // directory to inherit shared fields from. Every consumer resolves this once, before
+  // reading any other field: the base config's fields are the defaults, this file's own
+  // fields win per-key (nested objects merge recursively — e.g. this file can set just
+  // `notifications.channel` and still inherit the base's `notifications.bot_identity`).
+  // `extends` itself is stripped after resolution.
+  //
+  // Built for the "independent boards" multi-tool pattern in references/onboard.md step
+  // 2: instead of N fully duplicated config files (one per tool, ~15 shared fields
+  // copy-pasted N times), write ONE base config with the shared settings, and N thin
+  // overlays that set only `description`, `worker_backend`, and their own model block:
+  //   myboard.json          — base: project, variant, base_branch, columns, paths,
+  //                            human_approves_merge, truth_gate, rebuild_cap, ...
+  //   myboard-codex.json    — { "extends": "myboard", "worker_backend": "codex-exec",
+  //                             "codex": { "model": "gpt-5.6-sol" } }
+  //
+  // Constraints: the base config must NOT itself set `extends` (no chains — resolution
+  // errors clearly if it does). Absent/null (the common case) costs nothing extra.
+  "extends": null,
+
   "project": {
     "owner": "<github-owner>",
     "title": "<project title on GitHub>",

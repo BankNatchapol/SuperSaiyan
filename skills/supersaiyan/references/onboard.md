@@ -63,26 +63,44 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
         ├─ A) INDEPENDENT BOARDS — N configs, N dispatcher processes.
         │     Pick this for parallel/redundant boards, or when each tool
         │     should own a whole pipeline end to end.
-        │     ├─ Run steps 3-13 ONCE per tool, producing N config files that
-        │     │  all point at the SAME project.owner/project.number but
-        │     │  differ in `description` and `worker_backend`:
-        │     │    <slug>-claude.json  → worker_backend "workflow" (or "claude-p")
-        │     │    <slug>-codex.json   → worker_backend "codex-exec"
-        │     │    <slug>-cursor.json  → worker_backend "cursor-agent"
-        │     └─ Explain: each config's dispatcher is a plain background
+        │     ├─ Run steps 3-13 ONCE, gathering every SHARED setting
+        │     │  (project, variant, base_branch, columns, paths,
+        │     │  human_approves_merge, truth_gate, truth_threshold,
+        │     │  rebuild_cap, block_rate_alert_pct, notifications). Write
+        │     │  these to ONE base config, `<slug>.json` — no `description`,
+        │     │  no `worker_backend`, no `codex`/`cursor` model block; those
+        │     │  three live only in the overlays below. This file is never
+        │     │  meant to be run directly (though nothing stops it — it
+        │     │  falls back to worker_backend "workflow" like any config
+        │     │  that omits the field).
+        │     ├─ For each tool selected, write a THIN overlay config —
+        │     │  `description`, `worker_backend`, and (codex/cursor only)
+        │     │  the tool's model block, plus `"extends": "<slug>"`
+        │     │  pointing at the base file above:
+        │     │    <slug>-claude.json
+        │     │      { "extends": "<slug>", "description": "…",
+        │     │        "worker_backend": "workflow" }   (or "claude-p")
+        │     │    <slug>-codex.json
+        │     │      { "extends": "<slug>", "description": "…",
+        │     │        "worker_backend": "codex-exec",
+        │     │        "codex": { "model": "…", "reasoning_effort": "…" } }
+        │     │    <slug>-cursor.json
+        │     │      { "extends": "<slug>", "description": "…",
+        │     │        "worker_backend": "cursor-agent",
+        │     │        "cursor": { "model": "…" } }
+        │     │  Every consumer (super-board-run.sh, super-board-wave-plan.sh,
+        │     │  super-board-status.py, the Control Center) resolves `extends`
+        │     │  before reading any other field — see references/config-schema.json
+        │     │  (`extends`) and scripts/config-resolve.sh. `extends` is exactly
+        │     │  one level: the base config must NOT itself set `extends`.
+        │     └─ Explain: each overlay's dispatcher is a plain background
         │        process — run `.claude/bin/super-board-run.sh <slug>-codex`
         │        alongside `<slug>-cursor` and `<slug>-claude` in parallel
-        │        shells; they share the board but never fight over one config
-        │        file. (This is what fixes the classic "two dispatchers
-        │        overwrite each other's worker_backend" collision — no
-        │        data-model change needed, multiple named configs already
-        │        work.)
-        │     Known gap: every shared field (`project`, `variant`,
-        │     `rebuild_cap`, `truth_gate`, etc.) is fully duplicated across
-        │     the N files today — editing one means editing all of them
-        │     identically, with nothing catching drift. A shared-base +
-        │     linked-overlay design is proposed, not implemented, in
-        │     `docs/super-board-analysis/multi-tool-config-linking.md`.
+        │        shells; they share the board but never fight over one
+        │        overlay file, and now share the base file's settings too —
+        │        edit `<slug>.json` once (e.g. `rebuild_cap`) and every
+        │        tool's next dispatcher run picks it up, since each process
+        │        re-reads and re-resolves its config fresh at startup.
         │
         └─ B) PER-LANE MAP — one board, one config, one dispatcher process.
               Pick this to specialize by lane (e.g. one tool builds, another
@@ -243,8 +261,13 @@ Every onboard halt comment includes (a) what the bot tried, (b) what failed, (c)
 Before exiting `onboard` successfully, the worker MUST verify:
 
 1. **Config file exists and validates** — `.claude/supersaiyan/configs/<slug>.json`
-   parses as JSON and contains every required field from `references/config-schema.json`
-   (including `notifications.bot_identity`).
+   parses as JSON. If it sets `extends`, resolve it first (read the base file at the same
+   directory, merge — see `references/config-schema.json` `extends`) and validate the
+   RESOLVED view, not the raw overlay; an overlay legitimately omits most fields on its own.
+   The resolved config must contain every required field from `references/config-schema.json`
+   (including `notifications.bot_identity`), and if `extends` is set, the named base file
+   must exist and must NOT itself set `extends` (chained extends is a hard error — surface it
+   as a failed check, don't attempt to resolve further).
 2. **Active pointer is updated** — `.claude/supersaiyan/active` is a one-line
    file containing exactly the new slug, no trailing whitespace beyond a single `\n`.
 3. **Project columns are present on GitHub** — running

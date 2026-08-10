@@ -1,6 +1,15 @@
 # Shared base config + linked per-tool overlays for multi-tool boards
 
-**Status:** Proposed — not implemented. Future work, tracked here until it's worth a task file.
+**Status:** Implemented. `extends` ships in `references/config-schema.json`, resolved by
+`scripts/config-resolve.sh` (sourced by `scripts/super-board-run.sh` and
+`scripts/super-board-wave-plan.sh`), `scripts/super-board-status.py`
+(`resolve_extends`/`_deep_merge`), and `packages/control-core/src/index.ts`
+(`resolveExtends`/`deepMerge`, both `discoverConfigs` and `runState`). `references/onboard.md`
+step 2 path A now writes one base config + N thin overlays instead of N fully duplicated
+files. Tests: `tests/test-config-extends.sh` (resolver unit cases, wave-plan integration
+including the process-substitution/FIFO test-mode path, and a `super-board-run.sh` smoke run
+through both the dev-repo and real-`install.sh` layouts) and `test-status-json.py`'s
+`check_extends_resolution`.
 
 **Context:** raised while reviewing the per-lane `worker_backend` feature — onboarding a board
 across Claude, Codex, and Cursor together today means N fully independent config files.

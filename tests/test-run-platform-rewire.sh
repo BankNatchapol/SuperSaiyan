@@ -75,6 +75,7 @@ mkdir -p "$SMOKE_DIR/.claude/supersaiyan/configs" \
 # into .claude/bin/). worker_backend gate runs before the platform gate, so both contracts
 # must be present for the smoke run to reach the platform-rewire behavior under test.
 cp "$RUN_SH" "$SMOKE_DIR/scripts/super-board-run.sh"
+cp "$ROOT/scripts/config-resolve.sh" "$SMOKE_DIR/scripts/config-resolve.sh"
 cp "$ROOT/scripts/platforms/github.sh" "$SMOKE_DIR/scripts/platforms/github.sh"
 cp "$ROOT/scripts/backends/claude-p.sh" "$SMOKE_DIR/scripts/backends/claude-p.sh"
 chmod +x "$SMOKE_DIR/scripts/super-board-run.sh"
