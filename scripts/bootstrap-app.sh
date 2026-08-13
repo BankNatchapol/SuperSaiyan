@@ -140,7 +140,33 @@ enable_dynamic_workflows() {
   fi
 }
 
-check_authentication() {
+# Resolve github|gitlab for $TARGET. Onboarded config wins; otherwise sniff
+# origin for a GitLab host so a to-be-onboarded GitLab app still gets glab auth.
+bootstrap_git_platform() {
+  local raw effective platform origin
+  # shellcheck disable=SC1091
+  . "$SAIYAN_ROOT/scripts/platform-config.sh"
+  raw=$(platform_config_resolve "$TARGET" 2>/dev/null || true)
+  if [ -n "$raw" ]; then
+    effective=$(platform_config_effective "$raw" 2>/dev/null || printf '%s\n' "$raw")
+    platform=$(platform_config_resolve_platform "$effective" 2>/dev/null || true)
+    if [ -n "$platform" ]; then
+      printf '%s\n' "$platform"
+      return 0
+    fi
+  fi
+  origin=$(git -C "$TARGET" remote get-url origin 2>/dev/null || true)
+  case "$origin" in
+    *gitlab.com*|*gitlab.*)
+      printf 'gitlab\n'
+      ;;
+    *)
+      printf 'github\n'
+      ;;
+  esac
+}
+
+check_github_auth() {
   if command -v gh >/dev/null 2>&1; then
     if gh auth status >/dev/null 2>&1; then
       ok "GitHub CLI authenticated"
@@ -157,6 +183,45 @@ check_authentication() {
       warn "GitHub CLI is not authenticated; run: gh auth login"
     fi
   fi
+}
+
+check_gitlab_auth() {
+  local raw effective host="" hostname_args=""
+  raw=$(platform_config_resolve "$TARGET" 2>/dev/null || true)
+  if [ -n "$raw" ]; then
+    effective=$(platform_config_effective "$raw" 2>/dev/null || printf '%s\n' "$raw")
+    host=$(jq -r '.project.host // empty' "$effective" 2>/dev/null || true)
+  fi
+  if [ -n "$host" ] && [ "$host" != "gitlab.com" ]; then
+    hostname_args="--hostname $host"
+  fi
+  if command -v glab >/dev/null 2>&1; then
+    # shellcheck disable=SC2086
+    if glab auth status $hostname_args >/dev/null 2>&1; then
+      ok "GitLab CLI authenticated"
+    else
+      if [ -n "$hostname_args" ]; then
+        warn "GitLab CLI is not authenticated; run: glab auth login $hostname_args"
+      else
+        warn "GitLab CLI is not authenticated; run: glab auth login"
+      fi
+    fi
+  else
+    warn "GitLab CLI is not installed; run: brew install glab"
+  fi
+}
+
+check_authentication() {
+  local platform
+  # Source in this shell so check_gitlab_auth can call platform_config_*
+  # after bootstrap_git_platform runs in a command-substitution subshell.
+  # shellcheck disable=SC1091
+  . "$SAIYAN_ROOT/scripts/platform-config.sh"
+  platform=$(bootstrap_git_platform)
+  case "$platform" in
+    gitlab) check_gitlab_auth ;;
+    *) check_github_auth ;;
+  esac
 
   if command -v claude >/dev/null 2>&1; then
     if claude auth status >/dev/null 2>&1; then
@@ -306,6 +371,7 @@ echo
 echo "Machine prerequisites"
 install_brew_package git git
 install_brew_package gh gh
+install_brew_package glab glab
 install_brew_package jq jq
 install_claude
 enable_dynamic_workflows
