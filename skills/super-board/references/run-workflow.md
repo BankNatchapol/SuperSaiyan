@@ -19,16 +19,24 @@ The interactive session that runs this backend is the orchestrator. It:
 ## Preconditions (before the first wave)
 
 Run the same preconditions as `run.md` §Preconditions, minus PID checks:
-1. Config exists and validates against `config-schema.json`. If it sets `extends`, resolve
-   it FIRST — read the base config at the same directory, merge (base defaults, overlay
-   wins per key), and validate/use that resolved view for every field read from here on
-   (`variant`, `human_approves_merge`, `tier`/`model_tier`, everything `configPath` implies
-   downstream). Halt if the named base is missing or itself sets `extends` (chains aren't
-   supported). `scripts/super-board-wave-plan.sh` (step 2 below) already does this
-   resolution itself when given a real config file — see `scripts/config-resolve.sh` and
-   `references/config-schema.json` (`extends`) — but the orchestrator's own reads of
-   `human_approves_merge`/`tier` for the `Workflow` args in step 4 happen independently and
-   must resolve `extends` too, or an overlay config silently loses its inherited settings.
+1. Config exists and validates against `config-schema.json`. Resolve `extends` via
+   `bash .supersaiyan/bin/config-resolve.sh --effective-path <config-path>` — prints an
+   absolute path to stdout and exits 0. Read every field from THIS point on — `variant`,
+   `human_approves_merge`, `tier`/`model_tier`, and the `configPath` passed to Launch in step
+   4 — from the printed path, never from the raw `configs/<slug>.json`. Halt if the command
+   exits non-zero (its stderr names the problem: missing base, or the base itself setting
+   `extends` — chains aren't supported).
+
+   Use the CLI, not the raw config, even though `configs/<slug>.json` "looks" readable:
+   without `extends` the printed path is just that file's absolute form (no behavior change),
+   but with `extends` the raw file is missing every inherited field (`project`,
+   `base_branch`, ...) — reading it directly silently drops them.
+
+   This is the SAME resolver `scripts/super-board-run.sh` (the legacy dispatcher) and
+   `scripts/super-board-wave-plan.sh` (step 2 below) use internally via
+   `persist_resolved_config()` — one implementation, one behavior, on both backends. The
+   orchestrator shells out to it rather than sourcing it because it is a Claude Code session,
+   not a bash script.
 2. Production-merge guard: refuse `base_branch: main` + `human_approves_merge:
    false` when deploy markers exist (same rule as super-board-run.sh).
 3. Stale-worktree scan: remove `.worktrees/*` whose branch is gone.
@@ -85,8 +93,14 @@ Repeat until a done condition or halt gate fires:
    (or /loop re-entries) against the same board without bot_identity.
 4. **Launch** — Workflow tool with
    `scriptPath: .supersaiyan/workflows/super-board-wave.js` and
-   `args: { configPath, variant, cards, humanApprovesMerge, tier }`. Runs in the background; the
-   orchestrator stays responsive. `humanApprovesMerge` comes from the config; when false the workflow serializes Review-lane agents (merge-race guard, execution side).
+   `args: { configPath, variant, cards, humanApprovesMerge, tier }`. `configPath` MUST be the
+   effective path from Preconditions step 1 (`config-resolve.sh --effective-path`'s output),
+   never the raw `configs/<slug>.json` path — `super-board-wave.js` is a Workflow script with
+   no filesystem access, so it cannot resolve `extends` itself; it only forwards whatever
+   `configPath` it's given straight into every lane agent's prompt. Passing the raw overlay
+   path there would hand lane workers a config missing every field the overlay inherits from
+   its base. Runs in the background; the
+   orchestrator stays responsive. `humanApprovesMerge` comes from the (resolved) config; when false the workflow serializes Review-lane agents (merge-race guard, execution side).
    `tier` is the run's model ladder: `'low'` when the user invoked
    `super-board run --low` (haiku/sonnet/opus by card complexity), `'high'`
    for `run --high` (opus floor, session model above), omitted/`'medium'`
@@ -134,6 +148,7 @@ don't stall on prompts:
     "Bash(git push:*)", "Bash(git pull:*)", "Bash(git fetch:*)", "Bash(git blame:*)",
     "Bash(mkdir:*)", "Bash(pgrep:*)", "Bash(node --check:*)",
     "Bash(bash .supersaiyan/bin/super-board-wave-plan.sh:*)",
+    "Bash(bash .supersaiyan/bin/config-resolve.sh:*)",
     plus your project's test runners (e.g. "Bash(npm test:*)", "Bash(npx playwright:*)").
 
 `gh pr merge` is deliberately NOT in the list — Reviewer merges remain

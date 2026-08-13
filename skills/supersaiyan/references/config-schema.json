@@ -39,12 +39,21 @@
   // Constraints: the base config must NOT itself set `extends` (no chains — resolution
   // errors clearly if it does). Absent/null (the common case) costs nothing extra.
   //
-  // Where the resolved view lands: `super-board-run.sh` writes it to
-  // `<config-root>/resolved/<slug>.json` and hands THAT path to workers, because a worker
-  // can outlive the dispatcher that spawned it and must not be pointed at a temp file the
-  // dispatcher deletes on exit. That directory is machine-local (gitignored) and rewritten
-  // every run — the committed `configs/*.json` stay the only source of truth. It is
-  // deliberately outside `configs/`, which every consumer globs to enumerate boards.
+  // Where the resolved view lands: `scripts/config-resolve.sh`'s `persist_resolved_config()`
+  // writes it to `<config-root>/resolved/<slug>.json` — an ABSOLUTE, stable path, not the
+  // mktemp path the underlying resolver returns. Required because a worker can (a) outlive
+  // the dispatcher that spawned it and must not be pointed at a temp file the dispatcher
+  // deletes on exit, and (b) run from a git worktree, a different cwd than the process that
+  // resolved the config, so a relative path is not safe either. That directory is
+  // machine-local (gitignored) and rewritten every call — the committed `configs/*.json`
+  // stay the only source of truth. It is deliberately outside `configs/`, which every
+  // consumer globs to enumerate boards.
+  //
+  // Both dispatch backends go through this one function before handing a worker its config:
+  // the legacy bash dispatcher (`super-board-run.sh`) calls it directly, and the
+  // workflow-backend orchestrator calls it via `config-resolve.sh --effective-path` (see
+  // `references/run-workflow.md` §Preconditions) since `super-board-wave.js` — a Workflow
+  // script — has no filesystem access to resolve `extends` itself.
   "extends": null,
 
   "project": {

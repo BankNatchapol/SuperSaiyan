@@ -64,6 +64,7 @@ Nothing else. Stop is intentionally tolerant — its job is to bring the system 
 - **Does not touch worktrees** under `.worktrees/`. Leaving them in place lets the next worker check out the same branch faster; the dispatcher's stale-worktree scan cleans up anything truly dead on next start.
 - **Does not touch branches or PRs.** Both persist. State lives on the GitHub Project board — cards stay in whichever column they were in when stopped.
 - **Does not modify the config.** A stopped run is not a deactivated config; the resolved root's `active` pointer is preserved.
+- **Does not sweep `<config-root>/resolved/`.** This is the persisted `extends` merge (see `references/config-schema.json` `extends`, `scripts/config-resolve.sh`). Leaving a stale copy after `extends` is removed from a config is inert — nothing reads that file unless `extends` is currently set — and it gets overwritten the next time this slug's config is resolved, so it's not worth a stop step. It can be misleading during manual debugging, though: if a resolved copy looks wrong for a config that no longer sets `extends`, it's stale, not a bug.
 - **Does not bypass the GitHub assignee mutex.** It releases the mutex, then kills. If the GitHub API is unreachable, release is best-effort and the orphan-scan + reap-on-next-start covers the gap.
 
 ## Resume = run (no separate verb)

@@ -69,30 +69,17 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Resolve an optional `extends` link (shared base config for multi-tool boards — see
-# references/config-schema.json) before ANY field below is read. On success this may
-# reassign CONFIG_PATH to a merged view; every jq call below keeps reading "$CONFIG_PATH"
-# completely unchanged either way.
+# references/config-schema.json) before ANY field below is read, via the shared
+# persist_resolved_config() — same function the workflow-backend orchestrator calls through
+# this file's CLI mode (references/run-workflow.md), so both backends resolve identically.
+# Always returns an ABSOLUTE path: with no `extends` that's just CONFIG_PATH's absolute form;
+# with `extends` it's a persisted, stable path (not an mktemp file this process's own EXIT trap
+# would remove) — required because dispatch_lane embeds CONFIG_PATH verbatim in every worker
+# prompt, and workers run from a git worktree, a different cwd than this process, and routinely
+# outlive it (a crashed dispatcher leaves orphan workers behind — see references/stop.md).
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/config-resolve.sh"
-RESOLVED_CONFIG_PATH=$(resolve_config_extends "$CONFIG_PATH") || exit 66
-if [ "$RESOLVED_CONFIG_PATH" != "$CONFIG_PATH" ]; then
-  # The resolver hands back an mktemp path. Move it somewhere STABLE before using it:
-  # dispatch_lane embeds CONFIG_PATH verbatim in every worker prompt, and workers routinely
-  # outlive this process — a crashed dispatcher leaves orphan workers behind (see
-  # references/stop.md) — so a temp file removed by our own EXIT trap would vanish out from
-  # under a worker that reads its config lazily. Overwritten on each run; the previous run's
-  # copy lingering is a feature when debugging what a worker was actually handed.
-  #
-  # Deliberately NOT under configs/: every config consumer treats each configs/*.json as a
-  # board (platform-config.sh's config count, super-board-status.py's glob, control-core's
-  # discoverConfigs), so a resolved copy there would register as a phantom extra board and
-  # break sole-config detection. `mv` also consumes the temp file, so nothing is left behind.
-  mkdir -p "$CONFIG_ROOT/resolved"
-  PERSISTED_CONFIG_PATH="$CONFIG_ROOT/resolved/${CONFIG_SLUG}.json"
-  mv "$RESOLVED_CONFIG_PATH" "$PERSISTED_CONFIG_PATH"
-  RESOLVED_CONFIG_PATH="$PERSISTED_CONFIG_PATH"
-fi
-CONFIG_PATH="$RESOLVED_CONFIG_PATH"
+CONFIG_PATH=$(persist_resolved_config "$CONFIG_PATH") || exit 66
 
 # ───────────────────────────── config read ─────────────────────────────
 VARIANT=$(jq -r '.variant' "$CONFIG_PATH")
@@ -439,6 +426,7 @@ reap_finished_locks() {
 BACKEND_SUMMARY="qa=${QA_BACKEND} review=${REVIEW_BACKEND}"
 [ "$VARIANT" = "full" ] && BACKEND_SUMMARY="build=${BUILD_BACKEND} ${BACKEND_SUMMARY}"
 log "super-board run started — config=${CONFIG_SLUG} variant=${VARIANT} base=${BASE_BRANCH} tick=${TICK_SECONDS}s max_workers=${MAX_WORKERS} backends: ${BACKEND_SUMMARY}"
+log "worker config path (embedded in every dispatch_lane prompt): ${CONFIG_PATH}"
 
 # Orphan-worker guard — one scan per distinct backend in use this run, since a per-lane
 # config can have up to three live at once and each has its own pgrep pattern.

@@ -11,7 +11,13 @@ export const meta = {
 }
 
 // args = {
-//   configPath: '.supersaiyan/configs/<slug>.json',
+//   configPath: the EFFECTIVE config path — output of
+//     `config-resolve.sh --effective-path .supersaiyan/configs/<slug>.json`, resolved by the
+//     orchestrator BEFORE Launch (references/run-workflow.md §Preconditions step 1), not the
+//     raw configs/<slug>.json path. This script has no filesystem access and forwards
+//     configPath verbatim into every lane agent's prompt — it cannot resolve an `extends`
+//     link itself, so if the caller ever passes the raw overlay path here, lane workers see a
+//     config missing every field the overlay inherits from its base.
 //   variant: 'full' | 'qa-only',
 //   cards: [{ number, status, title }],     // output of super-board-wave-plan.sh
 //   humanApprovesMerge: boolean (optional, default false),
