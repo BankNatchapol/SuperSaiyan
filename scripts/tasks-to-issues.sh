@@ -252,7 +252,7 @@ reconcile_mapped_issue_ready() {
   esac
 
   if [ -n "$CONFIG_PATH" ]; then
-    snapshot=$(platform_board_snapshot "$CONFIG_PATH") || return
+    snapshot=$(platform_board_snapshot "$EFFECTIVE") || return
   else
     snapshot=$(platform_board_snapshot "${GH_PROJECT_NUMBER:-}" "${GH_PROJECT_OWNER:-@me}") || return
   fi
@@ -261,7 +261,7 @@ reconcile_mapped_issue_ready() {
 
   case "$existing_status" in
     ""|null|Backlog)
-      platform_card_status_set --add "$CONFIG_PATH" "$issue_url" "Ready" >/dev/null
+      platform_card_status_set --add "$EFFECTIVE" "$issue_url" "Ready" >/dev/null
       echo "  → reconciled mapped issue to Ready"
       ;;
     *)
@@ -329,7 +329,7 @@ while IFS= read -r file; do
   echo "Created #$num — $title"
 
   if [ "$BOARD" = true ]; then
-    platform_card_status_set --add "$CONFIG_PATH" "$url" "Ready" >/dev/null
+    platform_card_status_set --add "$EFFECTIVE" "$url" "Ready" >/dev/null
     echo "  → added to platform board in Ready"
   fi
 done < <(list_task_files)

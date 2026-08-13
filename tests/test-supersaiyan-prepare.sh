@@ -140,10 +140,12 @@ if [ "$cmd $sub" = "project field-list" ]; then
   exit 0
 fi
 if [ "$cmd $sub" = "project item-list" ]; then
+  echo "ITEM_LIST $*" >> "$state/log"
   jq -n --slurpfile items "$state/items.json" '{items:$items[0]}'
   exit 0
 fi
 if [ "$cmd $sub" = "project item-add" ]; then
+  echo "ITEM_ADD $*" >> "$state/log"
   url=""
   while [ $# -gt 0 ]; do
     [ "$1" = "--url" ] && { url="$2"; break; }
@@ -156,7 +158,6 @@ if [ "$cmd $sub" = "project item-add" ]; then
     '. + [{id:$id,status:"",content:{type:"Issue",repository:"owner/repo",number:$number,url:$url}}]' \
     "$state/items.json" > "$tmp"
   mv "$tmp" "$state/items.json"
-  echo "ITEM_ADD $number" >> "$state/log"
   echo "$id"
   exit 0
 fi
@@ -397,4 +398,30 @@ grep -qiE 'does-not-exist|extends' "$TMP/err" ||
 grep -q '@me' "$TMP/out" &&
   fail "broken extends silently fell back to @me: $(cat "$TMP/out")"
 
-echo "PASS: test-supersaiyan-prepare.sh (11 scenarios)"
+# 12. The filing path (board snapshot + Ready enqueue) uses the inherited
+# project, not @me/empty. --check-only is not enough: github.sh jq's .project
+# off the path it is given.
+new_fixture extends-write
+cat > "$APP/.supersaiyan/configs/shared.json" <<'EOF'
+{
+  "project": {"owner": "inherited-owner", "number": 99},
+  "base_branch": "main"
+}
+EOF
+cat > "$APP/.supersaiyan/configs/overlay.json" <<'EOF'
+{
+  "extends": "shared",
+  "worker_backend": "codex-exec"
+}
+EOF
+rm -f "$APP/.supersaiyan/configs/demo-board.json"
+echo overlay > "$APP/.supersaiyan/active"
+install_real_helper "$APP"
+run_prepare > "$TMP/out" 2> "$TMP/err" ||
+  fail "extends overlay prepare exited $?: $(cat "$TMP/out" "$TMP/err")"
+grep -q 'ITEM_LIST project item-list 99 --owner inherited-owner' "$STATE/log" ||
+  fail "board snapshot did not use inherited project: $(cat "$STATE/log")"
+grep -q 'ITEM_ADD project item-add 99 --owner inherited-owner' "$STATE/log" ||
+  fail "Ready enqueue did not use inherited project: $(cat "$STATE/log")"
+
+echo "PASS: test-supersaiyan-prepare.sh (12 scenarios)"

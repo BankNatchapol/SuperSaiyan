@@ -239,7 +239,7 @@ CREATED=$(( AFTER_COUNT - BEFORE_COUNT + REPAIRED ))
 
 # Reconcile board: add mapped open issues that are absent or still in Backlog.
 if [ "$AFTER_COUNT" -gt 0 ]; then
-  items=$(platform_board_snapshot "$CONFIG_FILE")
+  items=$(platform_board_snapshot "$EFFECTIVE")
   while IFS=$(printf '\t') read -r issue_num issue_url; do
     [ -z "$issue_num" ] && continue
     existing_status=$(printf '%s' "$items" | jq -r --arg url "$issue_url" \
@@ -263,7 +263,7 @@ if [ "$AFTER_COUNT" -gt 0 ]; then
         exit 70
       }
       if [ "$issue_state" = "OPEN" ]; then
-        platform_card_status_set --add "$CONFIG_FILE" "$issue_url" "Ready" >/dev/null
+        platform_card_status_set --add "$EFFECTIVE" "$issue_url" "Ready" >/dev/null
       elif [ "$issue_state" != "CLOSED" ]; then
         echo "issue #$issue_num returned unsupported state during Ready reconciliation: $issue_state" >&2
         exit 70
