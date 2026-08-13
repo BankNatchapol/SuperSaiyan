@@ -97,6 +97,16 @@ persist_resolved_config() {
   }
   abs_raw="$abs_dir/$(basename "$raw")"
 
+  # Public CLI re-entry: a path under resolved/ is this function's own prior output, not a
+  # source config. The merge strips `extends`, so a second pass would take the no-extends
+  # early return and never re-read the base — silently pinning inherited fields. Refuse it
+  # so an orchestrator feeding --effective-path back its own printed path fails loudly.
+  # See references/run-workflow.md step 1.
+  if [ "$(basename "$abs_dir")" = "resolved" ]; then
+    echo "🛑 $abs_raw is a previously resolved snapshot, not a source config. Pass the raw configs/<slug>.json, not a path this command printed earlier." >&2
+    return 1
+  fi
+
   resolved_tmp=$(resolve_config_extends "$raw") || return 1
 
   if [ "$resolved_tmp" = "$raw" ]; then

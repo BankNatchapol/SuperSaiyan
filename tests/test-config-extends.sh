@@ -146,6 +146,21 @@ jq -e '.base_branch == "develop"' "$EXT_EFFECTIVE" >/dev/null \
 jq -e 'has("extends") | not' "$EXT_EFFECTIVE" >/dev/null \
   || fail "--effective-path's persisted config still carries the extends key"
 
+# Re-entry: feeding --effective-path its own printed path must fail loudly, not silently
+# return the stale snapshot. The merge strips `extends`, so a second pass would otherwise
+# take the no-extends early return, never re-read the base, and pin rebuild_cap (etc.) to
+# whatever the first pass wrote. Capture inode first so a passing-but-rewriting call still
+# fails this assertion.
+EXT_INODE=$(ls -i "$EXT_EFFECTIVE" | awk '{print $1}')
+if bash "$RESOLVE_SH" --effective-path "$EXT_EFFECTIVE" >"$TD/reentry-out.txt" 2>"$TD/reentry-err.txt"; then
+  fail "--effective-path should reject a path under resolved/ (its own prior output), got: $(cat "$TD/reentry-out.txt")"
+fi
+grep -qiE 'configs/|raw' "$TD/reentry-err.txt" \
+  || fail "--effective-path's resolved/ rejection does not tell the caller to pass the raw configs/<slug>.json: $(cat "$TD/reentry-err.txt")"
+REENTRY_INODE=$(ls -i "$EXT_EFFECTIVE" | awk '{print $1}')
+[ "$REENTRY_INODE" = "$EXT_INODE" ] \
+  || fail "--effective-path rewrote the snapshot when fed its own output (inode $EXT_INODE -> $REENTRY_INODE)"
+
 # The actual failure mode: readable from a completely different cwd, simulating a worker
 # running from .worktrees/issue-N-<lane>/ rather than this repo root.
 ( cd / && [ -f "$EXT_EFFECTIVE" ] ) \

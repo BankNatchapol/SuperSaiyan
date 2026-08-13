@@ -43,7 +43,9 @@ Run the same preconditions as `run.md` §Preconditions, minus PID checks:
    base. Feed back your own output and you pin the run to whatever the base said the first
    time: edit `rebuild_cap` in the base between waves and the change is silently ignored,
    breaking the guarantee in `references/onboard.md` step 2 that "every tool's next dispatcher
-   run picks it up". The legacy dispatcher is immune by construction — `super-board-run.sh`
+   run picks it up". The CLI now refuses paths whose parent directory is named `resolved/`
+   (nonzero, stderr names the raw overlay) so that mix-up fails loudly instead of succeeding
+   with a stale merge. The legacy dispatcher is immune by construction — `super-board-run.sh`
    always starts from `$CONFIG_ROOT/configs/<slug>.json` — so this is an
    orchestrator-discipline rule, not a resolver bug.
 
