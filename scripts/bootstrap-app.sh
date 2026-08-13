@@ -269,9 +269,9 @@ verify_app_install() {
   # false FAIL on the common, fully-successful plugin-based install.
   local path
   for path in \
-    ".claude/bin/tasks-to-issues.sh" \
-    ".claude/bin/platform-config.sh" \
-    ".claude/workflows/super-board-wave.js" \
+    ".supersaiyan/bin/tasks-to-issues.sh" \
+    ".supersaiyan/bin/platform-config.sh" \
+    ".supersaiyan/workflows/super-board-wave.js" \
     "docs/templates/task-file.md" \
     "docs/templates/issue.md" \
     "scripts/gstack-env.sh" \

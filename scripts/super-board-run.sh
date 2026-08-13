@@ -6,7 +6,7 @@
 #
 # Anti-zombie controls (added 2026-05-22 after #381 worker-storm incident):
 #   1. Orphan scan on startup — refuses to start if super-board claude workers already running.
-#   2. Issue-level lock files in .claude/supersaiyan/inflight/<N> — survives runner restart.
+#   2. Issue-level lock files in <config-root>/inflight/<N> — survives runner restart.
 #   3. Atomic GitHub assignee claim BEFORE spawning worker (closes 10-30s claude -p cold-start race).
 #   4. Rate-limit guard — sleeps until reset when GraphQL remaining < 200.
 #   5. Per-tick project-items cache — one gh call per tick, not per column lookup.
@@ -19,21 +19,66 @@
 set -euo pipefail
 
 # ───────────────────────────── args + paths ─────────────────────────────
+# Root search order, highest priority first: vendor-neutral (new onboards write only here),
+# then the two Claude-Code-branded roots this project used before multi-tool worker_backend
+# support (current, then legacy). See scripts/super-board-status.py's config_roots() — same
+# fallback chain, independent Python implementation — and references/config-schema.json.
+CONFIG_ROOTS=".supersaiyan .claude/supersaiyan .claude/super-board"
+
 CONFIG_SLUG="${1:-}"
 if [ -z "$CONFIG_SLUG" ]; then
-  if [ -f .claude/supersaiyan/active ]; then
-    CONFIG_SLUG=$(cat .claude/supersaiyan/active)
-  else
-    echo "usage: $0 <config-slug>  (or set .claude/supersaiyan/active)" >&2
+  # No slug given: the active pointer supplies it. Probe roots for a readable `active` file —
+  # whichever root wins is ALSO the root the config lives under (one onboard always writes
+  # `active` and `configs/` to the same root together), so CONFIG_ROOT is settled here, not
+  # re-derived from config existence below.
+  CONFIG_ROOT=""
+  for root in $CONFIG_ROOTS; do
+    if [ -f "$root/active" ]; then
+      CONFIG_ROOT="$root"
+      CONFIG_SLUG=$(cat "$root/active")
+      break
+    fi
+  done
+  if [ -z "$CONFIG_SLUG" ]; then
+    echo "usage: $0 <config-slug>  (or set .supersaiyan/active)" >&2
     exit 64
   fi
+else
+  # Slug given explicitly (the documented preferred path — see references/onboard.md: "Always
+  # pass the slug explicitly"): probe roots for that slug's config directly.
+  CONFIG_ROOT=""
+  for root in $CONFIG_ROOTS; do
+    if [ -f "$root/configs/${CONFIG_SLUG}.json" ]; then
+      CONFIG_ROOT="$root"
+      break
+    fi
+  done
+  : "${CONFIG_ROOT:=.supersaiyan}"   # not found under any root — new run; error follows below
 fi
 
-CONFIG_PATH=".claude/supersaiyan/configs/${CONFIG_SLUG}.json"
+CONFIG_PATH="$CONFIG_ROOT/configs/${CONFIG_SLUG}.json"
 if [ ! -f "$CONFIG_PATH" ]; then
   echo "config not found: $CONFIG_PATH" >&2
   exit 66
 fi
+
+# scripts/backends/<name>.sh in this dev repo, .supersaiyan/bin/backends/<name>.sh once
+# installed (install.sh copies scripts/backends/, scripts/platforms/, and
+# scripts/config-resolve.sh alongside this script). Computed early so config-resolve.sh can be
+# sourced before any field is read; reused again below for the backend/platform contract files.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Resolve an optional `extends` link (shared base config for multi-tool boards — see
+# references/config-schema.json) before ANY field below is read. On success this may
+# reassign CONFIG_PATH to a merged temp file; every jq call below keeps reading "$CONFIG_PATH"
+# completely unchanged either way. The temp file (if any) is cleaned up on exit.
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/config-resolve.sh"
+RESOLVED_CONFIG_PATH=$(resolve_config_extends "$CONFIG_PATH") || exit 66
+if [ "$RESOLVED_CONFIG_PATH" != "$CONFIG_PATH" ]; then
+  trap 'rm -f "$RESOLVED_CONFIG_PATH"' EXIT
+fi
+CONFIG_PATH="$RESOLVED_CONFIG_PATH"
 
 # ───────────────────────────── config read ─────────────────────────────
 VARIANT=$(jq -r '.variant' "$CONFIG_PATH")
@@ -46,39 +91,117 @@ BLOCK_ALERT_PCT=$(jq -r '.block_rate_alert_pct // 30' "$CONFIG_PATH")
 TICK_SECONDS=$(jq -r '.tick_seconds // 120' "$CONFIG_PATH")
 MAX_WORKERS=$(jq -r '.max_workers // 3' "$CONFIG_PATH")
 BOT_LOGIN=$(jq -r '.notifications.bot_identity // .bot_identity // ""' "$CONFIG_PATH")
-WORKER_BACKEND=$(jq -r '.worker_backend // "workflow"' "$CONFIG_PATH")
 GIT_PLATFORM=$(jq -r '.git_platform // "github"' "$CONFIG_PATH")
+
+# worker_backend is either a single string (back-compat — one backend for every lane) or an
+# object mapping lane -> backend name (per-lane routing; see references/backends.md).
+# Branch on `type` first: `jq -r` only unquotes top-level JSON *strings*, so reading an object
+# with a plain `jq -r '.worker_backend'` yields compact JSON text, not a usable backend name.
+WORKER_BACKEND_TYPE=$(jq -r '(.worker_backend // "workflow") | type' "$CONFIG_PATH")
+if [ "$WORKER_BACKEND_TYPE" = "object" ]; then
+  # No single WORKER_BACKEND value exists in this shape — the three lane scalars below are
+  # the only backend identity, and the startup log reports them via BACKEND_SUMMARY.
+  BUILD_BACKEND=$(jq -r '.worker_backend.build // "claude-p"' "$CONFIG_PATH")
+  QA_BACKEND=$(jq -r '.worker_backend.qa // "claude-p"' "$CONFIG_PATH")
+  REVIEW_BACKEND=$(jq -r '.worker_backend.review // "claude-p"' "$CONFIG_PATH")
+else
+  WORKER_BACKEND=$(jq -r '.worker_backend // "workflow"' "$CONFIG_PATH")
+  BUILD_BACKEND="$WORKER_BACKEND"
+  QA_BACKEND="$WORKER_BACKEND"
+  REVIEW_BACKEND="$WORKER_BACKEND"
+fi
 
 # Workflow is the default backend (v1.6.0). This dispatcher only runs when the config opts
 # into one of the bash-dispatcher backends explicitly — never by accident or stale habit.
 # See references/backends.md for the full contract.
-case "$WORKER_BACKEND" in
-  claude-p|codex-exec|cursor-agent) ;;
-  *)
+validate_backend_name() {
+  case "$1" in
+    claude-p|codex-exec|cursor-agent) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if [ "$WORKER_BACKEND_TYPE" = "object" ]; then
+  # Validate only the lanes this variant actually dispatches — a qa-only board never uses
+  # BUILD_BACKEND, so a missing/stray "build" key there is not fatal.
+  REQUIRED_LANES="qa review"
+  [ "$VARIANT" = "full" ] && REQUIRED_LANES="build qa review"
+  for lane in $REQUIRED_LANES; do
+    case "$lane" in
+      build)  lane_backend="$BUILD_BACKEND" ;;
+      qa)     lane_backend="$QA_BACKEND" ;;
+      review) lane_backend="$REVIEW_BACKEND" ;;
+    esac
+    if ! validate_backend_name "$lane_backend"; then
+      echo "🛑 board '${CONFIG_SLUG}' worker_backend.${lane}=\"${lane_backend}\" is not a valid bash-dispatcher backend." >&2
+      echo "    Set worker_backend.${lane} to \"claude-p\", \"codex-exec\", or \"cursor-agent\"." >&2
+      echo "    \"workflow\" is Claude-Code-session-bound and is never valid per-lane (see references/run-workflow.md)." >&2
+      exit 78
+    fi
+  done
+else
+  if ! validate_backend_name "$WORKER_BACKEND"; then
     echo "🛑 board '${CONFIG_SLUG}' uses the workflow backend (worker_backend=${WORKER_BACKEND})." >&2
     echo "    Run it in-session: /super-board run ${CONFIG_SLUG}  (see references/run-workflow.md)" >&2
-    echo "    To use this dispatcher, set \"worker_backend\" to \"claude-p\", \"codex-exec\", or \"cursor-agent\" in the config." >&2
+    echo "    To use this dispatcher, set \"worker_backend\" to \"claude-p\", \"codex-exec\", \"cursor-agent\", or a per-lane object in the config." >&2
     exit 78
-    ;;
-esac
-
-# Backend contract: scripts/backends/<name>.sh in this dev repo, .claude/bin/backends/<name>.sh
-# once installed (install.sh copies scripts/backends/ alongside this script).
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKEND_FILE="$SCRIPT_DIR/backends/${WORKER_BACKEND}.sh"
-if [ ! -f "$BACKEND_FILE" ]; then
-  echo "🛑 backend contract not found: $BACKEND_FILE (worker_backend=${WORKER_BACKEND})" >&2
-  exit 77
-fi
-# shellcheck disable=SC1090
-source "$BACKEND_FILE"
-
-if ! backend_auth_check; then
-  echo "🛑 backend '${WORKER_BACKEND}' failed its auth check — see message above." >&2
-  exit 76
+  fi
 fi
 
-# Platform contract: scripts/platforms/<name>.sh in this dev repo, .claude/bin/platforms/<name>.sh
+# Backend contract: scripts/backends/<name>.sh in this dev repo, .supersaiyan/bin/backends/<name>.sh
+# once installed (install.sh copies scripts/backends/ alongside this script). SCRIPT_DIR was
+# already computed above, before extends resolution.
+
+# `source`-ing a backend file overwrites every backend_* function in the current shell —
+# the contract has no namespacing. load_backend() is therefore the ONLY place that sources a
+# backend file, and every call site must call it for the lane's backend IMMEDIATELY before
+# invoking any backend_* function, in the same synchronous flow. Sourcing one "for later" is
+# never valid: only the most-recently-sourced file's functions are live.
+load_backend() {
+  # Two statements, not one `local a=... b=...$a...`: bash expands every word on a `local`
+  # line before the builtin runs, so referencing $name in the same statement that declares it
+  # is an unbound-variable error under `set -u`.
+  local name="$1"
+  local file="$SCRIPT_DIR/backends/${name}.sh"
+  if [ ! -f "$file" ]; then
+    echo "🛑 backend contract not found: $file (worker_backend=${name})" >&2
+    exit 77
+  fi
+  # shellcheck disable=SC1090
+  source "$file"
+}
+
+# Per-tool model overrides — one setting per TOOL, applied wherever that tool is used across
+# lanes (not per lane x tool). An env var already set by the caller wins; otherwise fall back
+# to the board config. Exported so the backend files pick them up; each backend still reads
+# them with inline `${VAR:-}` defaulting, so callers that never set them (super-build-dispatch,
+# super-qa-dispatch) keep working unchanged under `set -u`.
+CODEX_MODEL="${CODEX_MODEL:-}"
+CODEX_REASONING_EFFORT="${CODEX_REASONING_EFFORT:-}"
+CURSOR_MODEL="${CURSOR_MODEL:-}"
+[ -z "$CODEX_MODEL" ] && CODEX_MODEL=$(jq -r '.codex.model // ""' "$CONFIG_PATH")
+[ -z "$CODEX_REASONING_EFFORT" ] && CODEX_REASONING_EFFORT=$(jq -r '.codex.reasoning_effort // ""' "$CONFIG_PATH")
+[ -z "$CURSOR_MODEL" ] && CURSOR_MODEL=$(jq -r '.cursor.model // ""' "$CONFIG_PATH")
+export CODEX_MODEL CODEX_REASONING_EFFORT CURSOR_MODEL
+
+# Distinct backends actually in use this run, scoped to the lanes this variant dispatches.
+# bash 3.2 (macOS default) has no associative arrays; with at most three known lane scalars,
+# `sort -u` is simpler and safer than hand-rolled array dedup.
+if [ "$VARIANT" = "full" ]; then
+  DISTINCT_BACKENDS=$(printf '%s\n' "$BUILD_BACKEND" "$QA_BACKEND" "$REVIEW_BACKEND" | sort -u)
+else
+  DISTINCT_BACKENDS=$(printf '%s\n' "$QA_BACKEND" "$REVIEW_BACKEND" | sort -u)
+fi
+
+for backend_name in $DISTINCT_BACKENDS; do
+  load_backend "$backend_name"
+  if ! backend_auth_check; then
+    echo "🛑 backend '${backend_name}' failed its auth check — see message above." >&2
+    exit 76
+  fi
+done
+
+# Platform contract: scripts/platforms/<name>.sh in this dev repo, .supersaiyan/bin/platforms/<name>.sh
 # once installed (install.sh copies scripts/platforms/ alongside this script).
 # Sibling of the backends/ axis above — not an alternative. git_platform and worker_backend compose.
 PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
@@ -91,7 +214,10 @@ source "$PLATFORM_FILE"
 
 RUN_DATE=$(date +%Y-%m-%d)
 RUN_MANIFEST="docs/supersaiyan/runs/${RUN_DATE}-${CONFIG_SLUG}.md"
-INFLIGHT_DIR=".claude/supersaiyan/inflight"
+# Colocated with CONFIG_PATH's resolved root, not always .supersaiyan — inflight locks are a
+# byproduct of a specific run of a specific config; splitting config-root from state-root would
+# let two invocations against an old-root config race on locks nobody's watching in the new root.
+INFLIGHT_DIR="$CONFIG_ROOT/inflight"
 mkdir -p "docs/supersaiyan/runs" .worktrees "$INFLIGHT_DIR"
 
 # ───────────────────────────── helpers ─────────────────────────────
@@ -185,7 +311,7 @@ try_claim_assignee() {
 
 dispatch_lane() {
   # $1 = lane (build|qa|review); $2 = issue number
-  local lane="$1" issue="$2" prompt pid
+  local lane="$1" issue="$2" prompt pid backend
   if issue_locked "$issue"; then
     log "skip dispatch lane=${lane} issue=#${issue} — already locked"
     return 0
@@ -194,10 +320,20 @@ dispatch_lane() {
     return 0
   fi
   case "$lane" in
+    build)  backend="$BUILD_BACKEND" ;;
+    qa)     backend="$QA_BACKEND" ;;
+    review) backend="$REVIEW_BACKEND" ;;
+    *) log "unknown lane: $lane"; return 1 ;;
+  esac
+  # Re-source this lane's backend immediately before use (see load_backend's contract note).
+  # Safe because dispatch_lane calls never overlap: the main loop invokes it synchronously,
+  # at most once per lane per tick, and only the launched worker backgrounds — so there is no
+  # window in which another lane's backend_* functions are live during this dispatch.
+  load_backend "$backend"
+  case "$lane" in
     build)  prompt="Run super-build on issue #${issue} for super-board run. Read .claude/skills/super-board/references/run.md → Builder lifecycle. Config: ${CONFIG_PATH}." ;;
     qa)     prompt="Run super-qa on issue #${issue} for super-board run. Read .claude/skills/super-board/references/run.md → Tester lifecycle. Config: ${CONFIG_PATH}." ;;
     review) prompt="Run super-review on issue #${issue} for super-board run. Read .claude/skills/super-board/references/run.md → Reviewer lifecycle. Config: ${CONFIG_PATH}." ;;
-    *) log "unknown lane: $lane"; return 1 ;;
   esac
   pid=$(backend_launch "$(backend_worker_addendum)${prompt}")
   # v1.3.0+ lock format: bash-assignment style so `super-board stop` can source it
@@ -209,7 +345,7 @@ dispatch_lane() {
     qa) QA_PID="$pid"; QA_ISSUE="$issue" ;;
     review) REVIEW_PID="$pid"; REVIEW_ISSUE="$issue" ;;
   esac
-  log "dispatch lane=${lane} issue=#${issue} pid=${pid} claim=${BOT_LOGIN:-local-only}"
+  log "dispatch lane=${lane} issue=#${issue} backend=${backend} pid=${pid} claim=${BOT_LOGIN:-local-only}"
 }
 
 issue_status() {
@@ -286,21 +422,42 @@ reap_finished_locks() {
 }
 
 # ───────────────────────────── preconditions ─────────────────────────────
-log "super-board run started — config=${CONFIG_SLUG} variant=${VARIANT} base=${BASE_BRANCH} tick=${TICK_SECONDS}s max_workers=${MAX_WORKERS}"
+BACKEND_SUMMARY="qa=${QA_BACKEND} review=${REVIEW_BACKEND}"
+[ "$VARIANT" = "full" ] && BACKEND_SUMMARY="build=${BUILD_BACKEND} ${BACKEND_SUMMARY}"
+log "super-board run started — config=${CONFIG_SLUG} variant=${VARIANT} base=${BASE_BRANCH} tick=${TICK_SECONDS}s max_workers=${MAX_WORKERS} backends: ${BACKEND_SUMMARY}"
 
-# Orphan-worker guard. `|| true` defends against pipefail when pgrep finds nothing.
-ORPHAN_PATTERN="$(backend_orphan_pattern)"
-ORPHANS=$(pgrep -f "$ORPHAN_PATTERN" 2>/dev/null | grep -v "^$$\$" | wc -l | tr -d ' ' || true)
-ORPHANS=${ORPHANS:-0}
-if [ "$ORPHANS" -gt 0 ]; then
-  log "🛑 refusing to start: ${ORPHANS} ${WORKER_BACKEND} workers already running."
-  log "    Stop them first: pkill -f '${ORPHAN_PATTERN}'"
+# Orphan-worker guard — one scan per distinct backend in use this run, since a per-lane
+# config can have up to three live at once and each has its own pgrep pattern.
+# `|| true` defends against pipefail when pgrep finds nothing.
+ORPHAN_TOTAL=0
+ORPHAN_HINTS=()
+for backend_name in $DISTINCT_BACKENDS; do
+  load_backend "$backend_name"
+  ORPHAN_PATTERN="$(backend_orphan_pattern)"
+  ORPHANS=$(pgrep -f "$ORPHAN_PATTERN" 2>/dev/null | grep -v "^$$\$" | wc -l | tr -d ' ' || true)
+  ORPHANS=${ORPHANS:-0}
+  if [ "$ORPHANS" -gt 0 ]; then
+    log "🛑 ${ORPHANS} ${backend_name} worker(s) already running (pattern: ${ORPHAN_PATTERN})"
+    ORPHAN_TOTAL=$((ORPHAN_TOTAL + ORPHANS))
+    ORPHAN_HINTS+=("pkill -f '${ORPHAN_PATTERN}'")
+  fi
+done
+if [ "$ORPHAN_TOTAL" -gt 0 ]; then
+  # ORPHAN_HINTS is only expanded inside this branch, where it is guaranteed non-empty —
+  # bash 3.2 treats expanding an empty array under `set -u` as an unbound-variable error.
+  log "🛑 refusing to start: ${ORPHAN_TOTAL} worker(s) already running."
+  for orphan_hint in "${ORPHAN_HINTS[@]}"; do
+    log "    Stop them first: ${orphan_hint}"
+  done
   log "    Then re-run: $0 $CONFIG_SLUG"
   exit 73
 fi
 
 # Workflow-backend mutual exclusion (see references/run-workflow.md §Preconditions).
-WAVE_LOCK=".claude/supersaiyan/inflight/workflow-wave.lock"
+# Colocated with the resolved CONFIG_ROOT (see INFLIGHT_DIR above) — the workflow backend and
+# this bash dispatcher must contend for the same lock file regardless of which root a given
+# board's config happens to live under.
+WAVE_LOCK="$INFLIGHT_DIR/workflow-wave.lock"
 if [ -f "$WAVE_LOCK" ]; then
   log "🛑 refusing to start: workflow-backend wave in flight ($WAVE_LOCK exists)."
   log "    If no wave is actually running, remove the stale lock: rm $WAVE_LOCK"

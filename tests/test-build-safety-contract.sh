@@ -40,8 +40,13 @@ else
   fi
 fi
 
-# 6. The preflight must check for an onboarded pipeline config before allowing autonomy.
-grep -q '.claude/supersaiyan/configs' "$FILE" || fail "preflight config-path check missing (.claude/supersaiyan/configs)"
+# 6. The preflight must check for an onboarded pipeline config before allowing autonomy —
+#    across every known config root (vendor-neutral + the two legacy Claude-branded roots),
+#    not just one. Three independent existence checks rather than one exact-string match, so
+#    reformatting the `ls ...` one-liner doesn't silently stop testing a root.
+grep -q '\.supersaiyan/configs' "$FILE" || fail "preflight config-path check missing the new root (.supersaiyan/configs)"
+grep -q '\.claude/supersaiyan/configs' "$FILE" || fail "preflight config-path check missing the legacy root (.claude/supersaiyan/configs)"
+grep -q '\.claude/super-board/configs' "$FILE" || fail "preflight config-path check missing the oldest legacy root (.claude/super-board/configs)"
 
 # 7. The pipeline-dispatched gate must match what the real dispatch backends actually send —
 #    regression guard for the "super-board run" vs "super-board workflow wave" string mismatch.

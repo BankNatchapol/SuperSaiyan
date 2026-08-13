@@ -11,7 +11,7 @@ view impractical in practice. This script renders it in ≈1.3 s by doing
 the layout as a single Python pass.
 
 What it does:
-  1. Resolve config slug: arg | `.claude/supersaiyan/active` | sole config.
+  1. Resolve config slug: arg | `.supersaiyan/active` (or a legacy root) | sole config.
   2. ONE GraphQL call for project items (number, title, labels, Status).
   3. ONE `gh issue view` per card that needs it: Blocked/Skipped cards (for
      reason-tag extraction) and any card with a `loop:rebuild-N` label (for
@@ -30,7 +30,7 @@ Cross-platform: pure Python 3 stdlib + `gh` CLI. Works on macOS, Linux,
 Windows (PowerShell / CMD / Git Bash / WSL). No bash, no jq.
 
 Usage:
-  python .claude/bin/super-board-status.py [<config-slug>] [--json]
+  python .supersaiyan/bin/super-board-status.py [<config-slug>] [--json]
 
 Exit codes:
   0  ok
@@ -57,7 +57,7 @@ except Exception:
     pass
 
 # Platform adapters live next to this script (scripts/platforms/ in-repo,
-# .claude/bin/platforms/ when installed).
+# .supersaiyan/bin/platforms/ when installed).
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
@@ -391,6 +391,19 @@ def field_status(node: dict[str, Any]) -> str:
     return "Backlog"
 
 
+def resolve_worker_backend(cfg: dict[str, Any]) -> dict[str, str]:
+    """Normalize `worker_backend` into an explicit {build, qa, review} map.
+
+    The config field is either a single string (one backend for every lane) or a per-lane
+    object; consumers get the same shape either way. Mirrors the resolution in
+    scripts/super-board-run.sh, including its "claude-p" default for omitted lane keys.
+    """
+    raw = cfg.get("worker_backend", "workflow")
+    if isinstance(raw, dict):
+        return {lane: raw.get(lane, "claude-p") for lane in ("build", "qa", "review")}
+    return {lane: raw for lane in ("build", "qa", "review")}
+
+
 # ───────────────────────────── side-effecting helpers ─────────────────────────────
 
 # Slugs are file-system identifiers (configs/<slug>.json, runs/<date>-<slug>.md),
@@ -415,8 +428,12 @@ def valid_slug(slug: str) -> bool:
 
 
 def config_roots() -> list[Path]:
-    """Current SuperSaiyan config root first, then legacy super-board."""
+    """Vendor-neutral root first, then the Claude-Code-branded roots this project used
+    before multi-tool worker_backend support: current `.claude/supersaiyan`, then legacy
+    `.claude/super-board`. Every existing install keeps resolving via fallback; new onboards
+    write only to the first root."""
     return [
+        Path(".supersaiyan"),
         Path(".claude/supersaiyan"),
         Path(".claude/super-board"),
     ]
@@ -448,6 +465,44 @@ def resolve_config_path(slug: str) -> Path | None:
     return None
 
 
+def _deep_merge(base: Any, overlay: Any) -> Any:
+    """Recursive merge matching the bash dispatcher's `jq -s '.[0] * .[1]'`: overlay wins
+    per-key; when both sides are dicts at a key, merge recursively; otherwise overlay
+    replaces base outright (this includes lists — they are never concatenated)."""
+    if isinstance(base, dict) and isinstance(overlay, dict):
+        merged = dict(base)
+        for key, value in overlay.items():
+            merged[key] = _deep_merge(base[key], value) if key in base else value
+        return merged
+    return overlay
+
+
+def resolve_extends(cfg: dict[str, Any], config_path: Path) -> dict[str, Any]:
+    """Merge an optional `extends` link (shared base config for multi-tool boards) into cfg.
+    See references/config-schema.json (`extends`). No-op, zero I/O, when `extends` is unset."""
+    ext = cfg.get("extends")
+    if not ext:
+        return cfg
+    base_path = config_path.parent / f"{ext}.json"
+    if not base_path.is_file():
+        print(
+            f"config error: {config_path} sets \"extends\": \"{ext}\" but {base_path} does not exist",
+            file=sys.stderr,
+        )
+        sys.exit(66)
+    base_cfg = json.loads(base_path.read_text())
+    if base_cfg.get("extends"):
+        print(
+            f"config error: {base_path} (the base for {config_path}) itself sets "
+            "\"extends\" — chained extends are not supported",
+            file=sys.stderr,
+        )
+        sys.exit(66)
+    merged = _deep_merge(base_cfg, cfg)
+    merged.pop("extends", None)
+    return merged
+
+
 # ───────────────────────────── main ─────────────────────────────
 
 
@@ -467,6 +522,7 @@ def main() -> int:
         return 66
 
     cfg = json.loads(config_path.read_text())
+    cfg = resolve_extends(cfg, config_path)
     project_owner: str = cfg["project"]["owner"]
     project_number: int = int(cfg["project"]["number"])
     adapter = get_status_adapter(cfg.get("git_platform", "github"))
@@ -645,7 +701,10 @@ def main() -> int:
                 "path": str(config_path),
                 "variant": cfg.get("variant"),
                 "base_branch": cfg.get("base_branch", "main"),
+                # Raw, exactly as configured (string or per-lane object), kept for
+                # back-compat; `worker_backend_resolved` is always {build, qa, review}.
                 "worker_backend": cfg.get("worker_backend", "workflow"),
+                "worker_backend_resolved": resolve_worker_backend(cfg),
                 "human_approves_merge": bool(cfg.get("human_approves_merge")),
                 "truth_gate": tg,
                 "truth_threshold": tt,

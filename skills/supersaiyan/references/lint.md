@@ -40,7 +40,11 @@ Progress: ✅ onboard  →  🧹 lint (you are here)  →  🤖 run (next)
 PHASE 0 — Pick config
   ├─ 0 configs → halt: "Run `super-board onboard` first."
   ├─ 1 config → use it (1-liner confirm)
-  └─ 2+ configs → list by description, ask which
+  ├─ 2+ configs → list by description, ask which
+  └─ If the picked config sets `extends`, resolve it before reading anything else — read the
+     base file at `<same-dir>/<extends-value>.json`, merge (base defaults, overlay wins; see
+     references/config-schema.json `extends`). Every field below (project, variant, columns)
+     comes from the RESOLVED view, not the raw overlay file.
 
 PHASE 1 — Confirm GitHub project
   "🎯 Linting: <project title> (#<number>) under <owner>
@@ -80,6 +84,7 @@ PHASE 7 — Final summary + session-reset nudge
 | Config exists but project deleted | Halt: "Project #N no longer exists. Run `super-board onboard` to recreate." |
 | Config exists, columns missing | Halt: "Columns missing: [X, Y]. Run `super-board onboard` to repair." |
 | User deleted config but project still on GitHub | Nothing to load; user runs `onboard` and picks "use existing project". |
+| Config sets `extends` but the named base file is missing, or the base itself sets `extends` (chained) | Halt: "Config '<slug>' extends '<ext>', which [doesn't exist / itself sets extends — chains aren't supported]. Run `super-board onboard` to repair." |
 
 ---
 

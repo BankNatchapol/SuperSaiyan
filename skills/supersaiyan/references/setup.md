@@ -120,7 +120,7 @@ copy to `docs/supersaiyan/designs/<name>-design.md`.
 
 Follow `references/onboard.md` exactly (the interactive super-board onboarding wizard).
 
-This creates `.claude/supersaiyan/configs/<slug>.json` and links it to a GitHub Project.
+This creates `.supersaiyan/configs/<slug>.json` and links it to a GitHub Project.
 
 When onboarding prompts for variant, recommend:
 - `variant: full` (Build + QA + Review) for new features
@@ -129,7 +129,7 @@ When onboarding prompts for variant, recommend:
 After onboarding completes, always write the active pointer:
 
 ```bash
-echo "<slug>" > .claude/supersaiyan/active
+echo "<slug>" > .supersaiyan/active
 ```
 
 ---
@@ -138,7 +138,7 @@ echo "<slug>" > .claude/supersaiyan/active
 
 ```
 ✅ SuperSaiyan setup complete.
-   Config: .claude/supersaiyan/configs/<slug>.json
+   Config: .supersaiyan/configs/<slug>.json
    Project: <GitHub Project URL>
    Docs:    docs/superpowers/{specs,tasks}/
 

@@ -124,6 +124,7 @@ EOF
 mkdir -p "$SMOKE_DIR/platforms"
 cp "$ROOT/scripts/platforms/github.sh" "$SMOKE_DIR/platforms/github.sh"
 cp "$WAVE" "$SMOKE_DIR/super-board-wave-plan.sh"
+cp "$ROOT/scripts/config-resolve.sh" "$SMOKE_DIR/config-resolve.sh"
 chmod +x "$SMOKE_DIR/super-board-wave-plan.sh"
 
 PLAN_OUT=$(
@@ -451,6 +452,7 @@ rm -rf "$STALE_DISPATCH_DIR"
 WAVE_GITLAB_DIR=$(mktemp -d)
 mkdir -p "$WAVE_GITLAB_DIR/platforms"
 cp "$WAVE" "$WAVE_GITLAB_DIR/super-board-wave-plan.sh"
+cp "$ROOT/scripts/config-resolve.sh" "$WAVE_GITLAB_DIR/config-resolve.sh"
 cat > "$WAVE_GITLAB_DIR/config.json" <<'EOF'
 {
   "variant": "full",
@@ -891,9 +893,12 @@ chmod +x "$INSTALL_DIR/bin/gh" "$INSTALL_DIR/bin/claude"
 PATH="$INSTALL_DIR/bin:$PATH" HOME="$INSTALL_DIR/home" \
   bash "$ROOT/install.sh" "$INSTALL_DIR/app" >/dev/null \
   || fail "installer smoke failed"
-[ -f "$INSTALL_DIR/app/.claude/bin/platform-config.sh" ] \
+# install.sh's copy target moved from .claude/bin/ to the vendor-neutral .supersaiyan/bin/.
+# Consumers still fall back to the old path for installs that predate that move, so the
+# assertion tracks where the installer WRITES today, not where readers may also look.
+[ -f "$INSTALL_DIR/app/.supersaiyan/bin/platform-config.sh" ] \
   || fail "installer did not copy the shared config resolver"
-grep -q '".claude/bin/platform-config.sh"' "$ROOT/scripts/bootstrap-app.sh" \
+grep -q '".supersaiyan/bin/platform-config.sh"' "$ROOT/scripts/bootstrap-app.sh" \
   || fail "bootstrap verification does not require the installed shared resolver"
 rm -rf "$INSTALL_DIR"
 

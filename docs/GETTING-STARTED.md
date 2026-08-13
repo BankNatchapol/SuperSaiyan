@@ -29,7 +29,7 @@ claude plugin install supersaiyan
 
 **Option B — Direct install into a specific repo**
 
-Use this if you also want the pipeline scripts (`.claude/bin/`) and docs layout dropped into a repo.
+Use this if you also want the pipeline scripts (`.supersaiyan/bin/`) and docs layout dropped into a repo.
 
 ```bash
 git clone https://github.com/BankNatchapol/SuperSaiyan.git
@@ -61,7 +61,7 @@ This will:
 - Verify `git`, `gh`, and Claude are authenticated
 - Create `docs/superpowers/specs/`, `docs/superpowers/tasks/`, and related directories
 - Walk you through creating a **GitHub Project board** (or linking to an existing one)
-- Write a board config to `.claude/super-board/configs/<slug>.json`
+- Write a board config to `.supersaiyan/configs/<slug>.json`
 
 **What's next:** Run `supersaiyan new <feature>` to start your first feature or project.
 
@@ -118,6 +118,33 @@ Commits docs, files GitHub issues, adds to the board's Ready queue, runs pre-fli
 /supersaiyan run     ← single feature: start the autonomous loop
 ```
 For multi-phase projects, see below.
+
+### Running the planning phase from Codex or Cursor
+
+`/supersaiyan new` is Claude Code slash-command sugar — Codex CLI and Cursor CLI have no
+equivalent. The skills underneath it are plain instruction files in the repo, though, so any
+interactive agent that can read a file can follow them. Point the tool at them by path:
+
+```
+In codex or cursor-agent, interactively, from the repo root:
+
+  "Read .claude/skills/refining-spec/SKILL.md and follow it to turn the design below
+   into a spec under docs/superpowers/specs/.  Feature slug: <feature-slug>
+   <paste your brainstorm / office-hours output>"
+
+  ...then, once the spec file exists:
+
+  "Read .claude/skills/writing-board-tasks/SKILL.md and follow it to decompose
+   docs/superpowers/specs/<feature-slug>-design.md into board task files."
+```
+
+You lose slash-command auto-discovery, not the workflow. Filing the resulting issues still
+works from any tool — that step is `gh` calls, not Claude-specific.
+
+> `worker_backend` — including the per-lane form that gives Build, QA, and Review each their
+> own CLI — only controls **headless dispatch** once cards reach the board. It has no effect
+> on this planning phase, which always runs interactively in whichever session you start it
+> from. See [backends.md](../skills/super-board/references/backends.md).
 
 ---
 

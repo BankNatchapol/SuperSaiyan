@@ -6,14 +6,53 @@ split into two families:
 | Family | Values | Dispatched by |
 |---|---|---|
 | Claude-Code-native | `workflow` (default) | Claude Code's own `/workflows` primitive — see `references/run-workflow.md`. Session-bound; no equivalent exists in Codex or Cursor, so this family stays Claude-Code-only. |
-| Bash dispatcher | `claude-p`, `codex-exec`, `cursor-agent` | `.claude/bin/super-board-run.sh` (or, for the standalone loops, `super-build-dispatch.sh` / `super-qa-dispatch.sh`), via `scripts/backends/<worker_backend>.sh` |
+| Bash dispatcher | `claude-p`, `codex-exec`, `cursor-agent` | `.supersaiyan/bin/super-board-run.sh` (or, for the standalone loops, `super-build-dispatch.sh` / `super-qa-dispatch.sh`), via `scripts/backends/<worker_backend>.sh` |
 
 All three bash-dispatcher backends are explicit opt-in; the dispatcher refuses to run
 (exit 78) unless `worker_backend` is set to one of them.
 
+`worker_backend` selects the tool for **headless Build/QA/Review dispatch only**. It has no
+effect on the planning phase (`office-hours` → `refining-spec` → `writing-board-tasks`), which
+always runs interactively in whatever session you invoke it from — see
+[docs/GETTING-STARTED.md](../../../docs/GETTING-STARTED.md) for driving that phase from Codex
+or Cursor.
+
+## Per-lane `worker_backend`
+
+`worker_backend` is either a single string (one backend for every lane) or an object mapping
+lane → backend name, letting one board run a different CLI per lane in a single dispatcher
+process:
+
+```json
+"worker_backend": {
+  "build":  "codex-exec",
+  "qa":     "cursor-agent",
+  "review": "claude-p"
+}
+```
+
+- Any lane key you omit defaults to `claude-p`.
+- `"workflow"` is **never** valid as a per-lane value — it is Claude-Code-session-bound, not a
+  bash-dispatcher backend. The dispatcher exits 78 and names the offending lane.
+- Only lanes the `variant` actually dispatches are validated: a `qa-only` board never runs a
+  Builder, so a missing (or unusable) `build` key there is ignored, not fatal.
+- This is still ONE dispatcher process. For genuinely independent parallel boards — one tool
+  owning a whole pipeline each — use the N-separate-configs path in `references/onboard.md`
+  step 2 instead. Never run two dispatchers against the same board.
+
+**Contract implication — the backend functions are not namespaced.** Sourcing a backend file
+overwrites every `backend_*` function in the current shell, so only the most recently sourced
+file's functions are live. Any caller supporting per-lane backends must therefore re-source the
+lane's backend immediately before calling any `backend_*` function, in the same synchronous
+flow — never source one "for later." In `scripts/super-board-run.sh` this is the `load_backend`
+helper, the single sourcing point in that script; `dispatch_lane` calls it after resolving the
+lane's backend and before `backend_worker_addendum`/`backend_launch`. Startup checks that must
+cover every backend in use (auth check, orphan guard) iterate the deduplicated set of backends
+for the lanes this variant dispatches, re-sourcing once per backend.
+
 ## The Backend contract
 
-Every `scripts/backends/<name>.sh` file must define five shell functions. Dispatch scripts
+Every `scripts/backends/<name>.sh` file must define six shell functions. Dispatch scripts
 `source` the file for the active `worker_backend` — never invoke the CLI directly.
 
 | Function | Contract |
@@ -45,6 +84,8 @@ just reads the same repo-relative path `claude -p` workers already use.
 - Auth check: `command -v claude`.
 - Orphan pattern: `claude -p .*super-board run` (the marker is already baked into every
   `dispatch_lane` prompt — no addendum needed).
+- Model: none by design — `claude -p` inherits the session model, the same convention the
+  workflow backend's Reviewer lane follows. There is no `claude.model` config field.
 
 ### `codex-exec`
 
@@ -55,6 +96,12 @@ just reads the same repo-relative path `claude -p` workers already use.
 - Auth check: `codex login status` (remediation: `codex login`).
 - Orphan pattern: `codex exec .*for SuperSaiyan` — `codex exec` puts the prompt in argv, so
   the marker embedded by `backend_worker_addendum` is directly visible to `pgrep -f`.
+- Model: `codex.model` and `codex.reasoning_effort` in the board config, or the `CODEX_MODEL`
+  / `CODEX_REASONING_EFFORT` env vars (env wins, for one-off runs). Appended as
+  `--model <name>` and `-c model_reasoning_effort="<value>"`. Both are optional — unset means
+  the codex CLI's own configured default, and no empty flag is emitted. `reasoning_effort` is
+  passed through as a free-form string: accepted values are model-specific (e.g. `gpt-5.6-sol`
+  takes `low|medium|high|xhigh|max|ultra`), so the dispatcher does not validate it.
 - Other useful flags (not used by default, documented for reference): `-C/--cd <DIR>` working
   directory, `--json` for JSONL event output, `-o/--output-last-message <FILE>`.
 
@@ -69,6 +116,10 @@ just reads the same repo-relative path `claude -p` workers already use.
 - Auth check: `agent status` (prints `✓ Logged in as <email>` when authenticated; remediation:
   `agent login`). If `CURSOR_API_KEY` is set, note it's a CI escape hatch, not the primary
   auth path.
+- Model: `cursor.model` in the board config, or the `CURSOR_MODEL` env var (env wins).
+  Appended as `--model <name>`. The id must match an entry from `agent models` exactly — e.g.
+  `cursor-grok-4.5-high`; a shorthand like `grok-4-5` is rejected by the CLI. Unset means the
+  Cursor CLI's own default, and no empty flag is emitted.
 - **Orphan pattern — do not assume `agent`/`-p` are adjacent.** The real `agent` binary
   re-execs as:
   ```
@@ -83,7 +134,7 @@ just reads the same repo-relative path `claude -p` workers already use.
 
 ## Adding a new backend
 
-1. Create `scripts/backends/<name>.sh` implementing all five functions above.
+1. Create `scripts/backends/<name>.sh` implementing all six functions above.
 2. Add `<name>` to the allowed-values check in `scripts/super-board-run.sh` (and
    `super-build-dispatch.sh` / `super-qa-dispatch.sh` if it should be available there too).
 3. Add a row to the table in `config-schema.json`'s `worker_backend` comment and to this file.

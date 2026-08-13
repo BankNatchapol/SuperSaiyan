@@ -12,15 +12,35 @@ platform_config_resolve() {
   local repo_root="${1:-$PWD}"
   local explicit_config="${2:-}"
   local selected=""
-  local configs_dir active_file active_slug candidate
+  local configs_dir active_file active_slug candidate root
   local config_count=0 sole_config=""
 
   repo_root=$(cd "$repo_root" 2>/dev/null && pwd) || {
     echo "repository root not found: $repo_root" >&2
     return 66
   }
-  configs_dir="$repo_root/.claude/supersaiyan/configs"
-  active_file="$repo_root/.claude/supersaiyan/active"
+
+  # Config/state root search order, highest priority first: the vendor-neutral root (where new
+  # onboards write), then the two Claude-Code-branded roots this project used before multi-tool
+  # worker_backend support. Matches scripts/super-board-run.sh's CONFIG_ROOTS and
+  # scripts/super-board-status.py's config_roots() — three independent implementations of one
+  # contract, kept deliberately in step. First root that has an `active` pointer or any config
+  # wins; a pre-migration install keeps resolving with no migration step.
+  local config_roots=".supersaiyan .claude/supersaiyan .claude/super-board"
+  configs_dir=""
+  active_file=""
+  for root in $config_roots; do
+    if [ -f "$repo_root/$root/active" ] || [ -d "$repo_root/$root/configs" ]; then
+      configs_dir="$repo_root/$root/configs"
+      active_file="$repo_root/$root/active"
+      break
+    fi
+  done
+  # No root present at all — keep the new root's paths so error messages name where to onboard.
+  if [ -z "$configs_dir" ]; then
+    configs_dir="$repo_root/.supersaiyan/configs"
+    active_file="$repo_root/.supersaiyan/active"
+  fi
 
   if [ -n "$explicit_config" ]; then
     selected="$explicit_config"
@@ -46,7 +66,7 @@ platform_config_resolve() {
     if [ "$config_count" -eq 1 ]; then
       selected="$sole_config"
     elif [ "$config_count" -gt 1 ]; then
-      echo "multiple supersaiyan configs found; pass an explicit config or set .claude/supersaiyan/active" >&2
+      echo "multiple supersaiyan configs found; pass an explicit config or set ${configs_dir%/configs}/active" >&2
       return 75
     fi
   fi

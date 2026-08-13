@@ -64,6 +64,59 @@ function safeJson<T>(text: string, fallback: T): T {
   }
 }
 
+// `worker_backend` is either a single backend name for the whole run, or a per-lane object
+// (see skills/super-board/references/backends.md). Render the object form as a compact
+// `build=… qa=… review=…` summary — String() on it would yield "[object Object]". Lane keys
+// omitted from the object default to claude-p, matching the dispatcher's own resolution.
+// Recursive merge matching the bash dispatcher's `jq -s '.[0] * .[1]'`: overlay wins per-key;
+// when both sides are plain objects at a key, merge recursively, otherwise overlay replaces
+// base outright (this includes arrays — they are never concatenated).
+function deepMerge(base: unknown, overlay: unknown): unknown {
+  const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+  if (isPlainObject(base) && isPlainObject(overlay)) {
+    const merged: Record<string, unknown> = { ...base };
+    for (const [key, value] of Object.entries(overlay)) {
+      merged[key] = key in base ? deepMerge(base[key], value) : value;
+    }
+    return merged;
+  }
+  return overlay;
+}
+
+// A config may set `extends: "<slug>"` to inherit shared fields (project, variant,
+// rebuild_cap, notifications, ...) from another config file in the same directory — see
+// skills/super-board/references/config-schema.json (`extends`). Without this, an overlay
+// config (which never sets `project` itself) would silently fail discoverConfigs' `project.number`
+// check and never appear in the Control Center at all. Resolution failures (missing/chained
+// base) return the config unchanged — this is a display path, not a dispatcher, so a broken
+// overlay should just fall out of the same "missing project fields" skip below it always had,
+// not crash discovery for every other board.
+async function resolveExtends(
+  directory: string,
+  config: Record<string, any>,
+): Promise<Record<string, any>> {
+  const ext = config.extends;
+  if (!ext || typeof ext !== "string") return config;
+  const basePath = join(directory, `${ext}.json`);
+  if (!(await exists(basePath))) return config;
+  const base = safeJson<Record<string, any>>(await readFile(basePath, "utf8"), {});
+  if (base.extends) return config;
+  const merged = deepMerge(base, config) as Record<string, any>;
+  delete merged.extends;
+  return merged;
+}
+
+function formatWorkerBackend(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const lanes = value as Record<string, unknown>;
+    return ["build", "qa", "review"]
+      .map((lane) => `${lane}=${String(lanes[lane] ?? "claude-p")}`)
+      .join(" ");
+  }
+  return String(value || "workflow");
+}
+
 export class RepositoryRegistry {
   private readonly file: string;
 
@@ -112,21 +165,37 @@ export async function registerRepository(path: string): Promise<RepositoryRecord
   };
 }
 
+// Config/state root search order, highest priority first: the vendor-neutral root (new
+// onboards write only here), then the two Claude-Code-branded roots this project used before
+// multi-tool worker_backend support (current, then legacy). Full relative paths, not bare
+// names — `.supersaiyan` has no `.claude/` prefix, the other two do, so every consumer of this
+// list can `join(repoPath, root, ...)` directly with no per-entry special-casing. See
+// scripts/super-board-status.py's config_roots() (Python's independent, but semantically
+// identical, resolver) and references/config-schema.json.
+const CONFIG_ROOTS: readonly string[] = [".supersaiyan", ".claude/supersaiyan", ".claude/super-board"];
+
 async function discoverConfigs(repoPath: string): Promise<BoardConfigSummary[]> {
-  const candidates = [
-    join(repoPath, ".claude", "supersaiyan", "configs"),
-    join(repoPath, ".claude", "super-board", "configs"),
-  ];
-  const found = new Map<string, BoardConfigSummary>();
-  for (const directory of candidates) {
+  const found = new Map<string, { summary: BoardConfigSummary; rootIndex: number }>();
+  // `.entries()` rather than an index loop: indexing a readonly array yields `string | undefined`
+  // under the strict-index checks this package compiles with, and `root` here is always defined.
+  for (const [rootIndex, root] of CONFIG_ROOTS.entries()) {
+    const directory = join(repoPath, root, "configs");
     if (!(await exists(directory))) continue;
     for (const file of (await readdir(directory)).filter((name) => name.endsWith(".json")).sort()) {
       const path = join(directory, file);
-      const config = safeJson<Record<string, any>>(await readFile(path, "utf8"), {});
+      let config = safeJson<Record<string, any>>(await readFile(path, "utf8"), {});
+      config = await resolveExtends(directory, config);
       const slug = file.slice(0, -5);
       if (!config.project?.number || !config.project?.owner) continue;
-      if (!found.has(slug) || directory.includes("supersaiyan")) {
-        found.set(slug, {
+      // Results merge across roots; on a same-slug collision the higher-priority root (lower
+      // rootIndex) wins. A substring check like `directory.includes("supersaiyan")` would be
+      // ambiguous here — `.supersaiyan` and `.claude/supersaiyan` both contain "supersaiyan" —
+      // so priority is tracked by index into CONFIG_ROOTS instead.
+      const existing = found.get(slug);
+      if (existing && existing.rootIndex <= rootIndex) continue;
+      found.set(slug, {
+        rootIndex,
+        summary: {
           slug,
           path,
           projectOwner: String(config.project.owner),
@@ -134,17 +203,17 @@ async function discoverConfigs(repoPath: string): Promise<BoardConfigSummary[]> 
           projectTitle: String(config.project.title || slug),
           variant: String(config.variant || "full"),
           baseBranch: String(config.base_branch || "main"),
-          workerBackend: String(config.worker_backend || "workflow"),
-        });
-      }
+          workerBackend: formatWorkerBackend(config.worker_backend),
+        },
+      });
     }
   }
-  return [...found.values()];
+  return [...found.values()].map((entry) => entry.summary);
 }
 
 async function activeConfig(repoPath: string, configs: BoardConfigSummary[]): Promise<BoardConfigSummary | undefined> {
-  for (const base of ["supersaiyan", "super-board"]) {
-    const active = join(repoPath, ".claude", base, "active");
+  for (const root of CONFIG_ROOTS) {
+    const active = join(repoPath, root, "active");
     if (await exists(active)) {
       const slug = (await readFile(active, "utf8")).trim();
       const match = configs.find((config) => config.slug === slug);
@@ -300,7 +369,11 @@ function parseManifest(text: string): { workers: WorkerState[]; events: RunEvent
 
 async function runState(repoPath: string, config?: BoardConfigSummary): Promise<{ workers: WorkerState[]; events: RunEvent[]; runActive: boolean }> {
   if (!config) return { workers: [], events: [], runActive: false };
-  const configJson = safeJson<Record<string, any>>(await readFile(config.path, "utf8"), {});
+  let configJson = safeJson<Record<string, any>>(await readFile(config.path, "utf8"), {});
+  // `paths.runs_dir` may live in the base config for an `extends`-linked overlay — resolve it
+  // the same way discoverConfigs does, or a customized (non-default) runs_dir silently shows
+  // no active run for this board.
+  configJson = await resolveExtends(dirname(config.path), configJson);
   const runsDir = resolve(repoPath, configJson.paths?.runs_dir || "docs/supersaiyan/runs");
   if (!(await exists(runsDir))) return { workers: [], events: [], runActive: false };
   const files = (await readdir(runsDir)).filter((file) => file.endsWith(".md") && file.includes(config.slug)).sort();
@@ -468,8 +541,7 @@ export class RepositoryWatchService {
   watch(repository: RepositoryRecord, onChange: () => void): void {
     if (this.watchers.has(repository.id)) return;
     const targets = [
-      join(repository.path, ".claude", "supersaiyan"),
-      join(repository.path, ".claude", "super-board"),
+      ...CONFIG_ROOTS.map((root) => join(repository.path, root)),
       join(repository.path, "docs", "superpowers"),
       join(repository.path, "docs", "supersaiyan"),
       join(repository.path, "docs", "super-board"),

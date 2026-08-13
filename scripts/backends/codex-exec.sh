@@ -10,15 +10,32 @@
 #   sometimes silently ignore network_access=true on macOS (openai/codex#10390), which breaks
 #   git push / gh. codex exec accepts the prompt as a positional arg.
 
+# Model + reasoning depth. Read here with inline `${VAR:-}` defaulting rather than assuming
+# the caller exported them — super-build-dispatch.sh / super-qa-dispatch.sh source this file
+# under `set -u` and never set these. Both come from the board config (`codex.model`,
+# `codex.reasoning_effort`) via super-board-run.sh, or straight from the env for one-off runs.
+# Unset/empty = use the codex CLI's own configured default.
+codex_flags() {
+  # Emitted one per line so callers can read them into an array.
+  printf '%s\n' "exec" "--sandbox" "danger-full-access"
+  [ -n "${CODEX_MODEL:-}" ] && printf '%s\n' "--model" "$CODEX_MODEL"
+  [ -n "${CODEX_REASONING_EFFORT:-}" ] && printf '%s\n' "-c" "model_reasoning_effort=\"${CODEX_REASONING_EFFORT}\""
+  return 0
+}
+
 backend_launch() {
   # $1 = full prompt text. Backgrounds the worker, echoes its PID.
-  nohup codex exec --sandbox danger-full-access "$1" >/dev/null 2>&1 &
+  local flags=()
+  while IFS= read -r flag; do flags+=("$flag"); done < <(codex_flags)
+  nohup codex "${flags[@]}" "$1" >/dev/null 2>&1 &
   echo $!
 }
 
 backend_run_sync() {
   # $1 = full prompt text. Runs in the foreground; caller captures the exit code.
-  codex exec --sandbox danger-full-access "$1"
+  local flags=()
+  while IFS= read -r flag; do flags+=("$flag"); done < <(codex_flags)
+  codex "${flags[@]}" "$1"
 }
 
 backend_orphan_pattern() {
@@ -40,15 +57,19 @@ backend_skills_dir() {
 }
 
 backend_worker_addendum() {
+  # supersaiyan:generated:begin worker-addendum
+  # GENERATED REGION — edit docs/templates/agent-blocks/worker-addendum.md, then run
+  # scripts/generate-agent-configs.sh to regenerate. Do not hand-edit.
   cat <<'EOF'
-NOTE: you are running as `codex exec`, NOT inside a Claude Code session. You do not have a
-Skill tool or a Task tool — do not attempt to invoke either. Where any referenced skill
-document describes spawning a nested `claude -p` / `codex exec` / `agent -p` sub-worker,
-ignore that instruction; those docs assume a Claude Code parent process. Instead, read the
-referenced skill files directly (they are plain files under `.claude/skills/` relative to
-the repo root) and follow their instructions inline in this session.
+NOTE: you are running as `codex exec`, NOT inside a Claude Code session.
+You do not have a Skill tool or a Task tool — do not attempt to invoke either. Where any
+referenced skill document describes spawning a nested `claude -p` / `codex exec` / `agent -p`
+sub-worker, ignore that instruction; those docs assume a Claude Code parent process. Instead,
+read the referenced skill files directly (they are plain files under `.claude/skills/`
+relative to the repo root) and follow their instructions inline in this session.
 
 for SuperSaiyan codex-exec dispatch
 ---
 EOF
+  # supersaiyan:generated:end worker-addendum
 }

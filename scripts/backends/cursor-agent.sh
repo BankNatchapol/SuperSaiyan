@@ -20,15 +20,31 @@
 # A pattern assuming that adjacency (e.g. `agent -p .*...`) silently matches zero real
 # processes. Match on the stable marker text in the prompt instead.
 
+# Model selection. Read with inline `${VAR:-}` defaulting rather than assuming the caller
+# exported it — super-build-dispatch.sh / super-qa-dispatch.sh source this file under `set -u`
+# and never set it. Comes from the board config (`cursor.model`) via super-board-run.sh, or
+# straight from the env for one-off runs. The id must match `agent models` exactly. Unset or
+# empty = use the Cursor CLI's own default.
+cursor_flags() {
+  # Emitted one per line so callers can read them into an array.
+  printf '%s\n' "-p" "--trust" "--force" "--sandbox" "disabled"
+  [ -n "${CURSOR_MODEL:-}" ] && printf '%s\n' "--model" "$CURSOR_MODEL"
+  return 0
+}
+
 backend_launch() {
   # $1 = full prompt text. Backgrounds the worker, echoes its PID.
-  nohup agent -p --trust --force --sandbox disabled "$1" >/dev/null 2>&1 &
+  local flags=()
+  while IFS= read -r flag; do flags+=("$flag"); done < <(cursor_flags)
+  nohup agent "${flags[@]}" "$1" >/dev/null 2>&1 &
   echo $!
 }
 
 backend_run_sync() {
   # $1 = full prompt text. Runs in the foreground; caller captures the exit code.
-  agent -p --trust --force --sandbox disabled "$1"
+  local flags=()
+  while IFS= read -r flag; do flags+=("$flag"); done < <(cursor_flags)
+  agent "${flags[@]}" "$1"
 }
 
 backend_orphan_pattern() {
@@ -52,10 +68,13 @@ backend_skills_dir() {
 }
 
 backend_worker_addendum() {
+  # supersaiyan:generated:begin worker-addendum
+  # GENERATED REGION — edit docs/templates/agent-blocks/worker-addendum.md, then run
+  # scripts/generate-agent-configs.sh to regenerate. Do not hand-edit.
   cat <<'EOF'
-NOTE: you are running as Cursor's `agent -p`, NOT inside a Claude Code session. You do not
-have a Skill tool or a Task tool — do not attempt to invoke either. Where any referenced
-skill document describes spawning a nested `claude -p` / `codex exec` / `agent -p`
+NOTE: you are running as Cursor's `agent -p`, NOT inside a Claude Code session.
+You do not have a Skill tool or a Task tool — do not attempt to invoke either. Where any
+referenced skill document describes spawning a nested `claude -p` / `codex exec` / `agent -p`
 sub-worker, ignore that instruction; those docs assume a Claude Code parent process. Instead,
 read the referenced skill files directly (they are plain files under `.claude/skills/`
 relative to the repo root) and follow their instructions inline in this session.
@@ -63,4 +82,5 @@ relative to the repo root) and follow their instructions inline in this session.
 for SuperSaiyan cursor-agent dispatch
 ---
 EOF
+  # supersaiyan:generated:end worker-addendum
 }

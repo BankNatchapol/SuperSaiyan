@@ -11,7 +11,7 @@ Spec: `docs/superpowers/specs/2026-05-21-super-board-design.md`
 
 | Verb | Where | What it does |
 |---|---|---|
-| `super-board onboard` | interactive | one-time setup wizard; writes `.claude/supersaiyan/configs/<slug>.json` |
+| `super-board onboard` | interactive | one-time setup wizard; writes `.supersaiyan/configs/<slug>.json` |
 | `super-board lint` | interactive | walks active-pipeline issues, flags vague ACs, runs pre-flight readiness |
 | `super-board status` | interactive (read-only) | snapshot of active config, column counts, in-flight workers |
 | `super-board run` | headless | the autonomous loop; spawned via `scripts/super-board-run.sh`. Also the resume command — state lives on the board, not in process memory. Accepts a model-tier flag: `--low` (haiku/sonnet/opus ladder), default = medium (sonnet/opus/session), `--high` (opus/session — strongest models only). |
@@ -27,7 +27,7 @@ If invoked with no verb, ask which (see no-verb behavior in spec §8).
 | `super-board lint ...` | `references/lint.md` |
 | `super-board status ...` | `references/status.md` |
 | `super-board run ...` (default — `worker_backend` unset or `"workflow"`) | `references/run-workflow.md` (lane lifecycles still come from `references/run.md`) |
-| `super-board run ...` with config `worker_backend: "claude-p"` (legacy, explicit opt-in) | `references/run.md` |
+| `super-board run ...` with config `worker_backend` set to `"claude-p"`, `"codex-exec"`, `"cursor-agent"`, or a per-lane object (explicit opt-in) | `references/run.md` (+ `references/backends.md` for backend selection) |
 | `super-board stop ...` / "stop the run" / "pause the loop" / "kill super-board" | `references/stop.md` |
 | "resume" / "pick up where I left off" / "restart after stop" | `references/stop.md` (resume = run; no separate verb) |
 | Anything about Block/Skip exits | `references/block-template.md` |
@@ -40,8 +40,8 @@ Replaces: `super-work-trader` (rename + extension). The 3-lane mechanics are inh
 
 super-board is an **autonomous trader**. The interactive Claude session that invokes any of the five verbs is an **orchestrator**, not a worker. The orchestrator:
 
-- Validates preconditions, then dispatches per the config's `worker_backend`: `"workflow"` (default) → stay in-session and run the wave loop in `references/run-workflow.md` (launch workflow, reconcile, repeat); `"claude-p"` (legacy, explicit opt-in only) → `nohup ./scripts/super-board-run.sh`, report PID + log path, exit. In both backends the orchestrator never does product work itself.
-- Delegates all build / QA / review work to workers — headless `claude -p` (claude-p backend) or workflow lane agents (workflow backend).
+- Validates preconditions, then dispatches per the config's `worker_backend`: `"workflow"` (default) → stay in-session and run the wave loop in `references/run-workflow.md` (launch workflow, reconcile, repeat); any of `"claude-p"` / `"codex-exec"` / `"cursor-agent"`, or a per-lane object mapping lane → one of those three (explicit opt-in only) → `nohup ./scripts/super-board-run.sh`, report PID + log path, exit. In every backend the orchestrator never does product work itself.
+- Delegates all build / QA / review work to workers — headless workers via the configured bash-dispatcher backend(s) (`claude -p` / `codex exec` / `agent -p`, possibly a different one per lane — see `references/backends.md`) or workflow lane agents (workflow backend).
 - Must NOT do product work itself, must NOT patch the dispatcher mid-run, must NOT wait for workers, must NOT hold context for multi-card progress.
 
 If anything goes wrong during a run, the orchestrator captures the symptom and reports back — it does not silently expand the task into a fix. See `references/run.md` "Orchestrator delegation contract" for the full rule.

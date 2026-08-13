@@ -5,20 +5,68 @@ on:
     paths:
       - "skills/**"
       - "scripts/generate-supersaiyan-references.sh"
+      - "scripts/generate-agent-configs.sh"
+      - "scripts/lib/**"
+      - "docs/templates/agent-blocks/**"
+      - ".cursor/rules/**"
+      - ".claude-plugin/**"
+      - ".codex-plugin/**"
+      - "scripts/setup-gstack-artifacts-path.sh"
       - "scripts/backends/**"
+      - "scripts/super-board-run.sh"
+      - "scripts/super-board-wave-plan.sh"
+      - "scripts/super-board-status.py"
+      - "scripts/config-resolve.sh"
+      - "install.sh"
+      - "scripts/bootstrap-app.sh"
+      - "skills/supersaiyan/scripts/prepare.sh"
+      - "skills/super-build/scripts/super-build-dispatch.sh"
+      - "skills/super-qa/scripts/super-qa-dispatch.sh"
+      - ".gitignore"
       - "tests/test-reference-sync.py"
       - "tests/test-backend-contract.sh"
       - "tests/test-build-safety-contract.sh"
+      - "tests/test-multi-backend-dispatch.sh"
+      - "tests/test-config-extends.sh"
+      - "tests/test-config-root-fallback.sh"
+      - "tests/test-status-json.py"
+      - "tests/test-agent-config-sync.py"
+      - "tests/test-md-block.sh"
+      - "tests/test-agents-md-install.sh"
       - ".github/workflows/skills-lint.yml"
   push:
     branches: [main]
     paths:
       - "skills/**"
       - "scripts/generate-supersaiyan-references.sh"
+      - "scripts/generate-agent-configs.sh"
+      - "scripts/lib/**"
+      - "docs/templates/agent-blocks/**"
+      - ".cursor/rules/**"
+      - ".claude-plugin/**"
+      - ".codex-plugin/**"
+      - "scripts/setup-gstack-artifacts-path.sh"
       - "scripts/backends/**"
+      - "scripts/super-board-run.sh"
+      - "scripts/super-board-wave-plan.sh"
+      - "scripts/super-board-status.py"
+      - "scripts/config-resolve.sh"
+      - "install.sh"
+      - "scripts/bootstrap-app.sh"
+      - "skills/supersaiyan/scripts/prepare.sh"
+      - "skills/super-build/scripts/super-build-dispatch.sh"
+      - "skills/super-qa/scripts/super-qa-dispatch.sh"
+      - ".gitignore"
       - "tests/test-reference-sync.py"
       - "tests/test-backend-contract.sh"
       - "tests/test-build-safety-contract.sh"
+      - "tests/test-multi-backend-dispatch.sh"
+      - "tests/test-config-extends.sh"
+      - "tests/test-config-root-fallback.sh"
+      - "tests/test-status-json.py"
+      - "tests/test-agent-config-sync.py"
+      - "tests/test-md-block.sh"
+      - "tests/test-agents-md-install.sh"
 
 jobs:
   reference-sync:
@@ -38,3 +86,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./tests/test-build-safety-contract.sh
+
+  multi-backend-dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-multi-backend-dispatch.sh
+
+  config-extends:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-config-extends.sh
+
+  config-root-fallback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-config-root-fallback.sh
+
+  status-json:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/test-status-json.py
+
+  agent-config-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/test-agent-config-sync.py
+
+  md-block:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-md-block.sh
+
+  agents-md-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-agents-md-install.sh

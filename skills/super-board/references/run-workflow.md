@@ -2,7 +2,7 @@
 
 The DEFAULT backend (v1.6.0+): used when the active config sets
 `"worker_backend": "workflow"` or omits the key. The legacy bash dispatcher
-(`.claude/bin/super-board-run.sh`, see `run.md`) runs only on explicit
+(`.supersaiyan/bin/super-board-run.sh`, see `run.md`) runs only on explicit
 `"worker_backend": "claude-p"`; this file ONLY changes who dispatches
 workers. Lane lifecycles, branch/PR model, comment cadence, Block
 templates, halt gates, and done conditions are all inherited from `run.md`
@@ -19,17 +19,28 @@ The interactive session that runs this backend is the orchestrator. It:
 ## Preconditions (before the first wave)
 
 Run the same preconditions as `run.md` §Preconditions, minus PID checks:
-1. Config exists and validates against `config-schema.json`.
+1. Config exists and validates against `config-schema.json`. If it sets `extends`, resolve
+   it FIRST — read the base config at the same directory, merge (base defaults, overlay
+   wins per key), and validate/use that resolved view for every field read from here on
+   (`variant`, `human_approves_merge`, `tier`/`model_tier`, everything `configPath` implies
+   downstream). Halt if the named base is missing or itself sets `extends` (chains aren't
+   supported). `scripts/super-board-wave-plan.sh` (step 2 below) already does this
+   resolution itself when given a real config file — see `scripts/config-resolve.sh` and
+   `references/config-schema.json` (`extends`) — but the orchestrator's own reads of
+   `human_approves_merge`/`tier` for the `Workflow` args in step 4 happen independently and
+   must resolve `extends` too, or an overlay config silently loses its inherited settings.
 2. Production-merge guard: refuse `base_branch: main` + `human_approves_merge:
    false` when deploy markers exist (same rule as super-board-run.sh).
 3. Stale-worktree scan: remove `.worktrees/*` whose branch is gone.
 4. `node --check` passes on a wrapped copy of
-   `.claude/workflows/super-board-wave.js` (catches a broken script before
+   `.supersaiyan/workflows/super-board-wave.js` (catches a broken script before
    burning tokens):
-   `{ echo '(async function(){'; sed 's/^export const meta/const meta/' .claude/workflows/super-board-wave.js; echo '})'; } | node --check --input-type=module`
+   `{ echo '(async function(){'; sed 's/^export const meta/const meta/' .supersaiyan/workflows/super-board-wave.js; echo '})'; } | node --check --input-type=module`
 5. Wave marker FIRST, then the legacy check (lock-before-look closes the
    TOCTOU window where both backends pass each other's checks at once):
-   a. Atomically create `.claude/supersaiyan/inflight/workflow-wave.lock`
+   a. Atomically create `<config-root>/inflight/workflow-wave.lock` — under whichever root the
+      config resolved from in step 1 (`.supersaiyan/` for a fresh onboard, or a legacy root for
+      a pre-migration install)
       (mkdir -p the directory) containing the config slug and start time:
       `(set -C; printf 'SLUG=%s\nSTARTED=%s\n' <slug> "$(date -u +%FT%TZ)" > <lock>)`.
       If it already exists and `/workflows` shows no running
@@ -56,7 +67,7 @@ Repeat until a done condition or halt gate fires:
 1. **Rate guard** — `gh api rate_limit`; if GraphQL remaining < 200, wait for
    reset (same thresholds as run.md).
 2. **Plan the wave** —
-   `bash .claude/bin/super-board-wave-plan.sh --config <config-path>` →
+   `bash .supersaiyan/bin/super-board-wave-plan.sh --config <config-path>` →
    `{cards: [...]}`. Selection is backlog-aware: one card per non-empty
    column downstream-first (Review → QA → Ready), then remaining
    `max_workers` slots fill from the most backlogged column; extra Review
@@ -73,7 +84,7 @@ Repeat until a done condition or halt gate fires:
    there is no cross-session claim at all, so never run two orchestrators
    (or /loop re-entries) against the same board without bot_identity.
 4. **Launch** — Workflow tool with
-   `scriptPath: .claude/workflows/super-board-wave.js` and
+   `scriptPath: .supersaiyan/workflows/super-board-wave.js` and
    `args: { configPath, variant, cards, humanApprovesMerge, tier }`. Runs in the background; the
    orchestrator stays responsive. `humanApprovesMerge` comes from the config; when false the workflow serializes Review-lane agents (merge-race guard, execution side).
    `tier` is the run's model ladder: `'low'` when the user invoked
@@ -100,7 +111,8 @@ Repeat until a done condition or halt gate fires:
 
 - Stop: `x` on the run in `/workflows` (or TaskStop), then release assignees
   for in-flight cards and post "stopped mid-flight" comments (same protocol
-  as `references/stop.md`). Remove `.claude/supersaiyan/inflight/workflow-wave.lock`.
+  as `references/stop.md`). Remove `<config-root>/inflight/workflow-wave.lock` (the same
+  resolved root the wave used to create it — see step 5a above).
 - Resume: just run again — board state is the only state. A workflow stopped
   mid-wave can also be resumed in-session via `resumeFromRunId` (completed
   lane agents return cached results).
@@ -121,7 +133,7 @@ don't stall on prompts:
     "Bash(git checkout:*)", "Bash(git add:*)", "Bash(git commit:*)",
     "Bash(git push:*)", "Bash(git pull:*)", "Bash(git fetch:*)", "Bash(git blame:*)",
     "Bash(mkdir:*)", "Bash(pgrep:*)", "Bash(node --check:*)",
-    "Bash(bash .claude/bin/super-board-wave-plan.sh:*)",
+    "Bash(bash .supersaiyan/bin/super-board-wave-plan.sh:*)",
     plus your project's test runners (e.g. "Bash(npm test:*)", "Bash(npx playwright:*)").
 
 `gh pr merge` is deliberately NOT in the list — Reviewer merges remain

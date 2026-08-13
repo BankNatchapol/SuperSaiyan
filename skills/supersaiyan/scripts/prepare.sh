@@ -44,9 +44,16 @@ cleanup() {
 trap cleanup EXIT
 
 # ── Config discovery ───────────────────────────────────────────────────────────
-
+# Delegated to platform_config_resolve (scripts/platform-config.sh), which owns the config
+# root search order for every consumer: `.supersaiyan/` first, then the two legacy
+# Claude-Code-branded roots. This replaces an inline root-probe loop that used to live here —
+# one resolver beats three copies of the same precedence rules.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_RESOLVER=".claude/bin/platform-config.sh"
+# Installed layout first (new root, then pre-migration root), then dev-repo checkout.
+CONFIG_RESOLVER=".supersaiyan/bin/platform-config.sh"
+if [ ! -f "$CONFIG_RESOLVER" ]; then
+  CONFIG_RESOLVER=".claude/bin/platform-config.sh"
+fi
 if [ ! -f "$CONFIG_RESOLVER" ]; then
   CONFIG_RESOLVER="$SCRIPT_DIR/../../../scripts/platform-config.sh"
 fi
@@ -145,7 +152,12 @@ fi
 
 # ── Platform contract ────────────────────────────────────────────────────────
 
-PLATFORM_FILE=".claude/bin/platforms/${GIT_PLATFORM}.sh"
+# Three-tier lookup, matching the config resolver above: new-installed layout, then
+# pre-migration installed layout, then dev-repo checkout.
+PLATFORM_FILE=".supersaiyan/bin/platforms/${GIT_PLATFORM}.sh"
+if [ ! -f "$PLATFORM_FILE" ]; then
+  PLATFORM_FILE=".claude/bin/platforms/${GIT_PLATFORM}.sh"
+fi
 if [ ! -f "$PLATFORM_FILE" ]; then
   PLATFORM_FILE="$SCRIPT_DIR/../../../scripts/platforms/${GIT_PLATFORM}.sh"
 fi
@@ -202,8 +214,16 @@ if [ -f "$MAP_FILE" ] && [ "$BEFORE_COUNT" -gt 0 ]; then
   done < <(jq -r 'keys[]' "$MAP_FILE" 2>/dev/null)
 fi
 
-# Create missing issues via tasks-to-issues.sh
-TASKS_TO_ISSUES="${TASKS_TO_ISSUES:-.claude/bin/tasks-to-issues.sh}"
+# Create missing issues via tasks-to-issues.sh. Same three-tier idea as the backend-contract
+# lookups in super-build-dispatch.sh/super-qa-dispatch.sh: new-installed layout first, then
+# old-installed (pre-migration installs that haven't re-run install.sh yet).
+if [ -z "${TASKS_TO_ISSUES:-}" ]; then
+  if [ -x ".supersaiyan/bin/tasks-to-issues.sh" ]; then
+    TASKS_TO_ISSUES=".supersaiyan/bin/tasks-to-issues.sh"
+  else
+    TASKS_TO_ISSUES=".claude/bin/tasks-to-issues.sh"
+  fi
+fi
 [ -x "$TASKS_TO_ISSUES" ] || { echo "tasks-to-issues.sh not executable: $TASKS_TO_ISSUES" >&2; exit 66; }
 
 if [ -n "$PHASE" ]; then

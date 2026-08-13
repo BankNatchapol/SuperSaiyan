@@ -26,7 +26,7 @@ Progress: ✅ onboard  →  ✅ run  →  🛑 stop (you are here)
 
 | Check | Action on fail |
 |---|---|
-| Active config exists (arg or `.claude/supersaiyan/active`) | Exit 64: usage hint |
+| Active config exists (arg, or an `active` file under `.supersaiyan/`, `.claude/supersaiyan/`, or `.claude/super-board/` — first root found wins) | Exit 64: usage hint |
 | Config file readable | Exit 66: "config not found" |
 | `gh auth` valid | Continue anyway — comments may fail, kills still work |
 
@@ -34,9 +34,9 @@ Nothing else. Stop is intentionally tolerant — its job is to bring the system 
 
 ## What stop reads
 
-- `.claude/supersaiyan/inflight/<issue-N>` — one file per in-flight worker. New (v1.3.0+) format: `PID=…\nLANE=…\nSTARTED=…`. Legacy single-line PID format is also supported.
+- `<config-root>/inflight/<issue-N>` — one file per in-flight worker, under whichever root the active config resolved from (`.supersaiyan/`, or a legacy `.claude/supersaiyan/`/`.claude/super-board/` root — see `scripts/super-board-status.py`'s `config_roots()`). New (v1.3.0+) format: `PID=…\nLANE=…\nSTARTED=…`. Legacy single-line PID format is also supported.
 - `pgrep -f 'super-board-run\.sh'` — dispatcher PID(s).
-- `pgrep -f '<orphan-pattern-for-active-config's-worker_backend>'` — orphan worker scan (workers without a lock file, e.g. from a crashed dispatcher). The pattern depends on which `worker_backend` the active config uses — see `references/backends.md` for the exact regex per backend (`claude -p .*super-board run` for `claude-p`, `codex exec .*for SuperSaiyan` for `codex-exec`, `agent.*for SuperSaiyan` for `cursor-agent` — do NOT assume `agent`/`-p` are adjacent, they aren't).
+- `pgrep -f '<orphan-pattern>'` — orphan worker scan (workers without a lock file, e.g. from a crashed dispatcher), run **once per distinct backend in use**. The active config's `worker_backend` is either a single string (one backend, one scan) or a per-lane object (`{"build": …, "qa": …, "review": …}` — dedupe by value, then one scan per distinct value, at most three). See `references/backends.md` for the exact regex per backend (`claude -p .*super-board run` for `claude-p`, `codex exec .*for SuperSaiyan` for `codex-exec`, `agent.*for SuperSaiyan` for `cursor-agent` — do NOT assume `agent`/`-p` are adjacent, they aren't). Scanning only one backend on a per-lane board silently leaves the other lanes' workers alive.
 
 ## Per-worker wrap-up (run for each in-flight lock)
 
@@ -53,17 +53,17 @@ Nothing else. Stop is intentionally tolerant — its job is to bring the system 
 
 ## After the per-worker loop
 
-6. **Sweep orphan workers** — `pgrep -f '<orphan-pattern-for-active-config's-worker_backend>'` (see `references/backends.md`) catches any worker that wasn't in `inflight/` (defensive against crashed dispatchers).
+6. **Sweep orphan workers** — one `pgrep -f '<orphan-pattern>'` per distinct backend in use (see "What stop reads" above and `references/backends.md`), catching any worker that wasn't in `inflight/` (defensive against crashed dispatchers).
 7. **Kill the dispatcher loop** — `pgrep -f 'super-board-run\.sh'`, SIGTERM → 1s → SIGKILL.
-8. **Clear in-flight locks** — `rm -f .claude/supersaiyan/inflight/*`. The PIDs they reference are dead now.
+8. **Clear in-flight locks** — `rm -f <config-root>/inflight/*` (whichever root the active config resolved from — see "What stop reads" above). The PIDs they reference are dead now.
 9. **Print summary** — workers stopped, dispatchers stopped, resume command.
 
 ## What stop does NOT do (deliberate)
 
-- **Does not wait for workers to finish.** Workers (whichever `worker_backend` is active) have no SIGTERM handler that flushes a partial commit. Any uncommitted edits in worker worktrees are discarded. The last pushed commit on the branch is the actual resume point.
+- **Does not wait for workers to finish.** Workers (whichever backend(s) are active — a single `worker_backend` or a per-lane map) have no SIGTERM handler that flushes a partial commit. Any uncommitted edits in worker worktrees are discarded. The last pushed commit on the branch is the actual resume point.
 - **Does not touch worktrees** under `.worktrees/`. Leaving them in place lets the next worker check out the same branch faster; the dispatcher's stale-worktree scan cleans up anything truly dead on next start.
 - **Does not touch branches or PRs.** Both persist. State lives on the GitHub Project board — cards stay in whichever column they were in when stopped.
-- **Does not modify the config.** A stopped run is not a deactivated config; `.claude/supersaiyan/active` is preserved.
+- **Does not modify the config.** A stopped run is not a deactivated config; the resolved root's `active` pointer is preserved.
 - **Does not bypass the GitHub assignee mutex.** It releases the mutex, then kills. If the GitHub API is unreachable, release is best-effort and the orphan-scan + reap-on-next-start covers the gap.
 
 ## Resume = run (no separate verb)
@@ -95,7 +95,7 @@ Resume cost: **one lane cycle per previously-in-flight card** (Builder ~5min, Te
 
 Per the cardinal orchestrator/worker rule:
 
-1. Verify `.claude/supersaiyan/active` exists OR a slug was provided.
+1. Verify an `active` file exists under `.supersaiyan/` (or a legacy root) OR a slug was provided.
 2. Run `scripts/super-board-stop.sh <slug>` synchronously (it's fast — seconds, not minutes).
 3. Pass through the script's summary to the user.
 4. **Do not** retry kills, do not chase down zombies the script missed, do not "while you're at it" clean up worktrees or branches. If the script reported failures, surface them and wait for explicit user direction.
@@ -106,8 +106,8 @@ Per the cardinal orchestrator/worker rule:
 |---|---|---|
 | `gh issue comment` fails | gh auth expired or network blip | Comments are best-effort. The kill + lock cleanup still happens. Manually note the stop in the issue later if needed. |
 | Assignee release fails (gh 403) | rate limit or auth | The next `super-board run` startup runs `reap_finished_locks` which sweeps stale assignees idempotently. No manual action needed. |
-| Worker PID survives SIGKILL | extremely rare (kernel-level stuck process) | `ps aux \| grep <backend-orphan-pattern>` (see `references/backends.md`) to confirm, then escalate via OS tools. |
-| Stop reports "nothing to stop" but `ps` shows live workers | dispatcher and workers were started by a different repo / different inflight dir | Run stop in the right repo OR `pkill -f 'super-board-run\.sh'` manually + `pkill -f '<backend-orphan-pattern>'` (see `references/backends.md`). |
+| Worker PID survives SIGKILL | extremely rare (kernel-level stuck process) | `ps aux \| grep <backend-orphan-pattern>` for each distinct backend in use (see `references/backends.md`) to confirm, then escalate via OS tools. |
+| Stop reports "nothing to stop" but `ps` shows live workers | dispatcher and workers were started by a different repo / different inflight dir, or only one backend of a per-lane board was swept | Run stop in the right repo OR `pkill -f 'super-board-run\.sh'` manually + `pkill -f '<backend-orphan-pattern>'` for each distinct backend in use (see `references/backends.md`). |
 
 ## Lock file format (v1.3.0+)
 

@@ -70,7 +70,7 @@ If you find yourself with uncommitted issue work already sitting on the default 
 
 ## Config
 
-Config lives at `.claude/supersaiyan/configs/<slug>.json`. Created by `setup`.
+Config lives at `.supersaiyan/configs/<slug>.json` (legacy installs: `.claude/supersaiyan/configs/` or `.claude/super-board/configs/`, still read via fallback). Created by `setup`.
 
 If config is missing when any verb (other than `setup`) is invoked, run `setup` inline first, then continue with the original verb.
 

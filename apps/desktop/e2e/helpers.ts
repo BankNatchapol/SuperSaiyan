@@ -64,9 +64,9 @@ async function createRepo(path: string, name: string): Promise<void> {
   await run(path, "git", ["commit", "-m", "fixture"]);
   await run(path, "git", ["remote", "add", "origin", `https://github.com/acme/${name}.git`]);
 
-  const configDir = join(path, ".claude", "supersaiyan", "configs");
+  const configDir = join(path, ".supersaiyan", "configs");
   await mkdir(configDir, { recursive: true });
-  await writeFile(join(path, ".claude", "supersaiyan", "active"), "demo\n");
+  await writeFile(join(path, ".supersaiyan", "active"), "demo\n");
   await writeFile(join(configDir, "demo.json"), JSON.stringify({
     variant: "full",
     base_branch: "main",

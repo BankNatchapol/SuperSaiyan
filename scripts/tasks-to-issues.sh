@@ -50,7 +50,7 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 69
 fi
 
-# Platform contract: scripts/platforms/<name>.sh in this repo, .claude/bin/platforms/
+# Platform contract: scripts/platforms/<name>.sh in this repo, .supersaiyan/bin/platforms/
 # once installed (install.sh copies platforms/ alongside this script).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_RESOLVER="$SCRIPT_DIR/platform-config.sh"

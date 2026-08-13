@@ -49,7 +49,7 @@ EOF
 
 install_fake_helper() {
   local app="$1"
-  cat > "$app/.claude/bin/tasks-to-issues.sh" <<'EOF'
+  cat > "$app/.supersaiyan/bin/tasks-to-issues.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 feature="$1"
@@ -73,7 +73,7 @@ for file in "$dir"/*.md; do
   fi
 done
 EOF
-  chmod +x "$app/.claude/bin/tasks-to-issues.sh"
+  chmod +x "$app/.supersaiyan/bin/tasks-to-issues.sh"
 }
 
 install_real_helper() {
@@ -186,7 +186,7 @@ new_fixture() {
   STATE="$TMP/$name-state"
   BIN="$TMP/$name-bin"
   mkdir -p "$APP/docs/superpowers/tasks/demo" "$APP/docs/superpowers/specs" \
-    "$APP/.claude/bin" "$APP/.claude/supersaiyan/configs" \
+    "$APP/.supersaiyan/bin" "$APP/.supersaiyan/configs" \
     "$STATE/issues" "$BIN"
   echo 100 > "$STATE/next"
   : > "$STATE/log"
@@ -194,7 +194,7 @@ new_fixture() {
   echo '# Demo design' > "$APP/docs/superpowers/specs/demo-design.md"
   write_task "$APP/docs/superpowers/tasks/demo/01-first.md" "First task" 1 null
   write_task "$APP/docs/superpowers/tasks/demo/02-second.md" "Second task" 2 01-first
-  cat > "$APP/.claude/supersaiyan/configs/demo-board.json" <<'EOF'
+  cat > "$APP/.supersaiyan/configs/demo-board.json" <<'EOF'
 {
   "project": {"owner": "owner", "number": 7},
   "base_branch": "main"
@@ -225,15 +225,15 @@ run_prepare --check-only | grep -q 'CHECK_OK.*config=demo-board' ||
   fail "single config check failed"
 
 # 2. Multiple configs require an active pointer.
-cp "$APP/.claude/supersaiyan/configs/demo-board.json" \
-  "$APP/.claude/supersaiyan/configs/other.json"
+cp "$APP/.supersaiyan/configs/demo-board.json" \
+  "$APP/.supersaiyan/configs/other.json"
 run_expect 75 run_prepare --check-only
-echo demo-board > "$APP/.claude/supersaiyan/active"
+echo demo-board > "$APP/.supersaiyan/active"
 run_prepare --check-only >/dev/null || fail "active config was not selected"
 
 # 3. Missing config requests inline onboarding.
 new_fixture missing-config
-rm "$APP/.claude/supersaiyan/configs/demo-board.json"
+rm "$APP/.supersaiyan/configs/demo-board.json"
 run_expect 78 run_prepare --check-only
 grep -q NEEDS_ONBOARD "$TMP/out" || fail "missing config did not signal onboarding"
 

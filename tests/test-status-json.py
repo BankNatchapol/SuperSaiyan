@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import datetime
+import importlib.util
 import json
 import os
 import subprocess
@@ -18,13 +19,20 @@ STATUS = ROOT / "scripts" / "super-board-status.py"
 def main() -> None:
     with tempfile.TemporaryDirectory() as temp:
         repo = Path(temp)
-        config_dir = repo / ".claude" / "supersaiyan" / "configs"
+        config_dir = repo / ".supersaiyan" / "configs"
         config_dir.mkdir(parents=True)
-        (repo / ".claude" / "supersaiyan" / "active").write_text("demo\n")
+        (repo / ".supersaiyan" / "active").write_text("demo\n")
         (config_dir / "demo.json").write_text(json.dumps({
             "variant": "full",
             "base_branch": "main",
             "max_workers": 3,
+            # Per-lane backend map: the JSON boundary must expose both the raw shape and a
+            # normalized {build, qa, review} view.
+            "worker_backend": {
+                "build": "codex-exec",
+                "qa": "cursor-agent",
+                "review": "claude-p",
+            },
             "project": {"owner": "octocat", "number": 7, "title": "Demo Board"},
             "paths": {"runs_dir": "docs/supersaiyan/runs"},
         }))
@@ -77,8 +85,140 @@ def main() -> None:
         assert payload["lanes"]["Ready"][0]["number"] == 12
         assert payload["workers"][0]["issue"] == 12
         assert payload["health"]["run_active"] is True
+        # Raw shape is preserved verbatim for back-compat...
+        assert payload["config"]["worker_backend"] == {
+            "build": "codex-exec",
+            "qa": "cursor-agent",
+            "review": "claude-p",
+        }
+        # ...and the normalized view is always a {build, qa, review} map.
+        assert payload["config"]["worker_backend_resolved"] == {
+            "build": "codex-exec",
+            "qa": "cursor-agent",
+            "review": "claude-p",
+        }
 
+    check_worker_backend_resolution()
+    check_extends_resolution()
+    check_config_root_fallback()
     print("PASS: test-status-json.py")
+
+
+def check_worker_backend_resolution() -> None:
+    """The string shorthand and omitted lane keys must normalize the same way the
+    bash dispatcher (scripts/super-board-run.sh) resolves them."""
+    spec = importlib.util.spec_from_file_location("super_board_status", STATUS)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    resolve = module.resolve_worker_backend
+
+    # A single string applies to every lane (back-compat shape).
+    assert resolve({"worker_backend": "codex-exec"}) == {
+        "build": "codex-exec", "qa": "codex-exec", "review": "codex-exec",
+    }
+    # Omitted lane keys fall back to claude-p, matching load_backend's default.
+    assert resolve({"worker_backend": {"qa": "cursor-agent"}}) == {
+        "build": "claude-p", "qa": "cursor-agent", "review": "claude-p",
+    }
+    # No worker_backend at all means the in-session workflow backend.
+    assert resolve({}) == {
+        "build": "workflow", "qa": "workflow", "review": "workflow",
+    }
+
+
+def check_extends_resolution() -> None:
+    """A config's `extends` link inherits shared fields from a base config in the same
+    directory (references/config-schema.json `extends`), matching the bash dispatcher's
+    scripts/config-resolve.sh: overlay wins per-key, nested objects deep-merge, `extends`
+    itself is stripped from the result, and chained/missing bases are hard errors."""
+    spec = importlib.util.spec_from_file_location("super_board_status", STATUS)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    resolve_extends = module.resolve_extends
+
+    with tempfile.TemporaryDirectory() as temp:
+        configs_dir = Path(temp)
+        (configs_dir / "base.json").write_text(json.dumps({
+            "project": {"owner": "o", "number": 1},
+            "variant": "full",
+            "notifications": {"bot_identity": "bob"},
+        }))
+        overlay_path = configs_dir / "overlay.json"
+        overlay_path.write_text(json.dumps({
+            "extends": "base",
+            "description": "overlay",
+            "worker_backend": "codex-exec",
+            "notifications": {"channel": "slack"},
+        }))
+        (configs_dir / "chain-base.json").write_text(json.dumps({
+            "extends": "base",
+            "project": {"owner": "o", "number": 2},
+        }))
+        (configs_dir / "chain-overlay.json").write_text(json.dumps({"extends": "chain-base"}))
+        (configs_dir / "broken.json").write_text(json.dumps({"extends": "missing"}))
+
+        merged = resolve_extends(json.loads(overlay_path.read_text()), overlay_path)
+        assert merged["project"] == {"owner": "o", "number": 1}, "base field not inherited"
+        assert merged["notifications"] == {"bot_identity": "bob", "channel": "slack"}, \
+            "notifications did not deep-merge (overlay key + inherited key)"
+        assert merged["worker_backend"] == "codex-exec", "overlay's own field was lost"
+        assert "extends" not in merged, "extends key should be stripped after resolution"
+
+        # No-op, zero I/O, when extends is absent — same dict object returned.
+        plain = {"project": {"owner": "o", "number": 9}}
+        assert resolve_extends(plain, configs_dir / "plain.json") is plain
+
+        for name, why in [("broken.json", "missing base"), ("chain-overlay.json", "chained extends")]:
+            path = configs_dir / name
+            try:
+                resolve_extends(json.loads(path.read_text()), path)
+                raise AssertionError(f"expected SystemExit for {why} ({name})")
+            except SystemExit as exc:
+                assert exc.code == 66, f"{why} ({name}) should exit 66, got {exc.code}"
+
+
+def check_config_root_fallback() -> None:
+    """config_roots()/resolve_config_path() three-tier fallback: .supersaiyan (new) ->
+    .claude/supersaiyan (current-becomes-legacy) -> .claude/super-board (oldest legacy).
+    Mirrors the bash resolver in scripts/super-board-run.sh — see tests/test-config-root-fallback.sh
+    for that side. Both are independent implementations that could silently diverge."""
+    spec = importlib.util.spec_from_file_location("super_board_status", STATUS)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    original_cwd = os.getcwd()
+    try:
+        with tempfile.TemporaryDirectory() as temp:
+            os.chdir(temp)
+
+            # Tier 2 only (.claude/supersaiyan) — must still resolve.
+            (Path(".claude/supersaiyan/configs")).mkdir(parents=True)
+            (Path(".claude/supersaiyan/configs/board.json")).write_text("{}")
+            found = module.resolve_config_path("board")
+            assert found == Path(".claude/supersaiyan/configs/board.json"), found
+
+            # Tier 3 only (.claude/super-board) — must still resolve for a different slug.
+            (Path(".claude/super-board/configs")).mkdir(parents=True)
+            (Path(".claude/super-board/configs/legacyboard.json")).write_text("{}")
+            found = module.resolve_config_path("legacyboard")
+            assert found == Path(".claude/super-board/configs/legacyboard.json"), found
+
+            # Same slug under both the new root and tier 2 — new root must win.
+            (Path(".supersaiyan/configs")).mkdir(parents=True)
+            (Path(".supersaiyan/configs/board.json")).write_text('{"owner": "new"}')
+            found = module.resolve_config_path("board")
+            assert found == Path(".supersaiyan/configs/board.json"), \
+                f"expected the new root to win on collision, got {found}"
+
+            # No slug given: active pointer under the oldest legacy root supplies it.
+            (Path(".claude/super-board/active")).write_text("legacyboard\n")
+            slug = module.resolve_config_slug(["prog"])
+            assert slug == "legacyboard", slug
+    finally:
+        os.chdir(original_cwd)
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
 ```
 0. SILENT DETECT (no questions yet)
    ├─ CWD: git repo? any commits? remote URL?
-   ├─ Existing configs in .claude/supersaiyan/configs/?
+   ├─ Existing configs in .supersaiyan/configs/ (or a legacy .claude/supersaiyan/configs/ / .claude/super-board/configs/ install)?
    └─ Existing PROJECT.md?
 
 1. ONE BIG QUESTION — "What do you want to run in a loop?"
@@ -50,26 +50,86 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
    ├─ Ask: "Will Claude Code drive this loop, or do you also want Codex
    │        and/or Cursor CLI workers dispatching from the same board?"
    ├─ Default: Claude Code only (worker_backend "workflow").
-   └─ If more than one tool is selected:
-        ├─ Run steps 3-13 ONCE per tool, producing N config files that all
-        │  point at the SAME project.owner/project.number but differ in
-        │  `description` and `worker_backend`:
-        │    <slug>-claude.json  → worker_backend "workflow" (or "claude-p")
-        │    <slug>-codex.json   → worker_backend "codex-exec"
-        │    <slug>-cursor.json  → worker_backend "cursor-agent"
-        ├─ For codex/cursor configs: confirm `codex login status` / `agent
-        │  status` succeed now (fail fast, not at first dispatch), and that
-        │  `./install.sh --keep-local-skills` has been run so
-        │  `.claude/skills/` is populated locally — Codex/Cursor have no
-        │  plugin skill cache and can only read files that physically exist
-        │  in the repo. See `references/backends.md`.
-        └─ Explain: each config's dispatcher is a plain background process —
-           run `.claude/bin/super-board-run.sh <slug>-codex` alongside
-           `<slug>-cursor` and `<slug>-claude` in parallel shells; they
-           share the board but never fight over one config file. (This is
-           what fixes the classic "two dispatchers overwrite each other's
-           worker_backend" collision — no data-model change needed, multiple
-           named configs already work.)
+   └─ If more than one tool is selected, ask ONE follow-up — these are two
+      genuinely different setups, and picking the wrong one is annoying to
+      undo later:
+        "Should each tool run its OWN independent board (separate config +
+         separate dispatcher process), or should ONE board use a different
+         tool per LANE — Codex builds, Cursor QAs, Claude reviews, all in a
+         single dispatcher process?"
+        │
+        ├─ A) INDEPENDENT BOARDS — N configs, N dispatcher processes.
+        │     Pick this for parallel/redundant boards, or when each tool
+        │     should own a whole pipeline end to end.
+        │     ├─ Run steps 3-13 ONCE, gathering every SHARED setting
+        │     │  (project, variant, base_branch, columns, paths,
+        │     │  human_approves_merge, truth_gate, truth_threshold,
+        │     │  rebuild_cap, block_rate_alert_pct, notifications). Write
+        │     │  these to ONE base config, `<slug>.json` — no `description`,
+        │     │  no `worker_backend`, no `codex`/`cursor` model block; those
+        │     │  three live only in the overlays below. This file is never
+        │     │  meant to be run directly (though nothing stops it — it
+        │     │  falls back to worker_backend "workflow" like any config
+        │     │  that omits the field).
+        │     ├─ For each tool selected, write a THIN overlay config —
+        │     │  `description`, `worker_backend`, and (codex/cursor only)
+        │     │  the tool's model block, plus `"extends": "<slug>"`
+        │     │  pointing at the base file above:
+        │     │    <slug>-claude.json
+        │     │      { "extends": "<slug>", "description": "…",
+        │     │        "worker_backend": "workflow" }   (or "claude-p")
+        │     │    <slug>-codex.json
+        │     │      { "extends": "<slug>", "description": "…",
+        │     │        "worker_backend": "codex-exec",
+        │     │        "codex": { "model": "…", "reasoning_effort": "…" } }
+        │     │    <slug>-cursor.json
+        │     │      { "extends": "<slug>", "description": "…",
+        │     │        "worker_backend": "cursor-agent",
+        │     │        "cursor": { "model": "…" } }
+        │     │  Every consumer (super-board-run.sh, super-board-wave-plan.sh,
+        │     │  super-board-status.py, the Control Center) resolves `extends`
+        │     │  before reading any other field — see references/config-schema.json
+        │     │  (`extends`) and scripts/config-resolve.sh. `extends` is exactly
+        │     │  one level: the base config must NOT itself set `extends`.
+        │     └─ Explain: each overlay's dispatcher is a plain background
+        │        process — run `.supersaiyan/bin/super-board-run.sh <slug>-codex`
+        │        alongside `<slug>-cursor` and `<slug>-claude` in parallel
+        │        shells; they share the board but never fight over one
+        │        overlay file, and now share the base file's settings too —
+        │        edit `<slug>.json` once (e.g. `rebuild_cap`) and every
+        │        tool's next dispatcher run picks it up, since each process
+        │        re-reads and re-resolves its config fresh at startup.
+        │
+        └─ B) PER-LANE MAP — one board, one config, one dispatcher process.
+              Pick this to specialize by lane (e.g. one tool builds, another
+              reviews) rather than run whole parallel pipelines.
+              ├─ Ask which tool drives each lane the variant uses ("Which
+              │  tool should Build use? QA? Review?" — skip Build entirely
+              │  for qa-only). Default any unanswered lane to Claude Code.
+              ├─ Run steps 3-13 ONCE, writing a single config whose
+              │  `worker_backend` is an object:
+              │    "worker_backend": {
+              │      "build":  "codex-exec",
+              │      "qa":     "cursor-agent",
+              │      "review": "claude-p"
+              │    }
+              ├─ Note explicitly: "workflow" is NEVER a valid per-lane value.
+              │  A lane driven by Claude Code here uses "claude-p" (headless
+              │  `claude -p`, bash-dispatched), not "workflow" (in-session
+              │  workflow lane agents). Close in behavior, not identical —
+              │  see `references/backends.md`. The dispatcher rejects a
+              │  per-lane "workflow" with exit 78.
+              └─ Optional: set per-tool models by hand after onboarding —
+                 `codex.model` / `codex.reasoning_effort` / `cursor.model`
+                 in the same config (one setting per TOOL, applied wherever
+                 that tool is used). Empty/absent = the CLI's own default.
+
+      For EITHER path, for every codex/cursor lane or config selected:
+      confirm `codex login status` / `agent status` succeed now (fail fast,
+      not at first dispatch), and that `./install.sh --keep-local-skills`
+      has been run so `.claude/skills/` is populated locally — Codex/Cursor
+      have no plugin skill cache and can only read files that physically
+      exist in the repo. See `references/backends.md`.
 
 3. VERIFY GITHUB AUTH (always)
    ├─ `gh auth status`  — must be authenticated
@@ -152,8 +212,8 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
     │  (when a GitHub App is installed on the repo) or the user's own
     │  GitHub login (solo projects). Pick during step 3 based on what
     │  `gh auth status` returned.
-    ├─ Write .claude/supersaiyan/configs/<slug>.json (committed)
-    └─ Write .claude/supersaiyan/active ← <slug> (gitignored)
+    ├─ Write .supersaiyan/configs/<slug>.json (committed)
+    └─ Write .supersaiyan/active ← <slug> (gitignored)
 
 13. SUMMARY
     "✅ Onboard complete.
@@ -180,7 +240,7 @@ Every onboard step that touches GitHub or the filesystem has a defined recovery 
 | 7. column create | Column add denied (read-only project) | `🔑 Project is read-only for your account. Either get write access, or pick a different project.` |
 | 8. PROJECT.md autogen | Sub-agent timeout / empty draft | `📝 Couldn't auto-draft PROJECT.md. Skip for now, or write one paragraph and I'll seed from that.` |
 | 9. base branch | gh API rate limit on protection-rule lookup | Soft-fail production detection, warn the user, fall back to asking. Do not halt. |
-| 12. write config | File system not writable | Halt with the exact path: `🛑 Can't write to .claude/supersaiyan/configs/<slug>.json — check permissions.` |
+| 12. write config | File system not writable | Halt with the exact path: `🛑 Can't write to .supersaiyan/configs/<slug>.json — check permissions.` |
 
 Every onboard halt comment includes (a) what the bot tried, (b) what failed, (c) the exact command or click the user can do, (d) how to resume (always: "re-run `super-board onboard`").
 
@@ -198,10 +258,15 @@ Every onboard halt comment includes (a) what the bot tried, (b) what failed, (c)
 
 Before exiting `onboard` successfully, the worker MUST verify:
 
-1. **Config file exists and validates** — `.claude/supersaiyan/configs/<slug>.json`
-   parses as JSON and contains every required field from `references/config-schema.json`
-   (including `notifications.bot_identity`).
-2. **Active pointer is updated** — `.claude/supersaiyan/active` is a one-line
+1. **Config file exists and validates** — `.supersaiyan/configs/<slug>.json` (onboard always
+   writes to the vendor-neutral root, never a legacy one) parses as JSON. If it sets `extends`, resolve it first (read the base file at the same
+   directory, merge — see `references/config-schema.json` `extends`) and validate the
+   RESOLVED view, not the raw overlay; an overlay legitimately omits most fields on its own.
+   The resolved config must contain every required field from `references/config-schema.json`
+   (including `notifications.bot_identity`), and if `extends` is set, the named base file
+   must exist and must NOT itself set `extends` (chained extends is a hard error — surface it
+   as a failed check, don't attempt to resolve further).
+2. **Active pointer is updated** — `.supersaiyan/active` is a one-line
    file containing exactly the new slug, no trailing whitespace beyond a single `\n`.
 3. **Project columns are present on GitHub** — running
    `gh project field-list <project.number> --owner <project.owner>` returns all
@@ -210,8 +275,18 @@ Before exiting `onboard` successfully, the worker MUST verify:
    - QA-only: `Ready, QA, Review, Done, Blocked, Skipped`
 4. **PROJECT.md exists** — when `paths.project_md` is non-null (i.e. any flow with
    a local repo), the file at that path exists and is non-empty.
+5. **Local skills mirror exists for non-`claude-p` backends** — when any resolved
+   backend is `codex-exec` or `cursor-agent` (either the whole-board `worker_backend`
+   string, or ANY value inside a per-lane `worker_backend` object), verify
+   `.claude/skills/` exists in the target repo as real files — e.g.
+   `.claude/skills/super-board/references/backends.md` resolves to an actual file, not
+   just a Claude Code plugin-cache reference. If it is missing, tell the user to run
+   `./install.sh --keep-local-skills` and re-check before continuing. Codex and Cursor
+   have no plugin skill cache; they can only read files that physically exist in the
+   repo they run against, so a worker dispatched without this fails at read time with
+   no useful error. See `references/backends.md`.
 
-If any of these four checks fail, do NOT print the step-13 summary. Instead, surface
+If any of these five checks fail, do NOT print the step-13 summary. Instead, surface
 the specific failed check and tell the user to re-run `super-board onboard`. A
 partial config is worse than no config — the lint and run verbs depend on these
 invariants.

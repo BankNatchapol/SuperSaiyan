@@ -52,13 +52,17 @@ MAX_TURNS="${MAX_TURNS:-250}"
 WORKER_BACKEND="${WORKER_BACKEND:-claude-p}"
 
 # Backend contract (see .claude/skills/super-board/references/backends.md). Same resolution
-# order as super-build-dispatch.sh: installed layout first, dev-repo fallback second.
-BACKEND_FILE="$REPO_DIR/.claude/bin/backends/${WORKER_BACKEND}.sh"
+# order as super-build-dispatch.sh: new-installed layout, then old-installed layout (installs
+# from before the .claude/ -> vendor-neutral migration), then dev-repo fallback.
+BACKEND_FILE="$REPO_DIR/.supersaiyan/bin/backends/${WORKER_BACKEND}.sh"
+if [[ ! -f "$BACKEND_FILE" ]]; then
+  BACKEND_FILE="$REPO_DIR/.claude/bin/backends/${WORKER_BACKEND}.sh"
+fi
 if [[ ! -f "$BACKEND_FILE" ]]; then
   BACKEND_FILE="$SCRIPT_DIR/../../../scripts/backends/${WORKER_BACKEND}.sh"
 fi
 if [[ ! -f "$BACKEND_FILE" ]]; then
-  echo "error: backend contract not found for worker_backend=${WORKER_BACKEND} (looked in .claude/bin/backends/ and scripts/backends/)" >&2
+  echo "error: backend contract not found for worker_backend=${WORKER_BACKEND} (looked in .supersaiyan/bin/backends/, .claude/bin/backends/, and scripts/backends/)" >&2
   exit 64
 fi
 # shellcheck disable=SC1090
