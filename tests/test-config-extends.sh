@@ -113,6 +113,52 @@ fi
 grep -q 'does-not-exist' /tmp/wave-err.txt || fail "wave-plan's extends error does not name the target"
 rm -f /tmp/wave-err.txt
 
+# Regression: the merged-config temp file must not outlive the process. On the live-fetch path
+# wave-plan sets TWO EXIT traps — resolved-config cleanup, then CONFIG_REF cleanup — and a
+# second `trap ... EXIT` REPLACES the first rather than adding to it. That leaked one fully
+# resolved config (project owner/number, notifications, bot identity) per wave tick.
+#
+# Probing by content, not by pointing TMPDIR at a scratch dir: macOS `mktemp` ignores TMPDIR
+# (Darwin resolves _CS_DARWIN_USER_TEMP_DIR instead), so a TMPDIR-based probe silently passes
+# on the very platform this repo targets. Tagging the config with a unique sentinel and
+# searching the real mktemp directory works on both platforms and can't be confused by
+# unrelated temp files from other processes.
+MKTEMP_PROBE=$(mktemp)
+MKTEMP_DIR=$(dirname "$MKTEMP_PROBE")
+rm -f "$MKTEMP_PROBE"
+leaked_temps() {
+  # $1 = sentinel. Lists surviving mktemp files that contain it. `-exec ... \;` (not `+`):
+  # with `+` and zero matches, grep would run with no file operands and block reading stdin.
+  find "$MKTEMP_DIR" -maxdepth 1 -type f -name 'tmp.*' -exec grep -lF "$1" {} \; 2>/dev/null
+}
+
+cat > "$STUB_BIN/gh" <<'EOF'
+#!/usr/bin/env bash
+echo '{"items":[]}'
+EOF
+chmod +x "$STUB_BIN/gh"
+
+WAVE_SENTINEL="wave-plan-extends-leak-probe-$$"
+cat > "$TD/leak-base.json" <<EOF
+{"project":{"owner":"o","number":1},"variant":"full","description":"$WAVE_SENTINEL"}
+EOF
+cat > "$TD/leak-overlay.json" <<'EOF'
+{"extends":"leak-base","worker_backend":"codex-exec"}
+EOF
+# No --items, so the CONFIG_REF branch (and therefore the second trap) is live.
+"$WAVE_PLAN_SH" --config "$TD/leak-overlay.json" >/dev/null 2>&1 || true
+WAVE_LEAKED=$(leaked_temps "$WAVE_SENTINEL" | wc -l | tr -d ' ')
+[ "$WAVE_LEAKED" -eq 0 ] \
+  || fail "wave-plan leaked ${WAVE_LEAKED} temp file(s) holding the resolved config — a second EXIT trap replaced the first"
+leaked_temps "$WAVE_SENTINEL" | while IFS= read -r f; do rm -f "$f"; done
+
+# The flip side of that cleanup: resolve_config_extends returns the INPUT path unchanged when
+# a config has no `extends`, so a cleanup that doesn't distinguish "temp file I made" from
+# "the file the user passed in" would delete a real committed config.
+"$WAVE_PLAN_SH" --config "$TD/plain.json" >/dev/null 2>&1 || true
+[ -f "$TD/plain.json" ] \
+  || fail "wave-plan DELETED a no-extends config file — cleanup must not touch the caller's own path"
+
 # ── 4. super-board-run.sh smoke: extends-linked config reaches the wave-lock gate ───────────
 SMOKE_DIR=$(mktemp -d)
 
@@ -156,6 +202,35 @@ set -e
 echo "$SMOKE_OUT" | grep -q 'super-board run started — config=smoke variant=full base=develop' \
   || fail "extends-linked config did not resolve base_branch/variant from the base file (rc=${SMOKE_RC}): $(echo "$SMOKE_OUT" | head -3)"
 [ "$SMOKE_RC" -eq 74 ] || fail "expected exit 74 (wave lock) for an extends-linked config, got ${SMOKE_RC}: $(echo "$SMOKE_OUT" | tail -3)"
+
+# Regression: with `extends`, CONFIG_PATH must name a STABLE file that outlives this process.
+# dispatch_lane embeds CONFIG_PATH verbatim in every worker prompt, and workers routinely
+# outlive the dispatcher (a crashed dispatcher leaves orphan workers behind — see
+# references/stop.md), so a mktemp path deleted by our own EXIT trap would vanish out from
+# under a worker that reads its config lazily.
+RESOLVED_FILE="$SMOKE_DIR/.supersaiyan/resolved/smoke.json"
+if [ -f "$RESOLVED_FILE" ]; then
+  jq -e '.base_branch == "develop"' "$RESOLVED_FILE" >/dev/null \
+    || fail "persisted resolved config did not inherit base_branch from its base file"
+  jq -e 'has("extends") | not' "$RESOLVED_FILE" >/dev/null \
+    || fail "persisted resolved config still carries the extends key"
+else
+  fail "extends-linked run left no resolved config at .supersaiyan/resolved/smoke.json — workers would be handed a deleted temp path"
+fi
+
+# The resolved copy must NOT land in configs/: every consumer (platform-config.sh's config
+# count, super-board-status.py's configs/*.json glob, control-core's discoverConfigs) treats
+# each file there as a board, so a copy would register as a phantom extra board.
+CFG_COUNT=$(find "$SMOKE_DIR/.supersaiyan/configs" -name '*.json' | wc -l | tr -d ' ')
+[ "$CFG_COUNT" -eq 2 ] \
+  || fail "expected 2 files in configs/ (base + overlay), found ${CFG_COUNT} — the resolved copy must not be written there"
+
+# Persisting the resolved view must consume the mktemp file, not copy it and leave the
+# original behind. Same content-sentinel probe as the wave-plan check above.
+SMOKE_LEAKED=$(leaked_temps 'PVTSSF_test' | wc -l | tr -d ' ')
+[ "$SMOKE_LEAKED" -eq 0 ] \
+  || fail "super-board-run.sh left ${SMOKE_LEAKED} temp file(s) behind after resolving an extends config"
+leaked_temps 'PVTSSF_test' | while IFS= read -r f; do rm -f "$f"; done
 
 # Scenario: overlay's extends target is missing entirely — must fail loudly, not silently
 # fall back to workflow-backend defaults.

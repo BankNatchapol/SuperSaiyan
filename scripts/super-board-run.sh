@@ -70,13 +70,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Resolve an optional `extends` link (shared base config for multi-tool boards — see
 # references/config-schema.json) before ANY field below is read. On success this may
-# reassign CONFIG_PATH to a merged temp file; every jq call below keeps reading "$CONFIG_PATH"
-# completely unchanged either way. The temp file (if any) is cleaned up on exit.
+# reassign CONFIG_PATH to a merged view; every jq call below keeps reading "$CONFIG_PATH"
+# completely unchanged either way.
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/config-resolve.sh"
 RESOLVED_CONFIG_PATH=$(resolve_config_extends "$CONFIG_PATH") || exit 66
 if [ "$RESOLVED_CONFIG_PATH" != "$CONFIG_PATH" ]; then
-  trap 'rm -f "$RESOLVED_CONFIG_PATH"' EXIT
+  # The resolver hands back an mktemp path. Move it somewhere STABLE before using it:
+  # dispatch_lane embeds CONFIG_PATH verbatim in every worker prompt, and workers routinely
+  # outlive this process — a crashed dispatcher leaves orphan workers behind (see
+  # references/stop.md) — so a temp file removed by our own EXIT trap would vanish out from
+  # under a worker that reads its config lazily. Overwritten on each run; the previous run's
+  # copy lingering is a feature when debugging what a worker was actually handed.
+  #
+  # Deliberately NOT under configs/: every config consumer treats each configs/*.json as a
+  # board (platform-config.sh's config count, super-board-status.py's glob, control-core's
+  # discoverConfigs), so a resolved copy there would register as a phantom extra board and
+  # break sole-config detection. `mv` also consumes the temp file, so nothing is left behind.
+  mkdir -p "$CONFIG_ROOT/resolved"
+  PERSISTED_CONFIG_PATH="$CONFIG_ROOT/resolved/${CONFIG_SLUG}.json"
+  mv "$RESOLVED_CONFIG_PATH" "$PERSISTED_CONFIG_PATH"
+  RESOLVED_CONFIG_PATH="$PERSISTED_CONFIG_PATH"
 fi
 CONFIG_PATH="$RESOLVED_CONFIG_PATH"
 

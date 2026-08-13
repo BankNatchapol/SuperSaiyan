@@ -37,6 +37,13 @@
   //
   // Constraints: the base config must NOT itself set `extends` (no chains — resolution
   // errors clearly if it does). Absent/null (the common case) costs nothing extra.
+  //
+  // Where the resolved view lands: `super-board-run.sh` writes it to
+  // `<config-root>/resolved/<slug>.json` and hands THAT path to workers, because a worker
+  // can outlive the dispatcher that spawned it and must not be pointed at a temp file the
+  // dispatcher deletes on exit. That directory is machine-local (gitignored) and rewritten
+  // every run — the committed `configs/*.json` stay the only source of truth. It is
+  // deliberately outside `configs/`, which every consumer globs to enumerate boards.
   "extends": null,
 
   "project": {
