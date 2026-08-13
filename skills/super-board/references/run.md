@@ -1,6 +1,7 @@
 # super-board run — full contract
 
 Pointer: spec `docs/superpowers/specs/2026-05-21-super-board-design.md` §7 "Verb 3 — super-board run".
+Concrete per-platform commands: see `references/platforms.md`.
 
 **Where it runs:** headless. Spawned as a `nohup`-backgrounded process; the current Claude session exits immediately after dispatch. The runner script (`scripts/super-board-run.sh`) is a pure shell while-loop that dispatches one `claude -p` worker per lane and never holds Claude session state. Each `claude -p` worker is its own short-lived headless context — load this file at the start of every lane.
 
@@ -41,14 +42,14 @@ Progress: ✅ onboard  →  ✅ lint  →  🤖 run (you are here)
 |---|---|
 | Active config exists | Halt: "Run `super-board onboard` first." |
 | Project + required columns exist | Halt: "Project / columns missing. Run `super-board onboard` to repair." |
-| `gh auth` valid with required scopes | Halt: "Re-auth: `gh auth refresh -s repo,project`." |
+| `platform_auth_check` valid with required scopes | Halt: "Re-auth via `platform_auth_check` (see `references/platforms.md`)." |
 | `pre-flight.md` all items `[✓]` | Halt: "Pre-flight incomplete — fix these: [list]." |
 | No issues missing ACs in active columns | Halt: "N issues need clarification. Run `super-board lint`." |
 | Full variant: clean git working tree on base branch | Halt: "Working tree dirty. Stash or commit before running." |
 | Stale worktree scan | Auto-clean: for each dir in `.worktrees/`, if its branch no longer exists OR no `loop:in-*` label on its issue, `git worktree remove --force` it. Log each removal in the run manifest. Halt only if a removal fails. |
 | Production-merge guard | If `base_branch == "main"` AND `human_approves_merge == false` AND production-detection signals fire (see §5 step 8), halt with: `🛡 Refusing to start: would auto-merge to production main. Either set human_approves_merge: true or switch base_branch to staging.` |
 | Orphan-worker scan (added 2026-05-22 after #381 worker storm; per-backend since per-lane routing) | For every **distinct** backend in use this run — the whole-board `worker_backend` string, or the deduplicated values of a per-lane object, scoped to the lanes this variant dispatches — `pgrep -f '<that backend's orphan pattern>'` must return zero. See `references/backends.md` for the exact pattern per backend (`claude -p .*super-board run`, `codex exec .*for SuperSaiyan`, `agent.*for SuperSaiyan`). If any worker is alive from a prior crashed run, halt with one line per matched backend: `🛑 ${N} <backend> worker(s) already running. Stop them first: pkill -f '<pattern>'`. The dispatcher must never run while orphan workers exist — they will collide on assignee claims and produce duplicate PRs. |
-| GraphQL rate-limit guard | Before each tick, query `gh api rate_limit`. If GraphQL remaining < 200, sleep until reset. Prevents the runner from dying mid-loop when the user has burned quota in another tool. |
+| Rate-limit guard | Before each tick, call `platform_rate_remaining` / `platform_rate_guard`. If remaining < 200, sleep until reset. Prevents the runner from dying mid-loop when the user has burned quota in another tool. |
 
 ## Lane mapping by variant
 
@@ -165,9 +166,9 @@ e2e/streaming/ttfb.spec.ts:18   [QA] spec asserts status only — add TTFB asser
 |---|---|---|
 | Builder (Building → QA) | All `[builder]` threads on this PR | Stay in Building, fix, then exit |
 | Tester (QA → Review) | All `[QA]` threads on this PR | Stay in QA, fix, then exit |
-| Reviewer (approving merge) | ALL threads on this PR | Gate 1: narrowly re-verify each unresolved thread's flagged file:line first (self-resolve via `resolveReviewThread` if the defect is already fixed); bounce only genuinely-open or inconclusive threads — `[builder]` open → Ready; `[QA]` open → QA |
+| Reviewer (approving merge) | ALL threads on this PR | Gate 1: narrowly re-verify each unresolved thread's flagged file:line first (self-resolve via `platform_thread_resolve` if the defect is already fixed); bounce only genuinely-open or inconclusive threads — `[builder]` open → Ready; `[QA]` open → QA |
 
-Threads are resolved via `gh api graphql` `resolveReviewThread` mutation when the fix is committed.
+Threads are resolved via `platform_thread_resolve` when the fix is committed.
 
 Gate 1's narrow re-verification (Reviewer lifecycle step 2) is the one case where Reviewer resolves a thread it did not fix itself — it is confirming a fix already landed in a later commit, not authoring one. This must stay scoped to the single flagged file:line; it is not a substitute for the full review in steps 3-6, and must never be used to wave off a thread the Reviewer merely disagrees with.
 
@@ -252,8 +253,8 @@ If a screenshot file is >5MB, downscale to ≤1920px wide before committing; Git
       thread's original claim; the full review is steps 3–6, not this gate.
       - **Defect no longer present** (a later commit already fixed it and the
         thread was simply never marked resolved) → Reviewer resolves the
-        thread itself via the `gh api graphql` `resolveReviewThread` mutation
-        (same mutation used elsewhere in this doc — see "PR review-comment
+        thread itself via `platform_thread_resolve`
+        (same operation used elsewhere in this doc — see "PR review-comment
         threads" above), with a comment: `[review] Re-checked — <file>:<line>
         now does <what>; already fixed by <short-sha>. Resolving.` Do NOT
         bounce on this thread; treat it as resolved for the rest of Gate 1.
@@ -277,7 +278,7 @@ If a screenshot file is >5MB, downscale to ≤1920px wide before committing; Git
 6. **Adversarial mode** (per `truth_gate`): when triggered, spawn 2 sub-agents in parallel:
    - **Code-grounder** — verify cited file:line still exists and matches claims.
    - **Historian** — `git blame` the changed lines, check for ADRs / prior incidents.
-   - **Budget cap (added 2026-05-22): each sub-agent ≤50 gh calls.** Prefer local `git blame` / `git log` over `gh api graphql`. If a sub-agent needs >50 calls to reach confidence, it returns `confidence: "insufficient_data"` and the Reviewer flags the card as 🛡 truth-check inconclusive instead of burning the shared quota. See `rate-limit-etiquette.md`.
+   - **Budget cap (added 2026-05-22): each sub-agent ≤50 forge API calls.** Prefer local `git blame` / `git log` over `platform_*` reads. If a sub-agent needs >50 calls to reach confidence, it returns `confidence: "insufficient_data"` and the Reviewer flags the card as 🛡 truth-check inconclusive instead of burning the shared quota. See `rate-limit-etiquette.md`.
    - Aggregate into a confidence score (0-100). Compare against `config.truth_threshold` (default 70).
    - **Below threshold** — Reviewer MUST NOT approve. Open a `[review]`-prefixed PR thread quoting the lowest-confidence sub-agent finding, write the full Block template comment (see §4 Block/Skip), move card Review → Blocked with reason tag 🛡 truth-check failed (confidence X/100). The card stays Blocked until human review; the bot's "Why I cannot decide" line names the specific sub-agent finding it could not confirm.
    - **Above threshold** — continue to step 7.
@@ -358,14 +359,14 @@ Block/Skip exit comments use the 🛡 / 🤷 / 🔁 emojis with a 1-line reason 
 **Skip types:**
 - 🤷 Deferred/out-of-scope — post skip comment, move card to Skipped, **leave issue open** (next run can retry).
 - 🔁 Superseded — same deliverable, would conflict. Post skip comment, move card to Skipped, then **close the issue**:
-  ```bash
-  gh issue close <N> --comment "Closing — superseded by #<M> which covers the same deliverable. Reopen if #<M> does not land."
+  ```
+  platform_issue_close <N>  "Closing — superseded by #<M> which covers the same deliverable. Reopen if #<M> does not land."
   ```
 
 ## Per-tick logic (~30s cadence)
 
 ```
-1. Refresh project items + column counts via gh api
+1. Refresh project items + column counts via platform_board_snapshot
 2. Re-validate preconditions (auth, pre-flight, columns)
 3. Downstream-first dispatch by lane capacity:
    ├─ Review has cards + Reviewer idle → dispatch top of Review
@@ -386,24 +387,24 @@ Block/Skip exit comments use the 🛡 / 🤷 / 🔁 emojis with a 1-line reason 
 
 ## Worker contract (every lane on claim)
 
-Claim uses a **GitHub Issue assignee mutex** — atomic compare-and-set via `gh issue edit --add-assignee`. Labels are descriptive only; the assignee is the lock.
+Claim uses an **issue assignee mutex** — `platform_claim_issue` (compare-and-set). Labels are descriptive only; the assignee is the lock.
 
 ```
 1. ATTEMPT CLAIM (atomic):
-   ├─ `gh issue edit <N> --add-assignee super-board-bot[bot]`
-   │      (if a different assignee is already set → 422; treat as "already claimed")
-   ├─ On 422 / conflict → another worker has it; skip this dispatch.
+   ├─ `platform_claim_issue <N> <bot_identity>`
+   │      (if a different assignee is already set → return 1; treat as "already claimed")
+   ├─ On conflict → another worker has it; skip this dispatch.
    └─ On success → continue. Apply descriptive label
        (loop:in-build / loop:in-qa / loop:in-review) for UI clarity only.
 2. SANITY CHECK: issue body has `## Acceptance Criteria` with ≥1 bullet
    ├─ Missing → write the full Block template (see §4) with reason ❓
-   │           release claim (`gh issue edit --remove-assignee`)
+   │           release claim (`platform_release_issue`)
    │           move card to Blocked, continue with next card.
    └─ Present → proceed.
 3. Do the lane's work (build / QA / review).
 4. Comment evidence on issue + PR (structured handoff).
 5. Move card to next column (or Blocked/Skipped with the full §4 template).
-6. RELEASE CLAIM (`gh issue edit --remove-assignee super-board-bot[bot]`) and remove descriptive label.
+6. RELEASE CLAIM (`platform_release_issue <N> <bot_identity>`) and remove descriptive label.
 ```
 
 The `super-board-bot[bot]` identity is either (a) a GitHub App installed on the repo, or (b) the user's own account on solo projects — onboard step 2 picks which. The assignee mutex is reliable because GitHub serializes assignee writes per issue.
@@ -419,7 +420,7 @@ The dispatcher MUST also:
 3. **Cap one worker per lane** — track `BUILD_PID` / `QA_PID` / `REVIEW_PID`; do not dispatch to a lane whose prior PID is still alive.
 4. **Reap stale locks each tick** — `reap_finished_locks` removes any lock whose PID no longer exists.
 5. **Orphan-scan on startup** — refuse to start if any worker from a prior crashed dispatcher is already running, scanning once per distinct backend in use (see the Preconditions table and `references/backends.md` for the per-backend patterns).
-6. **Cache `gh project item-list` per tick** — one API call per tick, not per column lookup. Cuts rate consumption ~7×.
+6. **Cache `platform_board_snapshot` per tick** — one API call per tick, not per column lookup. Cuts rate consumption ~7×.
 
 The three locks (assignee, in-flight file, lane PID) are defense in depth: any one of them alone has a race window; together they make a duplicate dispatch effectively impossible.
 
@@ -510,7 +511,7 @@ Workers share the dispatcher's gh-auth token bucket. The dispatcher's `gh_rate_g
 
 - Source `scripts/super-board-gh-guard.sh` at worker start.
 - Call `sb_gh_guard_check 200` before any burst of gh calls (thread reads, sub-agent spawn, exit verification).
-- Adversarial sub-agents are capped at 50 gh calls each — prefer `git blame` (local) over `gh api graphql`.
+- Adversarial sub-agents are capped at 50 forge API calls each — prefer `git blame` (local) over `platform_*` reads.
 - Final PR handoff comment MUST include `gh-quota-on-exit: graphql=<n>/5000 rest=<n>/5000` (use `sb_gh_guard_summary`).
 - On 403 / secondary-rate-limit: sleep 60s, re-check at threshold 500, then resume.
 
@@ -519,8 +520,8 @@ Workers share the dispatcher's gh-auth token bucket. The dispatcher's `gh_rate_g
 Before releasing the claim assignee and exiting, every worker MUST verify:
 
 - [ ] Issue comment AND PR comment both written (per "Commenting cadence" above).
-- [ ] Card column move's mutation returned success. **Do NOT re-query `gh project item-list` for verification** — trust the mutation exit code (the 500-item GraphQL refetch was the per-worker quota tax; see `rate-limit-etiquette.md` §3). If the mutation returned non-zero, call `sb_gh_guard_check 200`, retry the move ONCE, and if it still fails, leave the assignee in place and write a halt comment.
-- [ ] Claim assignee released (`gh issue edit --remove-assignee <bot_identity>`) and the descriptive `loop:in-*` label removed.
+- [ ] Card column move's mutation returned success. **Do NOT re-query `platform_board_snapshot` for verification** — trust the mutation exit code (the 500-item GraphQL refetch was the per-worker quota tax; see `rate-limit-etiquette.md` §3). If the mutation returned non-zero, call `sb_gh_guard_check 200`, retry the move ONCE, and if it still fails, leave the assignee in place and write a halt comment.
+- [ ] Claim assignee released (`platform_release_issue <N> <bot_identity>`) and the descriptive `loop:in-*` label removed.
 - [ ] On failure handoff: `root-cause-hash:` line is present in the PR handoff comment (per "Root-cause hash" above).
 - [ ] On Block/Skip exit: the full template from `block-template.md` is populated on BOTH the issue and the PR (if a PR exists); the reason emoji is one of the nine in the vocabulary table (🔐 💳 🔑 ❓ 🛡 🧑 🤷 📦 🎨).
 - [ ] `gh-quota-on-exit:` line appended to PR handoff comment.
