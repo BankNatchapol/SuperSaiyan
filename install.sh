@@ -300,6 +300,7 @@ for path in \
   ".supersaiyan/bin/super-board-wave-plan.sh" \
   ".supersaiyan/bin/tasks-to-issues.sh" \
   ".supersaiyan/bin/platform-config.sh" \
+  ".supersaiyan/bin/config-resolve.sh" \
   ".supersaiyan/workflows/super-board-wave.js"; do
   if [ -e "$TARGET/$path" ]; then
     ok "$path"

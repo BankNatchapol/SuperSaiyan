@@ -178,6 +178,31 @@ MV_FAIL_RESIDUE=$(find "$PERSIST_ROOT/resolved" -name '*.tmp.*' 2>/dev/null | wc
 [ "$MV_FAIL_RESIDUE" -eq 0 ] \
   || fail "persist_resolved_config left ${MV_FAIL_RESIDUE} .tmp.* file(s) behind after a failed mv"
 
+# Regression guard: `--effective-path` is a PUBLIC entry point — the workflow-backend
+# orchestrator (an LLM session, not a fixed caller) invokes it with whatever config path it
+# picked, not necessarily one that sits at <root>/configs/<slug>.json. The unconditional
+# `dirname(dirname(...))` this used to do would write `resolved/` into the PARENT of a config
+# directory that isn't literally named "configs" — one level higher in the tree than intended,
+# and outside the caller's own directory entirely. persist_resolved_config() must instead fall
+# back to writing resolved/ next to the config's own directory in that case.
+ODD_ROOT="$TD/odd-layout/somewhere"
+mkdir -p "$ODD_ROOT"
+cat > "$ODD_ROOT/oddbase.json" <<'EOF'
+{"project":{"owner":"o","number":1}}
+EOF
+cat > "$ODD_ROOT/oddoverlay.json" <<'EOF'
+{"extends":"oddbase","worker_backend":"claude-p"}
+EOF
+ODD_EFFECTIVE=$(bash "$RESOLVE_SH" --effective-path "$ODD_ROOT/oddoverlay.json") \
+  || fail "config-resolve.sh --effective-path failed on a non-configs/ directory layout"
+case "$ODD_EFFECTIVE" in
+  "$ODD_ROOT"/resolved/*) ;;
+  "$(dirname "$ODD_ROOT")"/resolved/*)
+    fail "--effective-path walked up a level past a directory not named 'configs': wrote to $ODD_EFFECTIVE instead of under $ODD_ROOT/resolved/" ;;
+  *) fail "--effective-path for a non-configs/ layout landed somewhere unexpected: $ODD_EFFECTIVE" ;;
+esac
+[ -f "$ODD_EFFECTIVE" ] || fail "--effective-path's non-configs/ output does not point at a real file: $ODD_EFFECTIVE"
+
 # CLI usage/error handling.
 if bash "$RESOLVE_SH" --effective-path >/dev/null 2>/tmp/cli-err.txt; then
   fail "--effective-path with no config-path argument should fail (usage error)"

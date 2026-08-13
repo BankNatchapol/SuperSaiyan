@@ -53,6 +53,11 @@
   // workflow-backend orchestrator calls it via `config-resolve.sh --effective-path` (see
   // `references/run-workflow.md` §Preconditions) since `super-board-wave.js` — a Workflow
   // script — has no filesystem access to resolve `extends` itself.
+  //
+  // Scope: this covers DISPATCH only. `scripts/platform-config.sh`'s `platform_config_resolve`
+  // — used by the board-metadata path (`skills/supersaiyan/scripts/prepare.sh`,
+  // `scripts/tasks-to-issues.sh`) — does NOT resolve `extends` yet; a `prepare.sh` field read
+  // on an `extends`-linked config can silently miss inherited fields. Tracked in #27.
   "extends": null,
 
   "project": {

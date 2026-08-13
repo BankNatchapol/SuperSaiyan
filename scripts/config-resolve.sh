@@ -86,12 +86,16 @@ persist_resolved_config() {
   # atomic; a cross-device mv — e.g. the mktemp dir living on tmpfs while the repo does not,
   # common on Linux CI — is not). This also preserves resolve_config_extends()'s existing
   # contract that its returned mktemp file gets consumed, never left behind.
-  local raw="$1" abs_raw resolved_tmp configs_dir root slug persisted_dir persisted tmp_persisted
+  local raw="$1" abs_dir abs_raw resolved_tmp configs_dir root slug persisted_dir persisted tmp_persisted
   if [ ! -f "$raw" ]; then
     echo "config not found: $raw" >&2
     return 1
   fi
-  abs_raw="$(cd "$(dirname "$raw")" && pwd)/$(basename "$raw")"
+  abs_dir="$(cd "$(dirname "$raw")" && pwd)" || {
+    echo "🛑 could not resolve the directory containing $raw" >&2
+    return 1
+  }
+  abs_raw="$abs_dir/$(basename "$raw")"
 
   resolved_tmp=$(resolve_config_extends "$raw") || return 1
 
@@ -100,8 +104,18 @@ persist_resolved_config() {
     return 0
   fi
 
+  # `resolved/` is meant to sit next to `configs/` — i.e. `<root>/resolved/` as a sibling of
+  # `<root>/configs/`. That only falls out of `dirname(dirname(...))` when the config's own
+  # directory is literally named `configs`. `--effective-path` is a public entry point an
+  # LLM orchestrator can invoke with any path it picked, so don't walk up a second level on
+  # a directory that isn't `configs` — write `resolved/` next to the config's own directory
+  # instead. Worse case becomes "one dir over", not "one level too high in the tree".
   configs_dir="$(dirname "$abs_raw")"
-  root="$(dirname "$configs_dir")"
+  if [ "$(basename "$configs_dir")" = "configs" ]; then
+    root="$(dirname "$configs_dir")"
+  else
+    root="$configs_dir"
+  fi
   slug="$(basename "$abs_raw" .json)"
   persisted_dir="$root/resolved"
   mkdir -p "$persisted_dir" || {

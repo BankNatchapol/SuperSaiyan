@@ -43,6 +43,14 @@ Run the same preconditions as `run.md` §Preconditions, minus PID checks:
    hands the path to anything else, so it wants that function's plain temp-and-clean
    semantics (and needs its FIFO test-mode support, which `persist_resolved_config()`'s
    real-file requirement doesn't provide).
+
+   **`<config-root>` (used in step 5a and Stop/resume below) is NOT derived from this
+   effective path.** The effective path from `--effective-path` is for *reading config
+   fields* only — with `extends` it may point under `<root>/resolved/`, which is a
+   subdirectory, not the root itself. `<config-root>` stays whatever directory directly
+   contains `configs/` for this config (`.supersaiyan/`, or a legacy root — see
+   `scripts/super-board-run.sh`'s `CONFIG_ROOTS` probe) — the SAME value both backends must
+   agree on for the mutual-exclusion lock in step 5a to actually exclude anything.
 2. Production-merge guard: refuse `base_branch: main` + `human_approves_merge:
    false` when deploy markers exist (same rule as super-board-run.sh).
 3. Stale-worktree scan: remove `.worktrees/*` whose branch is gone.
@@ -52,9 +60,10 @@ Run the same preconditions as `run.md` §Preconditions, minus PID checks:
    `{ echo '(async function(){'; sed 's/^export const meta/const meta/' .supersaiyan/workflows/super-board-wave.js; echo '})'; } | node --check --input-type=module`
 5. Wave marker FIRST, then the legacy check (lock-before-look closes the
    TOCTOU window where both backends pass each other's checks at once):
-   a. Atomically create `<config-root>/inflight/workflow-wave.lock` — under whichever root the
-      config resolved from in step 1 (`.supersaiyan/` for a fresh onboard, or a legacy root for
-      a pre-migration install)
+   a. Atomically create `<config-root>/inflight/workflow-wave.lock` — under the config root
+      as defined in step 1 above (the directory containing `configs/`; `.supersaiyan/` for a
+      fresh onboard, or a legacy root for a pre-migration install — NOT the `resolved/`
+      subdirectory the effective config path may live under)
       (mkdir -p the directory) containing the config slug and start time:
       `(set -C; printf 'SLUG=%s\nSTARTED=%s\n' <slug> "$(date -u +%FT%TZ)" > <lock>)`.
       If it already exists and `/workflows` shows no running
@@ -132,7 +141,8 @@ Repeat until a done condition or halt gate fires:
 - Stop: `x` on the run in `/workflows` (or TaskStop), then release assignees
   for in-flight cards and post "stopped mid-flight" comments (same protocol
   as `references/stop.md`). Remove `<config-root>/inflight/workflow-wave.lock` (the same
-  resolved root the wave used to create it — see step 5a above).
+  config root — the directory containing `configs/`, not `resolved/` — the wave used to
+  create it; see step 5a above).
 - Resume: just run again — board state is the only state. A workflow stopped
   mid-wave can also be resumed in-session via `resumeFromRunId` (completed
   lane agents return cached results).
