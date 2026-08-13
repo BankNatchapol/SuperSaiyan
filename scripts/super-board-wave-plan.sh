@@ -24,6 +24,24 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$CONFIG" ] && [ -e "$CONFIG" ] || { echo "config not found: ${CONFIG:-<unset>}" >&2; exit 66; }
 
+# Every temp file this script creates, cleaned up by ONE EXIT trap. A second `trap ... EXIT`
+# replaces the first rather than adding to it, so each temp path gets its own variable here and
+# the trap is installed exactly once — an earlier version set a trap per temp file and silently
+# leaked the resolved config, which holds the board's project and notification settings.
+#
+# CONFIG_SOURCE is captured BEFORE the trap is installed: `resolve_config_extends` returns the
+# INPUT path unchanged when there is no `extends`, so without this guard the cleanup would
+# delete the user's actual committed config file.
+CONFIG_SOURCE="$CONFIG"
+RESOLVED_CONFIG=""
+CONFIG_REF=""
+cleanup_temps() {
+  [ -n "$RESOLVED_CONFIG" ] && [ "$RESOLVED_CONFIG" != "$CONFIG_SOURCE" ] && rm -f "$RESOLVED_CONFIG"
+  [ -n "$CONFIG_REF" ] && rm -f "$CONFIG_REF"
+  return 0
+}
+trap cleanup_temps EXIT
+
 # Resolve an optional `extends` link (see references/config-schema.json) before the config is
 # read — only when $CONFIG is a real regular file. Test mode passes a process-substitution
 # FIFO, which `resolve_config_extends` would consume with its own `.extends` check, leaving
@@ -35,7 +53,6 @@ if [ -f "$CONFIG" ]; then
   # shellcheck disable=SC1091
   source "$SCRIPT_DIR/config-resolve.sh"
   RESOLVED_CONFIG=$(resolve_config_extends "$CONFIG") || exit 66
-  [ "$RESOLVED_CONFIG" != "$CONFIG" ] && trap 'rm -f "$RESOLVED_CONFIG"' EXIT
   CONFIG="$RESOLVED_CONFIG"
 fi
 
@@ -64,7 +81,6 @@ else
   # was already read and pass a platform-neutral config reference. GitHub reads
   # owner/number from it; GitLab reads host/full_path/board_id.
   CONFIG_REF=$(mktemp)
-  trap 'rm -f "$CONFIG_REF"' EXIT
   printf '%s\n' "$CONFIG_JSON" > "$CONFIG_REF"
   ITEMS=$(platform_board_snapshot "$CONFIG_REF")
 fi

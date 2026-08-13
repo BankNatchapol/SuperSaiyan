@@ -69,16 +69,17 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Resolve an optional `extends` link (shared base config for multi-tool boards — see
-# references/config-schema.json) before ANY field below is read. On success this may
-# reassign CONFIG_PATH to a merged temp file; every jq call below keeps reading "$CONFIG_PATH"
-# completely unchanged either way. The temp file (if any) is cleaned up on exit.
+# references/config-schema.json) before ANY field below is read, via the shared
+# persist_resolved_config() — same function the workflow-backend orchestrator calls through
+# this file's CLI mode (references/run-workflow.md), so both backends resolve identically.
+# Always returns an ABSOLUTE path: with no `extends` that's just CONFIG_PATH's absolute form;
+# with `extends` it's a persisted, stable path (not an mktemp file this process's own EXIT trap
+# would remove) — required because dispatch_lane embeds CONFIG_PATH verbatim in every worker
+# prompt, and workers run from a git worktree, a different cwd than this process, and routinely
+# outlive it (a crashed dispatcher leaves orphan workers behind — see references/stop.md).
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/config-resolve.sh"
-RESOLVED_CONFIG_PATH=$(resolve_config_extends "$CONFIG_PATH") || exit 66
-if [ "$RESOLVED_CONFIG_PATH" != "$CONFIG_PATH" ]; then
-  trap 'rm -f "$RESOLVED_CONFIG_PATH"' EXIT
-fi
-CONFIG_PATH="$RESOLVED_CONFIG_PATH"
+CONFIG_PATH=$(persist_resolved_config "$CONFIG_PATH") || exit 66
 
 # ───────────────────────────── config read ─────────────────────────────
 VARIANT=$(jq -r '.variant' "$CONFIG_PATH")
@@ -425,6 +426,7 @@ reap_finished_locks() {
 BACKEND_SUMMARY="qa=${QA_BACKEND} review=${REVIEW_BACKEND}"
 [ "$VARIANT" = "full" ] && BACKEND_SUMMARY="build=${BUILD_BACKEND} ${BACKEND_SUMMARY}"
 log "super-board run started — config=${CONFIG_SLUG} variant=${VARIANT} base=${BASE_BRANCH} tick=${TICK_SECONDS}s max_workers=${MAX_WORKERS} backends: ${BACKEND_SUMMARY}"
+log "worker config path (embedded in every dispatch_lane prompt): ${CONFIG_PATH}"
 
 # Orphan-worker guard — one scan per distinct backend in use this run, since a per-lane
 # config can have up to three live at once and each has its own pgrep pattern.

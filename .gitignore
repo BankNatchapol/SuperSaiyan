@@ -16,6 +16,12 @@
 .supersaiyan/active
 .supersaiyan/inflight/
 
+# Derived state: super-board-run.sh writes the resolved view of an `extends`-linked config
+# here so workers get a stable path (see scripts/config-resolve.sh). Regenerated every run
+# from the committed configs/*.json, so it is machine-local, never a source of truth.
+.supersaiyan/resolved/
+.claude/supersaiyan/resolved/
+
 # Absolute-path symlink — only valid on the original machine
 .claude/skills/gstack
 

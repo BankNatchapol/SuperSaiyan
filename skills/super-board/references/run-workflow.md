@@ -19,16 +19,51 @@ The interactive session that runs this backend is the orchestrator. It:
 ## Preconditions (before the first wave)
 
 Run the same preconditions as `run.md` §Preconditions, minus PID checks:
-1. Config exists and validates against `config-schema.json`. If it sets `extends`, resolve
-   it FIRST — read the base config at the same directory, merge (base defaults, overlay
-   wins per key), and validate/use that resolved view for every field read from here on
-   (`variant`, `human_approves_merge`, `tier`/`model_tier`, everything `configPath` implies
-   downstream). Halt if the named base is missing or itself sets `extends` (chains aren't
-   supported). `scripts/super-board-wave-plan.sh` (step 2 below) already does this
-   resolution itself when given a real config file — see `scripts/config-resolve.sh` and
-   `references/config-schema.json` (`extends`) — but the orchestrator's own reads of
-   `human_approves_merge`/`tier` for the `Workflow` args in step 4 happen independently and
-   must resolve `extends` too, or an overlay config silently loses its inherited settings.
+1. Config exists and validates against `config-schema.json`. Resolve `extends` via
+   `bash .supersaiyan/bin/config-resolve.sh --effective-path <config-path>` — prints an
+   absolute path to stdout and exits 0. Read every field from THIS point on — `variant`,
+   `human_approves_merge`, `tier`/`model_tier`, and the `configPath` passed to Launch in step
+   4 — from the printed path, never from the raw `configs/<slug>.json`. Halt if the command
+   exits non-zero (its stderr names the problem: missing base, or the base itself setting
+   `extends` — chains aren't supported).
+
+   Use the CLI, not the raw config, even though `configs/<slug>.json` "looks" readable:
+   without `extends` the printed path is just that file's absolute form (no behavior change),
+   but with `extends` the raw file is missing every inherited field (`project`,
+   `base_branch`, ...) — reading it directly silently drops them.
+
+   **Always pass the raw `configs/<slug>.json` as the CLI's INPUT — never feed it a path it
+   printed earlier.** The distinction is input vs output: the printed path is what you *read
+   fields from*; `configs/<slug>.json` is what you *resolve from*, every time. This matters
+   because you re-run these preconditions on every `/loop` re-entry. Re-resolving an already-
+   resolved file is silently a no-op — the merge strips `extends`, so a second pass sees a
+   config with no link to follow and hands the same path straight back without re-reading the
+   base. Feed back your own output and you pin the run to whatever the base said the first
+   time: edit `rebuild_cap` in the base between waves and the change is silently ignored,
+   breaking the guarantee in `references/onboard.md` step 2 that "every tool's next dispatcher
+   run picks it up". The CLI now refuses paths whose parent directory is named `resolved/`
+   (nonzero, stderr names the raw overlay) so that mix-up fails loudly instead of succeeding
+   with a stale merge. The legacy dispatcher is immune by construction — `super-board-run.sh`
+   always starts from `$CONFIG_ROOT/configs/<slug>.json` — so this is an
+   orchestrator-discipline rule, not a resolver bug.
+
+   `scripts/super-board-run.sh` (the legacy dispatcher) resolves `extends` the same way —
+   via `persist_resolved_config()` — before handing a config path to a worker; the
+   orchestrator here shells out to it via the CLI instead of sourcing it because it is a
+   Claude Code session, not a bash script. `scripts/super-board-wave-plan.sh` (step 2 below)
+   resolves the same `extends` link too, but via `resolve_config_extends()` directly rather
+   than `persist_resolved_config()` — it only reads fields for its own JSON output and never
+   hands the path to anything else, so it wants that function's plain temp-and-clean
+   semantics (and needs its FIFO test-mode support, which `persist_resolved_config()`'s
+   real-file requirement doesn't provide).
+
+   **`<config-root>` (used in step 5a and Stop/resume below) is NOT derived from this
+   effective path.** The effective path from `--effective-path` is for *reading config
+   fields* only — with `extends` it may point under `<root>/resolved/`, which is a
+   subdirectory, not the root itself. `<config-root>` stays whatever directory directly
+   contains `configs/` for this config (`.supersaiyan/`, or a legacy root — see
+   `scripts/super-board-run.sh`'s `CONFIG_ROOTS` probe) — the SAME value both backends must
+   agree on for the mutual-exclusion lock in step 5a to actually exclude anything.
 2. Production-merge guard: refuse `base_branch: main` + `human_approves_merge:
    false` when deploy markers exist (same rule as super-board-run.sh).
 3. Stale-worktree scan: remove `.worktrees/*` whose branch is gone.
@@ -38,9 +73,10 @@ Run the same preconditions as `run.md` §Preconditions, minus PID checks:
    `{ echo '(async function(){'; sed 's/^export const meta/const meta/' .supersaiyan/workflows/super-board-wave.js; echo '})'; } | node --check --input-type=module`
 5. Wave marker FIRST, then the legacy check (lock-before-look closes the
    TOCTOU window where both backends pass each other's checks at once):
-   a. Atomically create `<config-root>/inflight/workflow-wave.lock` — under whichever root the
-      config resolved from in step 1 (`.supersaiyan/` for a fresh onboard, or a legacy root for
-      a pre-migration install)
+   a. Atomically create `<config-root>/inflight/workflow-wave.lock` — under the config root
+      as defined in step 1 above (the directory containing `configs/`; `.supersaiyan/` for a
+      fresh onboard, or a legacy root for a pre-migration install — NOT the `resolved/`
+      subdirectory the effective config path may live under)
       (mkdir -p the directory) containing the config slug and start time:
       `(set -C; printf 'SLUG=%s\nSTARTED=%s\n' <slug> "$(date -u +%FT%TZ)" > <lock>)`.
       If it already exists and `/workflows` shows no running
@@ -85,8 +121,14 @@ Repeat until a done condition or halt gate fires:
    (or /loop re-entries) against the same board without bot_identity.
 4. **Launch** — Workflow tool with
    `scriptPath: .supersaiyan/workflows/super-board-wave.js` and
-   `args: { configPath, variant, cards, humanApprovesMerge, tier }`. Runs in the background; the
-   orchestrator stays responsive. `humanApprovesMerge` comes from the config; when false the workflow serializes Review-lane agents (merge-race guard, execution side).
+   `args: { configPath, variant, cards, humanApprovesMerge, tier }`. `configPath` MUST be the
+   effective path from Preconditions step 1 (`config-resolve.sh --effective-path`'s output),
+   never the raw `configs/<slug>.json` path — `super-board-wave.js` is a Workflow script with
+   no filesystem access, so it cannot resolve `extends` itself; it only forwards whatever
+   `configPath` it's given straight into every lane agent's prompt. Passing the raw overlay
+   path there would hand lane workers a config missing every field the overlay inherits from
+   its base. Runs in the background; the
+   orchestrator stays responsive. `humanApprovesMerge` comes from the (resolved) config; when false the workflow serializes Review-lane agents (merge-race guard, execution side).
    `tier` is the run's model ladder: `'low'` when the user invoked
    `super-board run --low` (haiku/sonnet/opus by card complexity), `'high'`
    for `run --high` (opus floor, session model above), omitted/`'medium'`
@@ -112,7 +154,8 @@ Repeat until a done condition or halt gate fires:
 - Stop: `x` on the run in `/workflows` (or TaskStop), then release assignees
   for in-flight cards and post "stopped mid-flight" comments (same protocol
   as `references/stop.md`). Remove `<config-root>/inflight/workflow-wave.lock` (the same
-  resolved root the wave used to create it — see step 5a above).
+  config root — the directory containing `configs/`, not `resolved/` — the wave used to
+  create it; see step 5a above).
 - Resume: just run again — board state is the only state. A workflow stopped
   mid-wave can also be resumed in-session via `resumeFromRunId` (completed
   lane agents return cached results).
@@ -134,6 +177,7 @@ don't stall on prompts:
     "Bash(git push:*)", "Bash(git pull:*)", "Bash(git fetch:*)", "Bash(git blame:*)",
     "Bash(mkdir:*)", "Bash(pgrep:*)", "Bash(node --check:*)",
     "Bash(bash .supersaiyan/bin/super-board-wave-plan.sh:*)",
+    "Bash(bash .supersaiyan/bin/config-resolve.sh:*)",
     plus your project's test runners (e.g. "Bash(npm test:*)", "Bash(npx playwright:*)").
 
 `gh pr merge` is deliberately NOT in the list — Reviewer merges remain

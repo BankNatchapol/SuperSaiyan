@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # scripts/config-resolve.sh — resolves an optional `extends` link before any config field is
 # read. Sourced (not executed) by scripts/super-board-run.sh and scripts/super-board-wave-plan.sh.
+# Also usable as a standalone CLI (see `--effective-path` at the bottom) — this is how the
+# workflow-backend orchestrator (references/run-workflow.md) resolves `extends` before Launch,
+# since Workflow scripts (scripts/super-board-wave.js) have no filesystem access and cannot
+# call resolve_config_extends() themselves.
 # See references/config-schema.json (`extends`) for the field contract.
 
 resolve_config_extends() {
@@ -55,3 +59,117 @@ resolve_config_extends() {
   fi
   printf '%s\n' "$merged"
 }
+
+persist_resolved_config() {
+  # $1 = path to a config file (relative or absolute), possibly with `.extends` set. Expected
+  # to sit at <root>/configs/<slug>.json — every real caller's CONFIG_PATH does.
+  #
+  # Prints an ABSOLUTE, STABLE path to stdout: the effective config a caller should hand to
+  # anything that might read it from a different cwd or outlive this process — e.g. a worker
+  # prompt embedded by dispatch_lane, where the worker runs from a git worktree, not this repo
+  # root (see references/run.md). resolve_config_extends() alone is not safe for that use: it
+  # returns an mktemp path that (a) is meaningless once this process's EXIT trap removes it and
+  # (b) is only guaranteed readable from the cwd it was created in.
+  #
+  # No `.extends` (the common case): returns the ABSOLUTE form of the input unchanged — no
+  # write, no new file, nothing to clean up.
+  #
+  # `.extends` set: persists the merged view to <root>/resolved/<slug>.json — sibling of
+  # configs/, deliberately NOT inside it. Every config consumer (platform-config.sh's config
+  # count, super-board-status.py's configs/*.json glob, control-core's discoverConfigs) treats
+  # each file directly under configs/ as a board; a resolved copy there would register as a
+  # phantom extra board and break sole-config detection. Overwritten on each call — the
+  # previous call's copy lingering is a feature when debugging what a worker was actually
+  # handed, not a bug.
+  #
+  # Write is atomic: cp to a same-directory .tmp.$$ file, then mv (same-directory rename is
+  # atomic; a cross-device mv — e.g. the mktemp dir living on tmpfs while the repo does not,
+  # common on Linux CI — is not). This also preserves resolve_config_extends()'s existing
+  # contract that its returned mktemp file gets consumed, never left behind.
+  local raw="$1" abs_dir abs_raw resolved_tmp configs_dir root slug persisted_dir persisted tmp_persisted
+  if [ ! -f "$raw" ]; then
+    echo "config not found: $raw" >&2
+    return 1
+  fi
+  abs_dir="$(cd "$(dirname "$raw")" && pwd)" || {
+    echo "🛑 could not resolve the directory containing $raw" >&2
+    return 1
+  }
+  abs_raw="$abs_dir/$(basename "$raw")"
+
+  # Public CLI re-entry: a path under resolved/ is this function's own prior output, not a
+  # source config. The merge strips `extends`, so a second pass would take the no-extends
+  # early return and never re-read the base — silently pinning inherited fields. Refuse it
+  # so an orchestrator feeding --effective-path back its own printed path fails loudly.
+  # See references/run-workflow.md step 1.
+  if [ "$(basename "$abs_dir")" = "resolved" ]; then
+    echo "🛑 $abs_raw is a previously resolved snapshot, not a source config. Pass the raw configs/<slug>.json, not a path this command printed earlier." >&2
+    return 1
+  fi
+
+  resolved_tmp=$(resolve_config_extends "$raw") || return 1
+
+  if [ "$resolved_tmp" = "$raw" ]; then
+    printf '%s\n' "$abs_raw"
+    return 0
+  fi
+
+  # `resolved/` is meant to sit next to `configs/` — i.e. `<root>/resolved/` as a sibling of
+  # `<root>/configs/`. That only falls out of `dirname(dirname(...))` when the config's own
+  # directory is literally named `configs`. `--effective-path` is a public entry point an
+  # LLM orchestrator can invoke with any path it picked, so don't walk up a second level on
+  # a directory that isn't `configs` — write `resolved/` next to the config's own directory
+  # instead. Worse case becomes "one dir over", not "one level too high in the tree".
+  configs_dir="$(dirname "$abs_raw")"
+  if [ "$(basename "$configs_dir")" = "configs" ]; then
+    root="$(dirname "$configs_dir")"
+  else
+    root="$configs_dir"
+  fi
+  slug="$(basename "$abs_raw" .json)"
+  persisted_dir="$root/resolved"
+  mkdir -p "$persisted_dir" || {
+    echo "🛑 could not create $persisted_dir" >&2
+    rm -f "$resolved_tmp"
+    return 1
+  }
+  persisted="$persisted_dir/${slug}.json"
+  tmp_persisted="$persisted.tmp.$$"
+
+  if ! cp "$resolved_tmp" "$tmp_persisted"; then
+    echo "🛑 failed to stage resolved config at $tmp_persisted" >&2
+    rm -f "$resolved_tmp" "$tmp_persisted"
+    return 1
+  fi
+  if ! mv "$tmp_persisted" "$persisted"; then
+    echo "🛑 failed to publish resolved config to $persisted" >&2
+    rm -f "$resolved_tmp" "$tmp_persisted"
+    return 1
+  fi
+  rm -f "$resolved_tmp"
+  printf '%s\n' "$persisted"
+}
+
+# ─────────────────────────────────── CLI mode ───────────────────────────────────
+# Only when executed directly (not sourced) — sourcing behavior above is completely
+# unaffected. This is how a consumer with no way to `source` a bash function calls in: the
+# workflow-backend orchestrator (a Claude Code session, not a bash script) shells out to
+# `bash .supersaiyan/bin/config-resolve.sh --effective-path <config-path>` before Launch,
+# since scripts/super-board-wave.js (a Workflow script) has no filesystem access and cannot
+# resolve `extends` itself. See references/run-workflow.md.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  case "${1:-}" in
+    --effective-path)
+      [ -n "${2:-}" ] || {
+        echo "usage: config-resolve.sh --effective-path <config-path>" >&2
+        exit 64
+      }
+      persist_resolved_config "$2"
+      exit $?
+      ;;
+    *)
+      echo "usage: config-resolve.sh --effective-path <config-path>" >&2
+      exit 64
+      ;;
+  esac
+fi

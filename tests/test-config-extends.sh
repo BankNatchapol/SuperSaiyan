@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # test-config-extends.sh — verifies the `extends` config-linking mechanism: a config may
 # inherit shared fields from a base config in the same directory (scripts/config-resolve.sh,
-# references/config-schema.json `extends`). Covers the shared resolver directly, then its
-# integration into scripts/super-board-run.sh and scripts/super-board-wave-plan.sh. No live
-# board traffic.
+# references/config-schema.json `extends`). Covers the shared resolver directly, its
+# persist_resolved_config()/`--effective-path` CLI wrapper (what the workflow-backend
+# orchestrator shells out to — references/run-workflow.md), and integration into
+# scripts/super-board-run.sh and scripts/super-board-wave-plan.sh. No live board traffic.
 
 set -euo pipefail
 
@@ -96,6 +97,139 @@ fi
 grep -qi 'chain' /tmp/extends-err.txt || fail "chained-extends error message does not mention chaining"
 rm -f /tmp/extends-err.txt
 
+# ── 2b. persist_resolved_config() / `--effective-path` CLI: absolute, stable paths ──────────
+# This is the regression that let a real defect through review of an earlier version of this
+# fix: super-board-run.sh persisted the resolved config to a RELATIVE path
+# (<config-root>/resolved/<slug>.json where <config-root> is e.g. ".supersaiyan"). Every
+# assertion up to this point in the file checks the persisted file's CONTENT, which passes
+# whether the path handed to a worker is relative or absolute. A worker's actual cwd is a git
+# worktree (references/run.md), not this repo root — a relative path resolves fine from here
+# and is ENOENT there. So every check below additionally asserts absoluteness and
+# from-elsewhere readability, not just existence-from-the-test's-own-cwd.
+#
+# Layout matches real usage — <root>/configs/<slug>.json — because persist_resolved_config
+# derives <root>/resolved/ by walking up from the config's own directory; a flat directory of
+# configs (as $TD is, for the resolve_config_extends() calls above) would compute a
+# resolved/ dir one level too high to be meaningful here.
+PERSIST_ROOT="$TD/persist-root"
+mkdir -p "$PERSIST_ROOT/configs"
+cat > "$PERSIST_ROOT/configs/base.json" <<'EOF'
+{"project":{"owner":"o","number":1},"base_branch":"develop"}
+EOF
+cat > "$PERSIST_ROOT/configs/overlay.json" <<'EOF'
+{"extends":"base","worker_backend":"codex-exec"}
+EOF
+cat > "$PERSIST_ROOT/configs/plain2.json" <<'EOF'
+{"project":{"owner":"o","number":9}}
+EOF
+
+NOOP_EFFECTIVE=$(bash "$RESOLVE_SH" --effective-path "$PERSIST_ROOT/configs/plain2.json") \
+  || fail "config-resolve.sh --effective-path failed on a no-extends config"
+case "$NOOP_EFFECTIVE" in
+  /*) ;;
+  *) fail "--effective-path did not return an absolute path for a no-extends config: $NOOP_EFFECTIVE" ;;
+esac
+[ -f "$NOOP_EFFECTIVE" ] || fail "--effective-path's no-extends output does not point at a real file: $NOOP_EFFECTIVE"
+
+EXT_EFFECTIVE=$(bash "$RESOLVE_SH" --effective-path "$PERSIST_ROOT/configs/overlay.json") \
+  || fail "config-resolve.sh --effective-path failed on an extends config"
+case "$EXT_EFFECTIVE" in
+  /*) ;;
+  *) fail "--effective-path did not return an absolute path for an extends config: $EXT_EFFECTIVE" ;;
+esac
+case "$EXT_EFFECTIVE" in
+  "$PERSIST_ROOT"/resolved/*) ;;
+  *) fail "--effective-path persisted an extends config outside <root>/resolved/: $EXT_EFFECTIVE" ;;
+esac
+jq -e '.base_branch == "develop"' "$EXT_EFFECTIVE" >/dev/null \
+  || fail "--effective-path's persisted config lost the inherited base_branch"
+jq -e 'has("extends") | not' "$EXT_EFFECTIVE" >/dev/null \
+  || fail "--effective-path's persisted config still carries the extends key"
+
+# Re-entry: feeding --effective-path its own printed path must fail loudly, not silently
+# return the stale snapshot. The merge strips `extends`, so a second pass would otherwise
+# take the no-extends early return, never re-read the base, and pin rebuild_cap (etc.) to
+# whatever the first pass wrote. Capture inode first so a passing-but-rewriting call still
+# fails this assertion.
+EXT_INODE=$(ls -i "$EXT_EFFECTIVE" | awk '{print $1}')
+if bash "$RESOLVE_SH" --effective-path "$EXT_EFFECTIVE" >"$TD/reentry-out.txt" 2>"$TD/reentry-err.txt"; then
+  fail "--effective-path should reject a path under resolved/ (its own prior output), got: $(cat "$TD/reentry-out.txt")"
+fi
+grep -qiE 'configs/|raw' "$TD/reentry-err.txt" \
+  || fail "--effective-path's resolved/ rejection does not tell the caller to pass the raw configs/<slug>.json: $(cat "$TD/reentry-err.txt")"
+REENTRY_INODE=$(ls -i "$EXT_EFFECTIVE" | awk '{print $1}')
+[ "$REENTRY_INODE" = "$EXT_INODE" ] \
+  || fail "--effective-path rewrote the snapshot when fed its own output (inode $EXT_INODE -> $REENTRY_INODE)"
+
+# The actual failure mode: readable from a completely different cwd, simulating a worker
+# running from .worktrees/issue-N-<lane>/ rather than this repo root.
+( cd / && [ -f "$EXT_EFFECTIVE" ] ) \
+  || fail "--effective-path's persisted config is not readable from a different cwd (relative path?): $EXT_EFFECTIVE"
+
+# No .tmp.* staging residue left behind — guards the atomic cp-then-same-dir-mv write.
+TMP_RESIDUE=$(find "$PERSIST_ROOT/resolved" -name '*.tmp.*' 2>/dev/null | wc -l | tr -d ' ')
+[ "$TMP_RESIDUE" -eq 0 ] \
+  || fail "config-resolve.sh --effective-path left ${TMP_RESIDUE} .tmp.* staging file(s) behind in resolved/"
+
+# Regression guard: persist_resolved_config()'s staged `mv` must be checked. This file sets
+# no `set -e` at all (see its header), so an unchecked `mv` would fall through, RETURN 0, and
+# print a path that may not exist — every real caller depends on the exit code alone to catch
+# a resolution failure (super-board-run.sh:82 is `... || exit 66`). Shadow `mv` with a shell
+# function to force the failure deterministically; a REAL mv failure isn't cleanly forceable
+# here (`mv file existing-dir/` moves INTO the dir rather than failing, and making `cp`
+# succeed while `mv` fails needs exotic permissions), so this exercises the function's own
+# error path directly rather than fabricate a filesystem scenario to trigger it indirectly.
+# Calls the already-sourced persist_resolved_config() (section 2 above), not the CLI: a
+# subprocess wouldn't see this shell's function shadow without `export -f`.
+mv() { return 1; }
+if persist_resolved_config "$PERSIST_ROOT/configs/overlay.json" >/tmp/mv-fail-out.txt 2>/tmp/mv-fail-err.txt; then
+  fail "persist_resolved_config must fail (nonzero) when the staged mv fails"
+fi
+[ -s /tmp/mv-fail-out.txt ] \
+  && fail "persist_resolved_config printed a path on stdout despite the mv failing: $(cat /tmp/mv-fail-out.txt)"
+unset -f mv
+rm -f /tmp/mv-fail-out.txt /tmp/mv-fail-err.txt
+MV_FAIL_RESIDUE=$(find "$PERSIST_ROOT/resolved" -name '*.tmp.*' 2>/dev/null | wc -l | tr -d ' ')
+[ "$MV_FAIL_RESIDUE" -eq 0 ] \
+  || fail "persist_resolved_config left ${MV_FAIL_RESIDUE} .tmp.* file(s) behind after a failed mv"
+
+# Regression guard: `--effective-path` is a PUBLIC entry point — the workflow-backend
+# orchestrator (an LLM session, not a fixed caller) invokes it with whatever config path it
+# picked, not necessarily one that sits at <root>/configs/<slug>.json. The unconditional
+# `dirname(dirname(...))` this used to do would write `resolved/` into the PARENT of a config
+# directory that isn't literally named "configs" — one level higher in the tree than intended,
+# and outside the caller's own directory entirely. persist_resolved_config() must instead fall
+# back to writing resolved/ next to the config's own directory in that case.
+ODD_ROOT="$TD/odd-layout/somewhere"
+mkdir -p "$ODD_ROOT"
+cat > "$ODD_ROOT/oddbase.json" <<'EOF'
+{"project":{"owner":"o","number":1}}
+EOF
+cat > "$ODD_ROOT/oddoverlay.json" <<'EOF'
+{"extends":"oddbase","worker_backend":"claude-p"}
+EOF
+ODD_EFFECTIVE=$(bash "$RESOLVE_SH" --effective-path "$ODD_ROOT/oddoverlay.json") \
+  || fail "config-resolve.sh --effective-path failed on a non-configs/ directory layout"
+case "$ODD_EFFECTIVE" in
+  "$ODD_ROOT"/resolved/*) ;;
+  "$(dirname "$ODD_ROOT")"/resolved/*)
+    fail "--effective-path walked up a level past a directory not named 'configs': wrote to $ODD_EFFECTIVE instead of under $ODD_ROOT/resolved/" ;;
+  *) fail "--effective-path for a non-configs/ layout landed somewhere unexpected: $ODD_EFFECTIVE" ;;
+esac
+[ -f "$ODD_EFFECTIVE" ] || fail "--effective-path's non-configs/ output does not point at a real file: $ODD_EFFECTIVE"
+
+# CLI usage/error handling.
+if bash "$RESOLVE_SH" --effective-path >/dev/null 2>/tmp/cli-err.txt; then
+  fail "--effective-path with no config-path argument should fail (usage error)"
+fi
+rm -f /tmp/cli-err.txt
+
+if bash "$RESOLVE_SH" --effective-path "$TD/broken.json" >/dev/null 2>/tmp/cli-err.txt; then
+  fail "--effective-path should fail when the extends target is missing"
+fi
+grep -q 'does-not-exist' /tmp/cli-err.txt || fail "--effective-path's missing-base error does not name the target"
+rm -f /tmp/cli-err.txt
+
 # ── 3. super-board-wave-plan.sh: extends resolved, process-substitution (test) mode untouched ──
 WAVE_ITEMS='{"items":[{"content":{"number":5,"type":"Issue","title":"t","assignees":[]},"status":"Ready"}]}'
 
@@ -112,6 +246,55 @@ if "$WAVE_PLAN_SH" --config "$TD/broken.json" --items <(echo '{"items":[]}') >/d
 fi
 grep -q 'does-not-exist' /tmp/wave-err.txt || fail "wave-plan's extends error does not name the target"
 rm -f /tmp/wave-err.txt
+
+# Regression: the merged-config temp file must not outlive the process. On the live-fetch path
+# wave-plan sets TWO EXIT traps — resolved-config cleanup, then CONFIG_REF cleanup — and a
+# second `trap ... EXIT` REPLACES the first rather than adding to it. That leaked one fully
+# resolved config (project owner/number, notifications, bot identity) per wave tick.
+#
+# Probing by content, not by pointing TMPDIR at a scratch dir: macOS `mktemp` ignores TMPDIR
+# (Darwin resolves _CS_DARWIN_USER_TEMP_DIR instead), so a TMPDIR-based probe silently passes
+# on the very platform this repo targets. Tagging the config with a unique sentinel and
+# searching the real mktemp directory works on both platforms and can't be confused by
+# unrelated temp files from other processes.
+MKTEMP_PROBE=$(mktemp)
+MKTEMP_DIR=$(dirname "$MKTEMP_PROBE")
+rm -f "$MKTEMP_PROBE"
+leaked_temps() {
+  # $1 = sentinel. Lists surviving mktemp files that contain it, scoped to this test's own
+  # user: on Linux, mktemp's default dir is often a shared /tmp, and this function's callers
+  # `rm -f` what it finds — unscoped, a busy shared box means both slower scans and a real
+  # risk of deleting another user's live temp file. `-exec ... \;` (not `+`): with `+` and
+  # zero matches, grep would run with no file operands and block reading stdin.
+  find "$MKTEMP_DIR" -maxdepth 1 -type f -name 'tmp.*' -user "$(id -u)" -exec grep -lF "$1" {} \; 2>/dev/null
+}
+
+cat > "$STUB_BIN/gh" <<'EOF'
+#!/usr/bin/env bash
+echo '{"items":[]}'
+EOF
+chmod +x "$STUB_BIN/gh"
+
+WAVE_SENTINEL="wave-plan-extends-leak-probe-$$"
+cat > "$TD/leak-base.json" <<EOF
+{"project":{"owner":"o","number":1},"variant":"full","description":"$WAVE_SENTINEL"}
+EOF
+cat > "$TD/leak-overlay.json" <<'EOF'
+{"extends":"leak-base","worker_backend":"codex-exec"}
+EOF
+# No --items, so the CONFIG_REF branch (and therefore the second trap) is live.
+"$WAVE_PLAN_SH" --config "$TD/leak-overlay.json" >/dev/null 2>&1 || true
+WAVE_LEAKED=$(leaked_temps "$WAVE_SENTINEL" | wc -l | tr -d ' ')
+[ "$WAVE_LEAKED" -eq 0 ] \
+  || fail "wave-plan leaked ${WAVE_LEAKED} temp file(s) holding the resolved config — a second EXIT trap replaced the first"
+leaked_temps "$WAVE_SENTINEL" | while IFS= read -r f; do rm -f "$f"; done
+
+# The flip side of that cleanup: resolve_config_extends returns the INPUT path unchanged when
+# a config has no `extends`, so a cleanup that doesn't distinguish "temp file I made" from
+# "the file the user passed in" would delete a real committed config.
+"$WAVE_PLAN_SH" --config "$TD/plain.json" >/dev/null 2>&1 || true
+[ -f "$TD/plain.json" ] \
+  || fail "wave-plan DELETED a no-extends config file — cleanup must not touch the caller's own path"
 
 # ── 4. super-board-run.sh smoke: extends-linked config reaches the wave-lock gate ───────────
 SMOKE_DIR=$(mktemp -d)
@@ -130,7 +313,10 @@ chmod +x "$SMOKE_DIR/scripts/super-board-run.sh"
 
 # Base carries the fields that matter for the startup log + gating; the overlay only sets
 # description/worker_backend/extends, proving the dispatcher actually reads through the link.
-cat > "$SMOKE_DIR/.supersaiyan/configs/smoke-base.json" <<'EOF'
+# SMOKE_SENTINEL is $$-scoped (not a fixed literal) so leaked_temps() below can't match a
+# leftover from a different, concurrent run of this same test file.
+SMOKE_SENTINEL="super-board-run-extends-leak-probe-$$"
+cat > "$SMOKE_DIR/.supersaiyan/configs/smoke-base.json" <<EOF
 {
   "variant": "full",
   "base_branch": "develop",
@@ -138,6 +324,7 @@ cat > "$SMOKE_DIR/.supersaiyan/configs/smoke-base.json" <<'EOF'
   "max_workers": 1,
   "tick_seconds": 120,
   "git_platform": "github",
+  "description": "${SMOKE_SENTINEL}",
   "project": { "owner": "octocat", "number": 1, "status_field_id": "PVTSSF_test", "status_option_ids": {} },
   "notifications": { "bot_identity": "" }
 }
@@ -156,6 +343,59 @@ set -e
 echo "$SMOKE_OUT" | grep -q 'super-board run started — config=smoke variant=full base=develop' \
   || fail "extends-linked config did not resolve base_branch/variant from the base file (rc=${SMOKE_RC}): $(echo "$SMOKE_OUT" | head -3)"
 [ "$SMOKE_RC" -eq 74 ] || fail "expected exit 74 (wave lock) for an extends-linked config, got ${SMOKE_RC}: $(echo "$SMOKE_OUT" | tail -3)"
+
+# Regression: with `extends`, CONFIG_PATH must name a STABLE file that outlives this process.
+# dispatch_lane embeds CONFIG_PATH verbatim in every worker prompt, and workers routinely
+# outlive the dispatcher (a crashed dispatcher leaves orphan workers behind — see
+# references/stop.md), so a mktemp path deleted by our own EXIT trap would vanish out from
+# under a worker that reads its config lazily.
+RESOLVED_FILE="$SMOKE_DIR/.supersaiyan/resolved/smoke.json"
+if [ -f "$RESOLVED_FILE" ]; then
+  jq -e '.base_branch == "develop"' "$RESOLVED_FILE" >/dev/null \
+    || fail "persisted resolved config did not inherit base_branch from its base file"
+  jq -e 'has("extends") | not' "$RESOLVED_FILE" >/dev/null \
+    || fail "persisted resolved config still carries the extends key"
+else
+  fail "extends-linked run left no resolved config at .supersaiyan/resolved/smoke.json — workers would be handed a deleted temp path"
+fi
+
+# Regression (the specific bug that shipped in an earlier version of this fix): the path
+# LOGGED — i.e. the same value dispatch_lane would embed in a worker's prompt — must be
+# absolute. It previously was "<config-root>/resolved/smoke.json" with a RELATIVE
+# config-root (".supersaiyan"), which only resolves from this repo's own root. A real
+# worker's cwd is a git worktree (references/run.md), not this repo root — checking the file
+# exists via a path this test builds from $SMOKE_DIR (as above) passes either way and would
+# NOT have caught that. This assertion targets the actual failure mode instead.
+DISPATCH_PATH_LINE=$(echo "$SMOKE_OUT" | grep 'worker config path (embedded in every dispatch_lane prompt):' || true)
+[ -n "$DISPATCH_PATH_LINE" ] || fail "super-board-run.sh did not log the worker-facing config path"
+DISPATCH_PATH=$(echo "$DISPATCH_PATH_LINE" | sed 's/.*worker config path (embedded in every dispatch_lane prompt): //')
+case "$DISPATCH_PATH" in
+  /*) ;;
+  *) fail "worker-facing config path is not absolute — a worker cd'd into a worktree would get ENOENT: $DISPATCH_PATH" ;;
+esac
+( cd / && [ -f "$DISPATCH_PATH" ] ) \
+  || fail "worker-facing config path is not readable from a different cwd (simulates a worker running from .worktrees/…): $DISPATCH_PATH"
+
+# The resolved copy must NOT land in configs/: every consumer (platform-config.sh's config
+# count, super-board-status.py's configs/*.json glob, control-core's discoverConfigs) treats
+# each file there as a board, so a copy would register as a phantom extra board.
+CFG_COUNT=$(find "$SMOKE_DIR/.supersaiyan/configs" -name '*.json' | wc -l | tr -d ' ')
+[ "$CFG_COUNT" -eq 2 ] \
+  || fail "expected 2 files in configs/ (base + overlay), found ${CFG_COUNT} — the resolved copy must not be written there"
+
+# Persisting the resolved view must consume the mktemp file, not copy it and leave the
+# original behind. Same content-sentinel probe as the wave-plan check above; SMOKE_SENTINEL
+# is $$-scoped so this can't false-positive (or, worse, delete a live temp file) against a
+# concurrent run of this same test.
+SMOKE_LEAKED=$(leaked_temps "$SMOKE_SENTINEL" | wc -l | tr -d ' ')
+[ "$SMOKE_LEAKED" -eq 0 ] \
+  || fail "super-board-run.sh left ${SMOKE_LEAKED} temp file(s) behind after resolving an extends config"
+leaked_temps "$SMOKE_SENTINEL" | while IFS= read -r f; do rm -f "$f"; done
+
+# No .tmp.* staging residue in the persisted resolved/ dir — guards the atomic write there too.
+RESOLVED_TMP_RESIDUE=$(find "$SMOKE_DIR/.supersaiyan/resolved" -name '*.tmp.*' 2>/dev/null | wc -l | tr -d ' ')
+[ "$RESOLVED_TMP_RESIDUE" -eq 0 ] \
+  || fail "super-board-run.sh left ${RESOLVED_TMP_RESIDUE} .tmp.* staging file(s) behind in resolved/"
 
 # Scenario: overlay's extends target is missing entirely — must fail loudly, not silently
 # fall back to workflow-backend defaults.
