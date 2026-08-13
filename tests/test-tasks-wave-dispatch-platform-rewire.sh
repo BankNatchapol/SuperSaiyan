@@ -13,6 +13,7 @@ DISPATCH="$ROOT/skills/super-build/scripts/super-build-dispatch.sh"
 PREPARE="$ROOT/skills/supersaiyan/scripts/prepare.sh"
 GITHUB_PLATFORM="$ROOT/scripts/platforms/github.sh"
 CONFIG_RESOLVER="$ROOT/scripts/platform-config.sh"
+CONFIG_RESOLVE_SH="$ROOT/scripts/config-resolve.sh"
 
 FAIL=0
 fail() { echo "  FAIL: $1" >&2; FAIL=1; }
@@ -159,6 +160,7 @@ mkdir -p "$ENQUEUE_DIR/app/docs/superpowers/tasks/demo" \
   "$ENQUEUE_DIR/app/platforms" "$ENQUEUE_DIR/bin" "$ENQUEUE_DIR/state"
 cp "$TASKS" "$ENQUEUE_DIR/app/tasks-to-issues.sh"
 cp "$CONFIG_RESOLVER" "$ENQUEUE_DIR/app/platform-config.sh"
+cp "$CONFIG_RESOLVE_SH" "$ENQUEUE_DIR/app/config-resolve.sh"
 cp "$GITHUB_PLATFORM" "$ENQUEUE_DIR/app/platforms/github.sh"
 cat > "$ENQUEUE_DIR/app/docs/superpowers/tasks/demo/01-first.md" <<'EOF'
 ---
@@ -258,6 +260,7 @@ mkdir -p "$RETRY_DIR/app/docs/superpowers/tasks/demo" \
   "$RETRY_DIR/app/platforms" "$RETRY_DIR/state"
 cp "$TASKS" "$RETRY_DIR/app/tasks-to-issues.sh"
 cp "$CONFIG_RESOLVER" "$RETRY_DIR/app/platform-config.sh"
+cp "$CONFIG_RESOLVE_SH" "$RETRY_DIR/app/config-resolve.sh"
 cat > "$RETRY_DIR/app/config.json" <<'EOF'
 {"project":{"owner":"owner","number":7},"git_platform":"github"}
 EOF
@@ -494,6 +497,7 @@ mkdir -p "$TASK_CONFIG_DIR/app/docs/superpowers/tasks/demo" \
   "$TASK_CONFIG_DIR/app/platforms" "$TASK_CONFIG_DIR/state"
 cp "$TASKS" "$TASK_CONFIG_DIR/app/tasks-to-issues.sh"
 cp "$CONFIG_RESOLVER" "$TASK_CONFIG_DIR/app/platform-config.sh"
+cp "$CONFIG_RESOLVE_SH" "$TASK_CONFIG_DIR/app/config-resolve.sh"
 cat > "$TASK_CONFIG_DIR/app/docs/superpowers/tasks/demo/01-first.md" <<'EOF'
 ---
 title: First task
@@ -618,6 +622,7 @@ mkdir -p "$NO_BOARD_DIR/app/docs/superpowers/tasks/demo" \
   "$NO_BOARD_DIR/app/platforms" "$NO_BOARD_DIR/bin" "$NO_BOARD_DIR/state"
 cp "$TASKS" "$NO_BOARD_DIR/app/tasks-to-issues.sh"
 cp "$CONFIG_RESOLVER" "$NO_BOARD_DIR/app/platform-config.sh"
+cp "$CONFIG_RESOLVE_SH" "$NO_BOARD_DIR/app/config-resolve.sh"
 cp "$GITHUB_PLATFORM" "$NO_BOARD_DIR/app/platforms/github.sh"
 cat > "$NO_BOARD_DIR/app/docs/superpowers/tasks/demo/01-first.md" <<'EOF'
 ---
@@ -672,6 +677,7 @@ mkdir -p "$ONBOARDED_DIR/app/docs/superpowers/tasks/demo" \
   "$ONBOARDED_DIR/app/platforms" "$ONBOARDED_DIR/state"
 cp "$TASKS" "$ONBOARDED_DIR/app/tasks-to-issues.sh"
 cp "$CONFIG_RESOLVER" "$ONBOARDED_DIR/app/platform-config.sh"
+cp "$CONFIG_RESOLVE_SH" "$ONBOARDED_DIR/app/config-resolve.sh"
 cp "$GITHUB_PLATFORM" "$ONBOARDED_DIR/app/platforms/github.sh"
 cat > "$ONBOARDED_DIR/app/docs/superpowers/tasks/demo/01-first.md" <<'EOF'
 ---

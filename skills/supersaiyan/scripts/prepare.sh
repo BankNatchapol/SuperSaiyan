@@ -69,10 +69,11 @@ if [ -z "$CONFIG_FILE" ]; then
   exit 78
 fi
 CONFIG_SLUG=$(basename "$CONFIG_FILE" .json)
+EFFECTIVE=$(platform_config_effective "$CONFIG_FILE") || exit 66
 
-PROJECT_OWNER=$(jq -r '.project.owner // "@me"' "$CONFIG_FILE")
-PROJECT_NUMBER=$(jq -r '.project.number' "$CONFIG_FILE")
-GIT_PLATFORM=$(platform_config_resolve_platform "$CONFIG_FILE" "${GIT_PLATFORM:-}") || exit $?
+PROJECT_OWNER=$(jq -r '.project.owner // "@me"' "$EFFECTIVE")
+PROJECT_NUMBER=$(jq -r '.project.number' "$EFFECTIVE")
+GIT_PLATFORM=$(platform_config_resolve_platform "$EFFECTIVE" "${GIT_PLATFORM:-}") || exit $?
 
 # ── Resolve task directory ─────────────────────────────────────────────────────
 
@@ -146,7 +147,7 @@ if [ "$CHECK_ONLY" = true ]; then
     done
   done < "$TMP_DEP"
 
-  echo "CHECK_OK config=$CONFIG_SLUG"
+  echo "CHECK_OK config=$CONFIG_SLUG project=$PROJECT_OWNER/$PROJECT_NUMBER"
   exit 0
 fi
 
@@ -238,7 +239,7 @@ CREATED=$(( AFTER_COUNT - BEFORE_COUNT + REPAIRED ))
 
 # Reconcile board: add mapped open issues that are absent or still in Backlog.
 if [ "$AFTER_COUNT" -gt 0 ]; then
-  items=$(platform_board_snapshot "$CONFIG_FILE")
+  items=$(platform_board_snapshot "$EFFECTIVE")
   while IFS=$(printf '\t') read -r issue_num issue_url; do
     [ -z "$issue_num" ] && continue
     existing_status=$(printf '%s' "$items" | jq -r --arg url "$issue_url" \
@@ -262,7 +263,7 @@ if [ "$AFTER_COUNT" -gt 0 ]; then
         exit 70
       }
       if [ "$issue_state" = "OPEN" ]; then
-        platform_card_status_set --add "$CONFIG_FILE" "$issue_url" "Ready" >/dev/null
+        platform_card_status_set --add "$EFFECTIVE" "$issue_url" "Ready" >/dev/null
       elif [ "$issue_state" != "CLOSED" ]; then
         echo "issue #$issue_num returned unsupported state during Ready reconciliation: $issue_state" >&2
         exit 70

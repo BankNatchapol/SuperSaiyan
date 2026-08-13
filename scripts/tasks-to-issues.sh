@@ -61,7 +61,8 @@ CONFIG_RESOLVER="$SCRIPT_DIR/platform-config.sh"
 # shellcheck disable=SC1090
 source "$CONFIG_RESOLVER"
 CONFIG_PATH=$(platform_config_resolve "$PWD" "$CLI_CONFIG_PATH") || exit $?
-GIT_PLATFORM=$(platform_config_resolve_platform "$CONFIG_PATH" "${GIT_PLATFORM:-}") || exit $?
+EFFECTIVE=$(platform_config_effective "$CONFIG_PATH") || exit 66
+GIT_PLATFORM=$(platform_config_resolve_platform "$EFFECTIVE" "${GIT_PLATFORM:-}") || exit $?
 PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
 if [ ! -f "$PLATFORM_FILE" ]; then
   echo "platform contract not found: $PLATFORM_FILE (git_platform=${GIT_PLATFORM})" >&2
@@ -251,7 +252,7 @@ reconcile_mapped_issue_ready() {
   esac
 
   if [ -n "$CONFIG_PATH" ]; then
-    snapshot=$(platform_board_snapshot "$CONFIG_PATH") || return
+    snapshot=$(platform_board_snapshot "$EFFECTIVE") || return
   else
     snapshot=$(platform_board_snapshot "${GH_PROJECT_NUMBER:-}" "${GH_PROJECT_OWNER:-@me}") || return
   fi
@@ -260,7 +261,7 @@ reconcile_mapped_issue_ready() {
 
   case "$existing_status" in
     ""|null|Backlog)
-      platform_card_status_set --add "$CONFIG_PATH" "$issue_url" "Ready" >/dev/null
+      platform_card_status_set --add "$EFFECTIVE" "$issue_url" "Ready" >/dev/null
       echo "  → reconciled mapped issue to Ready"
       ;;
     *)
@@ -328,7 +329,7 @@ while IFS= read -r file; do
   echo "Created #$num — $title"
 
   if [ "$BOARD" = true ]; then
-    platform_card_status_set --add "$CONFIG_PATH" "$url" "Ready" >/dev/null
+    platform_card_status_set --add "$EFFECTIVE" "$url" "Ready" >/dev/null
     echo "  → added to platform board in Ready"
   fi
 done < <(list_task_files)

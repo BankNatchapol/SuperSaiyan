@@ -89,6 +89,35 @@ platform_config_resolve() {
   printf '%s\n' "$selected"
 }
 
+platform_config_effective() {
+  # Usage: platform_config_effective <raw-config-path-or-empty>
+  # Field-read view of a path returned by platform_config_resolve. Empty in → empty out
+  # (no config selected). Otherwise persist_resolved_config: no `extends` returns the
+  # absolute raw path; `extends` set persists the merge under <root>/resolved/.
+  # Identity (slug, PLATFORM_CONFIG_PATH, board discovery) stays on the raw path —
+  # never substitute this function's output for platform_config_resolve.
+  #
+  # persist_resolved_config() lives in the sibling config-resolve.sh — same directory
+  # whether this file is scripts/platform-config.sh (dev checkout) or
+  # .supersaiyan/bin/platform-config.sh (installed). Sourced lazily so identity-only
+  # callers of platform_config_resolve don't require the sibling.
+  local raw="${1:-}" dir
+  if [ -z "$raw" ]; then
+    printf '\n'
+    return 0
+  fi
+  if ! type persist_resolved_config >/dev/null 2>&1; then
+    dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ ! -f "$dir/config-resolve.sh" ]; then
+      echo "config resolver not found: $dir/config-resolve.sh" >&2
+      return 66
+    fi
+    # shellcheck disable=SC1091
+    . "$dir/config-resolve.sh"
+  fi
+  persist_resolved_config "$raw"
+}
+
 platform_config_resolve_platform() {
   # Usage: platform_config_resolve_platform <config-path-or-empty> [env-platform]
   # A selected config is authoritative. A contradictory inherited
