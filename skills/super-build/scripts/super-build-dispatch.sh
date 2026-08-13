@@ -67,7 +67,8 @@ fi
 # shellcheck disable=SC1090
 source "$CONFIG_RESOLVER"
 CONFIG_PATH=$(platform_config_resolve "$REPO_DIR" "$EXPLICIT_CONFIG_PATH") || exit $?
-GIT_PLATFORM=$(platform_config_resolve_platform "$CONFIG_PATH" "${GIT_PLATFORM:-}") || exit $?
+EFFECTIVE=$(platform_config_effective "$CONFIG_PATH") || exit 66
+GIT_PLATFORM=$(platform_config_resolve_platform "$EFFECTIVE" "${GIT_PLATFORM:-}") || exit $?
 export PLATFORM_CONFIG_PATH="$CONFIG_PATH"
 
 # Backend contract (see .claude/skills/super-board/references/backends.md). Three-tier lookup,

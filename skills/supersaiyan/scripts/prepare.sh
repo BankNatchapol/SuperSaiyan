@@ -69,10 +69,11 @@ if [ -z "$CONFIG_FILE" ]; then
   exit 78
 fi
 CONFIG_SLUG=$(basename "$CONFIG_FILE" .json)
+EFFECTIVE=$(platform_config_effective "$CONFIG_FILE") || exit 66
 
-PROJECT_OWNER=$(jq -r '.project.owner // "@me"' "$CONFIG_FILE")
-PROJECT_NUMBER=$(jq -r '.project.number' "$CONFIG_FILE")
-GIT_PLATFORM=$(platform_config_resolve_platform "$CONFIG_FILE" "${GIT_PLATFORM:-}") || exit $?
+PROJECT_OWNER=$(jq -r '.project.owner // "@me"' "$EFFECTIVE")
+PROJECT_NUMBER=$(jq -r '.project.number' "$EFFECTIVE")
+GIT_PLATFORM=$(platform_config_resolve_platform "$EFFECTIVE" "${GIT_PLATFORM:-}") || exit $?
 
 # ── Resolve task directory ─────────────────────────────────────────────────────
 
@@ -146,7 +147,7 @@ if [ "$CHECK_ONLY" = true ]; then
     done
   done < "$TMP_DEP"
 
-  echo "CHECK_OK config=$CONFIG_SLUG"
+  echo "CHECK_OK config=$CONFIG_SLUG project=$PROJECT_OWNER/$PROJECT_NUMBER"
   exit 0
 fi
 

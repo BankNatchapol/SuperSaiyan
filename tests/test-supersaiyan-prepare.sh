@@ -81,6 +81,7 @@ install_real_helper() {
   mkdir -p "$app/.claude/bin/platforms"
   cp "$ROOT/scripts/tasks-to-issues.sh" "$app/.claude/bin/tasks-to-issues.sh"
   cp "$ROOT/scripts/platform-config.sh" "$app/.claude/bin/platform-config.sh"
+  cp "$ROOT/scripts/config-resolve.sh" "$app/.claude/bin/config-resolve.sh"
   cp "$ROOT/scripts/platforms/github.sh" "$app/.claude/bin/platforms/github.sh"
   chmod +x "$app/.claude/bin/tasks-to-issues.sh"
 }
@@ -352,4 +353,48 @@ grep -q 'gsd-discuss-phase.*optional' \
   "$ROOT/skills/supersaiyan/references/prepare.md" ||
   fail "skill does not document the GSD fallback"
 
-echo "PASS: test-supersaiyan-prepare.sh (9 scenarios)"
+# 10. An extends overlay inherits project.owner/number from the base for field
+# reads; CHECK_OK still reports the overlay slug (identity stays the raw file).
+new_fixture extends-inherit
+cat > "$APP/.supersaiyan/configs/shared.json" <<'EOF'
+{
+  "project": {"owner": "inherited-owner", "number": 99},
+  "base_branch": "main"
+}
+EOF
+cat > "$APP/.supersaiyan/configs/overlay.json" <<'EOF'
+{
+  "extends": "shared",
+  "worker_backend": "codex-exec"
+}
+EOF
+rm -f "$APP/.supersaiyan/configs/demo-board.json"
+echo overlay > "$APP/.supersaiyan/active"
+git -C "$APP" add .supersaiyan
+git -C "$APP" commit -m extends-overlay >/dev/null
+git -C "$APP" push >/dev/null
+run_prepare --check-only > "$TMP/out" 2> "$TMP/err" ||
+  fail "extends overlay check-only exited $?: $(cat "$TMP/out" "$TMP/err")"
+grep -q 'CHECK_OK config=overlay project=inherited-owner/99' "$TMP/out" ||
+  fail "extends overlay did not inherit project from the base: $(cat "$TMP/out" "$TMP/err")"
+
+# 11. A broken extends target fails loudly instead of falling back to @me/null.
+new_fixture extends-broken
+cat > "$APP/.supersaiyan/configs/overlay.json" <<'EOF'
+{
+  "extends": "does-not-exist",
+  "worker_backend": "codex-exec"
+}
+EOF
+rm -f "$APP/.supersaiyan/configs/demo-board.json"
+echo overlay > "$APP/.supersaiyan/active"
+git -C "$APP" add .supersaiyan
+git -C "$APP" commit -m broken-extends >/dev/null
+git -C "$APP" push >/dev/null
+run_expect 66 run_prepare --check-only
+grep -qiE 'does-not-exist|extends' "$TMP/err" ||
+  fail "broken extends did not name the missing base: $(cat "$TMP/err")"
+grep -q '@me' "$TMP/out" &&
+  fail "broken extends silently fell back to @me: $(cat "$TMP/out")"
+
+echo "PASS: test-supersaiyan-prepare.sh (11 scenarios)"

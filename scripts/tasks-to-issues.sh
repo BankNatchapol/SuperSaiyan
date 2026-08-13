@@ -61,7 +61,8 @@ CONFIG_RESOLVER="$SCRIPT_DIR/platform-config.sh"
 # shellcheck disable=SC1090
 source "$CONFIG_RESOLVER"
 CONFIG_PATH=$(platform_config_resolve "$PWD" "$CLI_CONFIG_PATH") || exit $?
-GIT_PLATFORM=$(platform_config_resolve_platform "$CONFIG_PATH" "${GIT_PLATFORM:-}") || exit $?
+EFFECTIVE=$(platform_config_effective "$CONFIG_PATH") || exit 66
+GIT_PLATFORM=$(platform_config_resolve_platform "$EFFECTIVE" "${GIT_PLATFORM:-}") || exit $?
 PLATFORM_FILE="$SCRIPT_DIR/platforms/${GIT_PLATFORM}.sh"
 if [ ! -f "$PLATFORM_FILE" ]; then
   echo "platform contract not found: $PLATFORM_FILE (git_platform=${GIT_PLATFORM})" >&2
