@@ -34,6 +34,19 @@ Run the same preconditions as `run.md` §Preconditions, minus PID checks:
    but with `extends` the raw file is missing every inherited field (`project`,
    `base_branch`, ...) — reading it directly silently drops them.
 
+   **Always pass the raw `configs/<slug>.json` as the CLI's INPUT — never feed it a path it
+   printed earlier.** The distinction is input vs output: the printed path is what you *read
+   fields from*; `configs/<slug>.json` is what you *resolve from*, every time. This matters
+   because you re-run these preconditions on every `/loop` re-entry. Re-resolving an already-
+   resolved file is silently a no-op — the merge strips `extends`, so a second pass sees a
+   config with no link to follow and hands the same path straight back without re-reading the
+   base. Feed back your own output and you pin the run to whatever the base said the first
+   time: edit `rebuild_cap` in the base between waves and the change is silently ignored,
+   breaking the guarantee in `references/onboard.md` step 2 that "every tool's next dispatcher
+   run picks it up". The legacy dispatcher is immune by construction — `super-board-run.sh`
+   always starts from `$CONFIG_ROOT/configs/<slug>.json` — so this is an
+   orchestrator-discipline rule, not a resolver bug.
+
    `scripts/super-board-run.sh` (the legacy dispatcher) resolves `extends` the same way —
    via `persist_resolved_config()` — before handing a config path to a worker; the
    orchestrator here shells out to it via the CLI instead of sourcing it because it is a
