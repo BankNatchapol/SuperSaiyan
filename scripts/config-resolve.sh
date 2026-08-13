@@ -117,7 +117,11 @@ persist_resolved_config() {
     rm -f "$resolved_tmp" "$tmp_persisted"
     return 1
   fi
-  mv "$tmp_persisted" "$persisted"
+  if ! mv "$tmp_persisted" "$persisted"; then
+    echo "🛑 failed to publish resolved config to $persisted" >&2
+    rm -f "$resolved_tmp" "$tmp_persisted"
+    return 1
+  fi
   rm -f "$resolved_tmp"
   printf '%s\n' "$persisted"
 }

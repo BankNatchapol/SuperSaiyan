@@ -156,6 +156,28 @@ TMP_RESIDUE=$(find "$PERSIST_ROOT/resolved" -name '*.tmp.*' 2>/dev/null | wc -l 
 [ "$TMP_RESIDUE" -eq 0 ] \
   || fail "config-resolve.sh --effective-path left ${TMP_RESIDUE} .tmp.* staging file(s) behind in resolved/"
 
+# Regression guard: persist_resolved_config()'s staged `mv` must be checked. This file sets
+# no `set -e` at all (see its header), so an unchecked `mv` would fall through, RETURN 0, and
+# print a path that may not exist — every real caller depends on the exit code alone to catch
+# a resolution failure (super-board-run.sh:82 is `... || exit 66`). Shadow `mv` with a shell
+# function to force the failure deterministically; a REAL mv failure isn't cleanly forceable
+# here (`mv file existing-dir/` moves INTO the dir rather than failing, and making `cp`
+# succeed while `mv` fails needs exotic permissions), so this exercises the function's own
+# error path directly rather than fabricate a filesystem scenario to trigger it indirectly.
+# Calls the already-sourced persist_resolved_config() (section 2 above), not the CLI: a
+# subprocess wouldn't see this shell's function shadow without `export -f`.
+mv() { return 1; }
+if persist_resolved_config "$PERSIST_ROOT/configs/overlay.json" >/tmp/mv-fail-out.txt 2>/tmp/mv-fail-err.txt; then
+  fail "persist_resolved_config must fail (nonzero) when the staged mv fails"
+fi
+[ -s /tmp/mv-fail-out.txt ] \
+  && fail "persist_resolved_config printed a path on stdout despite the mv failing: $(cat /tmp/mv-fail-out.txt)"
+unset -f mv
+rm -f /tmp/mv-fail-out.txt /tmp/mv-fail-err.txt
+MV_FAIL_RESIDUE=$(find "$PERSIST_ROOT/resolved" -name '*.tmp.*' 2>/dev/null | wc -l | tr -d ' ')
+[ "$MV_FAIL_RESIDUE" -eq 0 ] \
+  || fail "persist_resolved_config left ${MV_FAIL_RESIDUE} .tmp.* file(s) behind after a failed mv"
+
 # CLI usage/error handling.
 if bash "$RESOLVE_SH" --effective-path >/dev/null 2>/tmp/cli-err.txt; then
   fail "--effective-path with no config-path argument should fail (usage error)"

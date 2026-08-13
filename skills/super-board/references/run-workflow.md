@@ -32,11 +32,15 @@ Run the same preconditions as `run.md` §Preconditions, minus PID checks:
    but with `extends` the raw file is missing every inherited field (`project`,
    `base_branch`, ...) — reading it directly silently drops them.
 
-   This is the SAME resolver `scripts/super-board-run.sh` (the legacy dispatcher) and
-   `scripts/super-board-wave-plan.sh` (step 2 below) use internally via
-   `persist_resolved_config()` — one implementation, one behavior, on both backends. The
-   orchestrator shells out to it rather than sourcing it because it is a Claude Code session,
-   not a bash script.
+   `scripts/super-board-run.sh` (the legacy dispatcher) resolves `extends` the same way —
+   via `persist_resolved_config()` — before handing a config path to a worker; the
+   orchestrator here shells out to it via the CLI instead of sourcing it because it is a
+   Claude Code session, not a bash script. `scripts/super-board-wave-plan.sh` (step 2 below)
+   resolves the same `extends` link too, but via `resolve_config_extends()` directly rather
+   than `persist_resolved_config()` — it only reads fields for its own JSON output and never
+   hands the path to anything else, so it wants that function's plain temp-and-clean
+   semantics (and needs its FIFO test-mode support, which `persist_resolved_config()`'s
+   real-file requirement doesn't provide).
 2. Production-merge guard: refuse `base_branch: main` + `human_approves_merge:
    false` when deploy markers exist (same rule as super-board-run.sh).
 3. Stale-worktree scan: remove `.worktrees/*` whose branch is gone.
