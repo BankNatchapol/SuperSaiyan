@@ -360,7 +360,8 @@ a nested `project.gitlab{}` sub-object — see Open Judgment Call 8 for the alte
    Free-tier availability universally.
 8. Config schema shape — flat optional fields on `project` (chosen above, minimal diff) vs. a
    nested `project.gitlab{}` sub-object (cleaner separation, slightly bigger diff to existing
-   config-reading code). Flagged as debatable, not resolved.
+   config-reading code). Chose the flat shape; the nested alternative is a possible follow-up,
+   not a blocker.
 
 ## Open Questions
 

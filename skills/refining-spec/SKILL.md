@@ -160,7 +160,7 @@ After writing the spec file:
 1. **Design coverage** — does every office-hours commitment appear in Requirements or Out of Scope?
 2. **Placeholder scan** — fix vague language
 3. **Code consistency** — do file paths and stack choices match what you read in Phase 3?
-4. **Open Questions gate** — the spec MUST include an equivalent heading: `## Open Questions`, `## Open judgment calls`, or `## Unresolved`. Hand off to writing-board-tasks only when that section exists and is empty, explicitly `None`, or every item records a recommendation/resolution. Unanswered items (no recorded decision) block handoff. If no equivalent heading is present, add `## Open Questions` with `None` before finishing. A decision log belongs under a heading outside that set (for example `## Resolved judgment calls`).
+4. **Open Questions gate** — the spec MUST include an equivalent heading: `## Open Questions`, `## Open judgment calls`, or `## Unresolved`. Hand off to writing-board-tasks only when that section exists and is empty, explicitly `None`, or every item records a recommendation/resolution. Unanswered items (no recorded decision) block handoff. If no equivalent heading is present, add `## Open Questions` with `None` before finishing. A decision log belongs under a heading outside that set (for example `## Resolved judgment calls`). This is a convention for agents, not an enforcement boundary — heading matching is not proof that a spec has no open work.
 5. **writing-board-tasks readiness** — could `writing-board-tasks` decompose this without asking scope questions?
 
 Fix inline before finishing.

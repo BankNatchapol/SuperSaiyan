@@ -7,7 +7,9 @@ unresolved. A missing heading is warn-and-ask, not a refusal.
 
 classify() pins the documented SKILL.md semantics. It is a Python
 reimplementation of prose instructions for an LLM — it cannot verify that a
-model will follow those instructions at runtime.
+model will follow those instructions at runtime. The gate matches three
+heading names; relocating a decision log outside that set is a documented
+convention, not an enforcement boundary.
 """
 
 from __future__ import annotations
@@ -140,6 +142,10 @@ def main() -> int:
         classify(gitlab) == "ok",
         "gitlab-integration-design.md must be usable (classify == ok), not merely not-missing-heading",
     )
+    check(
+        "flagged as debatable, not resolved" not in gitlab.lower(),
+        "Resolved judgment calls must not still declare an item unresolved",
+    )
 
     writing = WRITING.read_text(encoding="utf-8")
     refining = REFINING.read_text(encoding="utf-8")
@@ -169,6 +175,10 @@ def main() -> int:
         and re.search(r"recommend", gate, re.I) is not None
         and re.search(r"unanswered", gate, re.I) is not None,
         "writing-board-tasks gate must distinguish recorded recommendations from unanswered items",
+    )
+    check(
+        re.search(r"not an enforcement boundary", writing, re.I) is not None,
+        "writing-board-tasks must say the gate is a convention, not an enforcement boundary",
     )
     check(
         re.search(r"missing heading is not a halt", refining, re.I) is not None,
