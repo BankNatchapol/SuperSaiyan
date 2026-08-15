@@ -31,6 +31,9 @@ fi
 if ! declare -f gitlab_live_gate_assert >/dev/null 2>&1; then
   tfail "gitlab_live_gate_assert is not defined"
 fi
+if ! declare -f _glg_fail >/dev/null 2>&1; then
+  tfail "_glg_fail is not defined at file scope (must not leak from inside gitlab_live_gate_assert)"
+fi
 
 TD=$(mktemp -d)
 mkdir -p "$TD/bin"
@@ -63,19 +66,26 @@ fi
 export PATH="$ORIG_PATH"
 unset GITLAB_LIVE STUB_AUTH_RC
 
-# Assert: missing gate
+# Assert: missing gate — tfail, but return 0 so set -e callers keep going
 BAD="$TD/nongate.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'echo hi' > "$BAD"
 captured=""
 tfail() { captured="$captured|$1"; }
-if gitlab_live_gate_assert "$BAD"; then
-  echo "  FAIL: gitlab_live_gate_assert passed on a file with no live gate" >&2
-  FAIL=1
-fi
+continued=0
+gitlab_live_gate_assert "$BAD"
+continued=1
+[ "$continued" = 1 ] \
+  || { echo "  FAIL: gitlab_live_gate_assert aborted the caller under set -e" >&2; FAIL=1; }
 echo "$captured" | grep -q 'gitlab_live_enabled' \
   || { echo "  FAIL: assert did not mention gitlab_live_enabled: $captured" >&2; FAIL=1; }
 echo "$captured" | grep -q 'gitlab-live-gate.sh' \
   || { echo "  FAIL: assert did not require sourcing the helper: $captured" >&2; FAIL=1; }
+
+# Empty args under set -u must not unbound $1
+captured=""
+gitlab_live_gate_assert
+echo "$captured" | grep -q 'missing file' \
+  || { echo "  FAIL: no-arg assert did not report missing file (unbound \$1?): $captured" >&2; FAIL=1; }
 
 # Assert: gate + optional flags
 GOOD="$TD/gated.sh"
