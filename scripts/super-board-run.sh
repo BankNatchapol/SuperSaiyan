@@ -234,26 +234,13 @@ fetch_project_items() {
 }
 
 column_count() {
-  # Active lanes ignore CLOSED cards (GitLab scope=all keeps leftover status::*
-  # on closed issues). Done/Blocked/Skipped still count every state.
-  echo "$PROJECT_ITEMS_JSON" | jq --arg col "$1" '
-    [.items[]
-     | select(.status == $col)
-     | select(
-         ($col != "Ready" and $col != "Building" and $col != "QA" and $col != "Review")
-         or ((.state // "OPEN") | ascii_upcase) != "CLOSED"
-       )] | length'
+  platform_column_count "$1" "$PROJECT_ITEMS_JSON"
 }
 
 top_card_in_column() {
-  # Returns the FIRST issue number in $1 with no assignee AND no local in-flight lock.
+  # First unclaimed issue in $1 with no local in-flight lock.
   local col="$1" issue
-  for issue in $(echo "$PROJECT_ITEMS_JSON" | jq -r --arg col "$col" '
-        .items[]
-        | select(.status == $col and .content.type == "Issue")
-        | select(((.state // "OPEN") | ascii_upcase) != "CLOSED")
-        | select((.content.assignees // []) | length == 0)
-        | .content.number'); do
+  for issue in $(platform_top_unclaimed_card "$col" "$PROJECT_ITEMS_JSON"); do
     if ! issue_locked "$issue"; then
       echo "$issue"
       return 0

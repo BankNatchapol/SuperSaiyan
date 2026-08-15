@@ -26,6 +26,21 @@ EOF
 export PLATFORM_CONFIG_PATH="$CFG"
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
+# Extends overlay: variant lives on the base; do not export raw PLATFORM_CONFIG_PATH.
+mkdir -p "$TD/configs"
+cat > "$TD/configs/base.json" <<'EOF'
+{"git_platform":"gitlab","variant":"qa-only","project":{"host":"gitlab.com","full_path":"grp/realproj"}}
+EOF
+printf '%s\n' '{"extends":"base"}' > "$TD/configs/overlay.json"
+eff=$(_gitlab_effective_config "$TD/configs/overlay.json") \
+  || tfail "_gitlab_effective_config failed on extends overlay"
+jq -e '.variant == "qa-only" and .project.full_path == "grp/realproj"' "$eff" >/dev/null \
+  || tfail "effective board-ensure config missed base variant/full_path: $eff"
+if awk '/^platform_board_ensure\(\)/,/^platform_[a-z_]+ \(\)/' "$GITLAB_SH" \
+  | grep -q 'export PLATFORM_CONFIG_PATH='; then
+  tfail "platform_board_ensure still exports PLATFORM_CONFIG_PATH"
+fi
+
 forced=$(GITLAB_BOARD_ENSURE_FAIL=1 platform_board_ensure "$CFG" 2>"$TD/ui.txt")
 [ "$forced" = "null" ] || tfail "force-fail printed '$forced' not null"
 grep -q 'Issue boards' "$TD/ui.txt" || tfail "force-fail did not print UI steps"

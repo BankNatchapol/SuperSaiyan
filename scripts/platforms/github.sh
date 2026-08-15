@@ -146,7 +146,13 @@ platform_column_count() {
   if [ -z "$snapshot" ]; then
     snapshot=$(cat)
   fi
-  echo "$snapshot" | jq --arg col "$col" '[.items[] | select(.status == $col)] | length'
+  echo "$snapshot" | jq --arg col "$col" '
+    [.items[]
+     | select(.status == $col)
+     | select(
+         ($col != "Ready" and $col != "Building" and $col != "QA" and $col != "Review")
+         or ((.state // "OPEN") | ascii_upcase) != "CLOSED"
+       )] | length'
 }
 
 platform_top_unclaimed_card() {
@@ -159,8 +165,12 @@ platform_top_unclaimed_card() {
   echo "$snapshot" | jq -r --arg col "$col" '
     .items[]
     | select(.status == $col and .content.type == "Issue")
+    | select(
+        ($col != "Ready" and $col != "Building" and $col != "QA" and $col != "Review")
+        or ((.state // "OPEN") | ascii_upcase) != "CLOSED"
+      )
     | select((.content.assignees // []) | length == 0)
-    | .content.number' | head -1
+    | .content.number'
 }
 
 # ───────────────────────────── Group D — Board write / move-card ─────────────────────────────

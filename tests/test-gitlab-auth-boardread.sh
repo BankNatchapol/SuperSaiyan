@@ -106,7 +106,13 @@ case "$cmd" in
         printf '%s\n' "${GLAB_USER_JSON}"
         ;;
       */issues*)
-        printf '%s\n' "${GLAB_ISSUES_JSON}"
+        case "$path" in
+          *"&page=2"|*"&page=2&"*|*"?page=2"|*"?page=2&"*)
+            printf '%s\n' "${GLAB_ISSUES_JSON_P2:-[]}" ;;
+          *"&page=1"|*"&page=1&"*|*"?page=1"|*"?page=1&"*|*"issues")
+            printf '%s\n' "${GLAB_ISSUES_JSON}" ;;
+          *) printf '%s\n' '[]' ;;
+        esac
         ;;
       projects/*)
         [ "${GLAB_PROJECT_EXIT:-0}" = 0 ] || exit "${GLAB_PROJECT_EXIT}"
@@ -147,6 +153,7 @@ export GLAB_USER_JSON='{"username":"alice","bot":false}'
 export GLAB_PROJECT_EXIT=0
 export GLAB_PROJECT_JSON='{"path_with_namespace":"group/demo","permissions":{"project_access":{"access_level":50}}}'
 export GLAB_ISSUES_JSON='[]'
+export GLAB_ISSUES_JSON_P2='[]'
 export GLAB_INCLUDE_HEADERS=""
 
 # 3a. glab missing
@@ -318,9 +325,10 @@ backlog_n=$(platform_column_count Backlog "$snap")
 top=$(platform_top_unclaimed_card Ready "$snap")
 [ "$top" = "1" ] || tfail "platform_top_unclaimed_card Ready → $top (want 1)"
 
-# 3p. --paginate emits one JSON array per page; slurp must yield one object.
-GLAB_ISSUES_JSON='[{"iid":1,"title":"Ready card","web_url":"https://gitlab.example.com/g/p/-/issues/1","state":"opened","labels":["status::ready"],"assignees":[],"description":"seed"}]
-[{"iid":2,"title":"Unlabeled card","web_url":"https://gitlab.example.com/g/p/-/issues/2","state":"opened","labels":[],"assignees":[{"username":"bob"}],"description":""},{"iid":3,"title":"Closed leftover","web_url":"https://gitlab.example.com/g/p/-/issues/3","state":"closed","labels":["status::ready"],"assignees":[],"description":""}]'
+# 3p. page=1 + page=2 must slurp into one object (CLOSED leftover on page 2).
+GLAB_INCLUDE_HEADERS=""
+GLAB_ISSUES_JSON='[{"iid":1,"title":"Ready card","web_url":"https://gitlab.example.com/g/p/-/issues/1","state":"opened","labels":["status::ready"],"assignees":[],"description":"seed"}]'
+GLAB_ISSUES_JSON_P2='[{"iid":2,"title":"Unlabeled card","web_url":"https://gitlab.example.com/g/p/-/issues/2","state":"opened","labels":[],"assignees":[{"username":"bob"}],"description":""},{"iid":3,"title":"Closed leftover","web_url":"https://gitlab.example.com/g/p/-/issues/3","state":"closed","labels":["status::ready"],"assignees":[],"description":""}]'
 paged=$(platform_board_snapshot "$CFG") || tfail "two-page snapshot failed"
 echo "$paged" | jq -e 'type == "object" and (.items | length == 3)' >/dev/null 2>&1 \
   || tfail "two-page snapshot was not one object of 3 items: $paged"

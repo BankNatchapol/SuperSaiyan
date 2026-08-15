@@ -157,6 +157,14 @@ fi
 got=$(jq -r '.labels | map(select(startswith("status::"))) | join(",")' "$STATE")
 [ "$got" = "status::qa" ] || tfail "after move labels=$got (want status::qa)"
 
+# 2a2. Backlog = no status::* and must report success
+jq '.labels=["status::qa"]' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+if ! platform_card_status_set 7 Backlog >/dev/null 2>&1; then
+  tfail "platform_card_status_set 7 Backlog failed (empty status::* must verify)"
+fi
+got=$(jq -r '.labels | map(select(startswith("status::"))) | join(",")' "$STATE")
+[ -z "$got" ] || tfail "after Backlog move labels=$got (want empty)"
+
 # 2b. --add parses work_items URL
 : > "$GLAB_LOG"
 jq '.labels=["bug"]' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"

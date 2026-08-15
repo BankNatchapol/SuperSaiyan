@@ -37,8 +37,8 @@ below are **as implemented**, not the spec's first guesses.
 | `platform_mr_mark_ready <iid>` | Mark the draft ready. |
 | `platform_mr_comment <iid> <body>` | Comment on the MR/PR. |
 | `platform_mr_merge_squash <iid>` | Squash-merge and delete the source branch. |
-| `platform_mr_view <iid>` | Echo MR/PR JSON. |
-| `platform_mr_list_by_branch <branch>` | Echo MRs/PRs whose source/head is that branch. |
+| `platform_mr_view <iid> [--json fields] [--jq expr]` | Echo normalized MR/PR JSON (`number`, `state` OPEN/MERGED/CLOSED, `isDraft`, `mergeable`, `closingIssuesReferences`). Extra args are forwarded. |
+| `platform_mr_list_by_branch <branch> [--json fields] [--jq expr]` | Echo normalized MRs/PRs whose source/head is that branch. Extra args are forwarded. |
 | `platform_thread_list_unresolved <owner/repo> <iid>` | Echo unresolved **review** thread ids (not plain top-level notes). |
 | `platform_thread_resolve <id>` | Resolve one thread. Idempotent. |
 | `platform_thread_create <owner/repo> <iid> <commit> <path> <line> <body>` | Start a line-level review discussion. |

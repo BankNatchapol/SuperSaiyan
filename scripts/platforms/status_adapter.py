@@ -241,13 +241,18 @@ query($path: ID!, $after: String) {
 
     def status_from_labels(self, labels: list[str]) -> str:
         """OJC 4 — one bash helper. Python must not reimplement the map."""
+        rows = self.status_from_labels_batch([labels])
+        return rows[0] if rows else "Backlog"
+
+    def status_from_labels_batch(self, rows: list[list[str]]) -> list[str]:
+        """One bash+jq call over every label array (OJC 4, no per-row spawn)."""
         proc = subprocess.run(
             [
                 "bash", "-c",
-                '. "$1" && printf %s "$2" | platform_gitlab_status_from_labels',
+                '. "$1" && printf %s "$2" | platform_gitlab_status_from_labels_batch',
                 "gitlab-status",
                 str(self.gitlab_sh),
-                json.dumps(labels),
+                json.dumps(rows),
             ],
             capture_output=True,
             text=True,
@@ -255,19 +260,30 @@ query($path: ID!, $after: String) {
             check=False,
         )
         if proc.returncode != 0:
-            print("platform_gitlab_status_from_labels failed", file=sys.stderr)
+            print("platform_gitlab_status_from_labels_batch failed", file=sys.stderr)
             if proc.stderr.strip():
                 print(proc.stderr.strip(), file=sys.stderr)
-            return "Backlog"
-        return (proc.stdout or "").strip() or "Backlog"
+            return ["Backlog"] * len(rows)
+        try:
+            out = json.loads(proc.stdout or "[]")
+        except json.JSONDecodeError:
+            return ["Backlog"] * len(rows)
+        if not isinstance(out, list):
+            return ["Backlog"] * len(rows)
+        while len(out) < len(rows):
+            out.append("Backlog")
+        return [str(s) if s else "Backlog" for s in out[: len(rows)]]
 
-    def _node_to_renderer(self, node: dict[str, Any]) -> dict[str, Any]:
+    def _node_to_renderer(
+        self, node: dict[str, Any], status: str | None = None
+    ) -> dict[str, Any]:
         labels = [
             (n.get("title") or "")
             for n in ((node.get("labels") or {}).get("nodes") or [])
             if n.get("title")
         ]
-        status = self.status_from_labels(labels)
+        if status is None:
+            status = self.status_from_labels(labels)
         state_raw = (node.get("state") or "opened").upper()
         state = "CLOSED" if state_raw in ("CLOSED", "CLOSE") else "OPEN"
         try:
@@ -303,8 +319,9 @@ query($path: ID!, $after: String) {
     ) -> tuple[list[dict[str, Any]], bool]:
         # owner/number are GitHub Project V2 coordinates — ignored on GitLab.
         del owner, number
-        all_nodes: list[dict[str, Any]] = []
+        raw_nodes: list[dict[str, Any]] = []
         after: str | None = None
+        truncated = False
         for _ in range(MAX_ITEM_PAGES):
             args = [
                 "api", "graphql",
@@ -328,14 +345,28 @@ query($path: ID!, $after: String) {
                 ((payload.get("data") or {}).get("project") or {}).get("issues") or {}
             )
             for raw in issues.get("nodes") or []:
-                all_nodes.append(self._node_to_renderer(raw))
+                raw_nodes.append(raw)
             page_info = issues.get("pageInfo") or {}
             if not page_info.get("hasNextPage"):
-                return all_nodes, False
+                break
             after = page_info.get("endCursor")
             if not after:
-                return all_nodes, False
-        return all_nodes, True
+                break
+        else:
+            truncated = True
+        label_rows = [
+            [
+                (n.get("title") or "")
+                for n in ((node.get("labels") or {}).get("nodes") or [])
+                if n.get("title")
+            ]
+            for node in raw_nodes
+        ]
+        statuses = self.status_from_labels_batch(label_rows) if raw_nodes else []
+        return [
+            self._node_to_renderer(node, status)
+            for node, status in zip(raw_nodes, statuses)
+        ], truncated
 
     def fetch_issue_comments(
         self, issue_number: int

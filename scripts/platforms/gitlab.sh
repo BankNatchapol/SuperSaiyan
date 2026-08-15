@@ -45,6 +45,33 @@ platform_gitlab_status_from_labels() {
   printf '%s' "$input" | jq -r "${_GITLAB_STATUS_JQ} status_from_labels"
 }
 
+platform_gitlab_status_from_labels_batch() {
+  # stdin = JSON array of label arrays. Prints a JSON array of column names.
+  jq "${_GITLAB_STATUS_JQ}"'map(status_from_labels)'
+}
+
+_gitlab_effective_config() {
+  # Field-read view of $1. Resolves `extends` when platform-config.sh is reachable.
+  local raw="${1:-}" dir
+  [ -n "$raw" ] && [ -f "$raw" ] || { printf '%s\n' "$raw"; return 0; }
+  if [ -z "$(jq -r '.extends // empty' "$raw" 2>/dev/null)" ]; then
+    printf '%s\n' "$raw"
+    return 0
+  fi
+  if ! type platform_config_effective >/dev/null 2>&1; then
+    dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ -f "$dir/../platform-config.sh" ]; then
+      # shellcheck disable=SC1091
+      . "$dir/../platform-config.sh"
+    fi
+  fi
+  if type platform_config_effective >/dev/null 2>&1; then
+    platform_config_effective "$raw"
+  else
+    printf '%s\n' "$raw"
+  fi
+}
+
 _gitlab_config_path() {
   if [ -n "${1:-}" ] && [ -f "$1" ]; then
     printf '%s\n' "$1"
@@ -277,12 +304,22 @@ platform_board_snapshot() {
     return 65
   fi
   encoded=$(_gitlab_project_api_id "$full_path")
-  issues=$(_gitlab_api "$host" --paginate "projects/${encoded}/issues?scope=all&per_page=100") || {
-    echo "platform_board_snapshot: failed to list issues for $full_path" >&2
-    return 1
-  }
-  # --paginate emits one JSON array per page; slurp+add before projecting.
-  printf '%s' "$issues" | jq -s 'add // []' | jq --arg repo "$full_path" "${_GITLAB_STATUS_JQ}"'
+  local page=1 max_pages="${GITLAB_SNAPSHOT_MAX_PAGES:-20}" chunk n issues="[]"
+  while [ "$page" -le "$max_pages" ]; do
+    chunk=$(_gitlab_api "$host" \
+      "projects/${encoded}/issues?scope=all&per_page=100&page=${page}") || {
+      echo "platform_board_snapshot: failed to list issues for $full_path" >&2
+      return 1
+    }
+    n=$(printf '%s' "$chunk" | jq 'if type=="array" then length else 0 end')
+    [ "${n:-0}" -gt 0 ] || break
+    issues=$(printf '%s\n%s\n' "$issues" "$chunk" | jq -s 'add // []')
+    if [ "$page" -eq "$max_pages" ] && [ "$n" -eq 100 ]; then
+      echo "platform_board_snapshot: truncated after ${max_pages} pages (100 issues each)" >&2
+    fi
+    page=$((page + 1))
+  done
+  printf '%s' "$issues" | jq --arg repo "$full_path" "${_GITLAB_STATUS_JQ}"'
     {items: [ .[] | {
       number: .iid,
       title: .title,
@@ -334,7 +371,7 @@ platform_top_unclaimed_card() {
         or ((.state // "OPEN") | ascii_upcase) != "CLOSED"
       )
     | select((.content.assignees // []) | length == 0)
-    | .content.number' | head -1
+    | .content.number'
 }
 
 # ───────────────────────────── Group D — Board write / move-card ─────────────────────────────
@@ -375,14 +412,19 @@ _gitlab_status_labels_csv() {
 
 _gitlab_card_move_verify_at() {
   # $1 = host, $2 = encoded project id, $3 = iid, $4 = expected column.
+  # Backlog = zero status::* labels. Any other column needs exactly one.
   local host="$1" encoded="$2" iid="$3" expected="$4"
   local raw labels status
   raw=$(_gitlab_issue_get "$host" "$encoded" "$iid") || return 1
   labels=$(printf '%s' "$raw" | _gitlab_status_labels_csv)
   case "$labels" in
-    ""|*","*) return 1 ;;
+    *","*) return 1 ;;
   esac
-  status=$(printf '%s' "[\"$labels\"]" | platform_gitlab_status_from_labels)
+  if [ -z "$labels" ]; then
+    [ "$expected" = "Backlog" ] || [ -z "$expected" ]
+    return
+  fi
+  status=$(jq -n --arg l "$labels" '[$l]' | platform_gitlab_status_from_labels)
   [ "$status" = "$expected" ]
 }
 
@@ -704,20 +746,82 @@ platform_mr_merge_squash() {
   _gitlab_glab "$_g_host" "$_g_path" mr merge "$mr" --squash --remove-source-branch --yes
 }
 
+_gitlab_mr_normalize() {
+  # stdin = one REST MR object or an array of them.
+  jq '
+    def one:
+      {
+        number: .iid,
+        url: (.web_url // ""),
+        title: (.title // ""),
+        state: (if .state == "merged" then "MERGED"
+                elif ((.state // "") | ascii_downcase) == "closed" then "CLOSED"
+                else "OPEN" end),
+        isDraft: (.draft // false),
+        mergeable: ((.detailed_merge_status // "") == "mergeable"),
+        headRefName: (.source_branch // ""),
+        baseRefName: (.target_branch // ""),
+        closingIssuesReferences: (.closingIssuesReferences // [])
+      };
+    if type == "array" then map(one) else one end
+  '
+}
+
+_gitlab_mr_project() {
+  # $1 = normalized JSON. Remaining args: --json fields --jq expr (GitHub-shaped).
+  local json="$1"
+  shift
+  local fields="" jq_expr=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json) fields="$2"; shift 2 ;;
+      --jq) jq_expr="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$fields" ]; then
+    json=$(printf '%s' "$json" | jq --arg f "$fields" '
+      ($f | split(",")) as $keys
+      | if type == "array" then
+          map(with_entries(select(.key as $k | $keys | index($k))))
+        else
+          with_entries(select(.key as $k | $keys | index($k)))
+        end
+    ')
+  fi
+  if [ -n "$jq_expr" ]; then
+    printf '%s' "$json" | jq -r "$jq_expr"
+  else
+    printf '%s\n' "$json"
+  fi
+}
+
 platform_mr_view() {
-  local mr="$1"
+  # $1 = iid. Remaining args forwarded (--json fields, --jq expr).
+  local mr="$1" raw closes norm
   shift
   _gitlab_ctx || return
-  _gitlab_api "$_g_host" "projects/${_g_enc}/merge_requests/${mr}"
+  raw=$(_gitlab_api "$_g_host" "projects/${_g_enc}/merge_requests/${mr}") || return 1
+  closes=$(_gitlab_api "$_g_host" \
+    "projects/${_g_enc}/merge_requests/${mr}/closes_issues" 2>/dev/null) || closes="[]"
+  norm=$(printf '%s' "$raw" | jq --argjson closes "${closes:-[]}" '
+    . + {closingIssuesReferences: [($closes // [])[] | {number: .iid, url: (.web_url // "")}]}
+  ' | _gitlab_mr_normalize) || return 1
+  _gitlab_mr_project "$norm" "$@"
 }
 
 platform_mr_list_by_branch() {
-  local branch="$1"
+  # $1 = head branch (or head:pattern). Remaining args forwarded.
+  local branch="$1" raw norm
+  shift
   case "$branch" in
     head:*) branch="${branch#head:}" ;;
   esac
   _gitlab_ctx || return
-  _gitlab_api "$_g_host" "projects/${_g_enc}/merge_requests?source_branch=${branch}"
+  raw=$(_gitlab_api "$_g_host" \
+    "projects/${_g_enc}/merge_requests?source_branch=${branch}") || return 1
+  norm=$(printf '%s' "$raw" | _gitlab_mr_normalize) || return 1
+  _gitlab_mr_project "$norm" "$@"
 }
 # ───────────────────────────── Group H — Review-thread resolve/create ─────────────────────────────
 #
@@ -885,14 +989,14 @@ platform_board_ensure() {
   # Usage: platform_board_ensure [config-path]
   # Prints the board id, or "null" on API failure (does not hard-fail).
   # GITLAB_BOARD_ENSURE_FAIL=1 forces the graceful-null path (tests).
-  local cfg variant col label color
-  cfg=$(_gitlab_config_path "${1:-}") || {
+  local cfg raw variant col label color
+  raw=$(_gitlab_config_path "${1:-}") || {
     echo "platform_board_ensure: readable GitLab config path required" >&2
     echo "null"
     return 0
   }
-  export PLATFORM_CONFIG_PATH="$cfg"
-  _gitlab_ctx || {
+  cfg=$(_gitlab_effective_config "$raw")
+  _gitlab_ctx "$cfg" || {
     _gitlab_board_ui_steps
     echo "null"
     return 0
@@ -971,11 +1075,11 @@ platform_board_ensure() {
     fi
   done
 
-  # Persist board_id when the config is writable.
-  if [ -w "$cfg" ]; then
+  # Persist board_id on the raw identity path (not a resolved/ snapshot).
+  if [ -w "$raw" ]; then
     local tmp
     tmp=$(mktemp)
-    jq --argjson id "$board_id" '.project.board_id = $id' "$cfg" > "$tmp" && mv "$tmp" "$cfg" || rm -f "$tmp"
+    jq --argjson id "$board_id" '.project.board_id = $id' "$raw" > "$tmp" && mv "$tmp" "$raw" || rm -f "$tmp"
   fi
   printf '%s\n' "$board_id"
 }

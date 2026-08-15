@@ -75,8 +75,14 @@ case "$cmd" in
       */issues/*)
         echo '{"iid":42,"title":"T","description":"B","labels":["bug"],"state":"opened"}'
         ;;
+      */closes_issues)
+        echo '[{"iid":42,"web_url":"https://gitlab.com/group/demo/-/issues/42"}]'
+        ;;
+      */merge_requests/*)
+        echo '{"iid":3,"title":"T","state":"opened","draft":true,"source_branch":"feat","target_branch":"main","web_url":"https://gitlab.com/group/demo/-/merge_requests/3","detailed_merge_status":"mergeable"}'
+        ;;
       */merge_requests*)
-        echo '[{"iid":3,"source_branch":"feat","title":"T","draft":true}]'
+        echo '[{"iid":3,"title":"T","state":"opened","draft":true,"source_branch":"feat","target_branch":"main","web_url":"https://gitlab.com/group/demo/-/merge_requests/3"}]'
         ;;
       *) echo '{}' ;;
     esac
@@ -123,8 +129,15 @@ grep -q -- '--target-branch' "$GLAB_LOG" || tfail "mr_create_draft did not map -
 
 platform_mr_mark_ready 3 >/dev/null || tfail "mr_mark_ready failed"
 platform_mr_comment 3 "note" >/dev/null || tfail "mr_comment failed"
-platform_mr_view 3 >/dev/null || tfail "mr_view failed"
-platform_mr_list_by_branch feat >/dev/null || tfail "mr_list_by_branch failed"
+mr_view=$(platform_mr_view 3) || tfail "mr_view failed"
+echo "$mr_view" | jq -e '.number==3 and .state=="OPEN" and .isDraft==true and .mergeable==true' >/dev/null \
+  || tfail "mr_view shape: $mr_view"
+closes=$(platform_mr_view 3 --json closingIssuesReferences --jq '.closingIssuesReferences[0].number') \
+  || tfail "mr_view --json failed"
+[ "$closes" = "42" ] || tfail "mr_view closingIssuesReferences → $closes (want 42)"
+listed=$(platform_mr_list_by_branch feat --json number,headRefName) || tfail "mr_list_by_branch failed"
+echo "$listed" | jq -e '.[0].number==3 and .[0].headRefName=="feat"' >/dev/null \
+  || tfail "mr_list_by_branch shape: $listed"
 platform_mr_merge_squash 3 >/dev/null || tfail "mr_merge_squash failed"
 grep -q -- '--squash' "$GLAB_LOG" || tfail "mr_merge_squash missing --squash"
 grep -q -- '--remove-source-branch' "$GLAB_LOG" || tfail "mr_merge_squash missing --remove-source-branch"

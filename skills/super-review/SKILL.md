@@ -83,7 +83,7 @@ If the input is ambiguous, default to reviewing the current branch against its u
    - Include which Super workflow should own each fix.
 
 7. **Publish to GitHub** (whenever scope includes a GitHub issue and/or PR)
-   - Resolve where the breadcrumb goes: an explicit issue number given by the user; otherwise the issue linked from the PR (`gh pr view <N> --json closingIssuesReferences`); otherwise the PR itself if no linked issue exists.
+   - Resolve where the breadcrumb goes: an explicit issue number given by the user; otherwise the issue linked from the PR (`platform_mr_view <N> --json closingIssuesReferences`); otherwise the PR itself if no linked issue exists.
    - Post one comment there with the glyph-prefixed heading + full report body — see "Publish to GitHub" below for the exact format and command.
    - This step runs regardless of who invoked the review (human in chat, or super-board dispatch). It is independent of merge/close/card-move authority — see "What publishing does NOT do" below.
 
@@ -127,7 +127,7 @@ every review whose scope includes a GitHub issue and/or PR — plain-branch-only
 nothing to link against are the only case with no publish target.
 
 **Where it goes** — one comment, not a duplicate on both sides:
-- Issue number known (given directly, or resolved from the PR via `gh pr view <PR> --json
+- Issue number known (given directly, or resolved from the PR via `platform_mr_view <PR> --json
   closingIssuesReferences`) → post there. This matches where Build and QA already post their
   breadcrumbs on this pipeline, so a reader following one issue thread sees the whole history.
 - No linked issue exists → post on the PR instead.
