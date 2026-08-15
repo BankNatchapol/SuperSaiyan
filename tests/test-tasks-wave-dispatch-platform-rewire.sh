@@ -68,6 +68,11 @@ for f in "$TASKS" "$PREPARE" "$DISPATCH"; do
   grep -q 'export PLATFORM_CONFIG_PATH="$EFFECTIVE"' "$f" \
     || fail "$(basename "$f") does not export PLATFORM_CONFIG_PATH=\$EFFECTIVE"
 done
+# Schema must not call PLATFORM_CONFIG_PATH board identity (that contradicts the export).
+SCHEMA="$ROOT/skills/super-board/references/config-schema.json"
+if grep -q 'slug, PLATFORM_CONFIG_PATH' "$SCHEMA"; then
+  fail "config-schema.json still names PLATFORM_CONFIG_PATH as board identity"
+fi
 
 # ── 4. wave-plan: board snapshot via platform_board_snapshot ───────────────
 grep -q 'platform_board_snapshot' "$WAVE" \
