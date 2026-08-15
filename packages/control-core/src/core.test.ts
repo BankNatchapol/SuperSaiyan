@@ -20,7 +20,7 @@ describe("control core safety", () => {
 });
 
 describe("formatWorkerBackend", () => {
-  it("renders a per-lane object as a compact summary, never [object Object]", () => {
+  it("renders a per-lane string map as a compact summary", () => {
     const rendered = formatWorkerBackend({
       build: "codex-exec",
       qa: "cursor-agent",

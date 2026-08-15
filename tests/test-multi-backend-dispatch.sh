@@ -2,7 +2,9 @@
 # test-multi-backend-dispatch.sh — verifies scripts/super-board-run.sh resolves worker_backend
 # per lane (Build/QA/Review may each use a different CLI backend in one run), keeps the
 # single-string shape working unchanged, and that the backend files assemble per-tool model
-# flags. No live board traffic; CLI binaries are stubbed on PATH.
+# flags. Also greps skills/supersaiyan/SKILL.md + run-workflow.md: those files ARE the
+# /supersaiyan run dispatch selector (workflow vs bash/per-lane), so a wording regression
+# there is a behavior regression. No live board traffic; CLI binaries are stubbed on PATH.
 
 set -euo pipefail
 
@@ -30,17 +32,11 @@ grep -qE 'supersaiyan run.*worker_backend.*workflow' "$SKILL_MD" \
   || fail "skills/supersaiyan/SKILL.md missing workflow-backend run routing"
 grep -qE 'codex-exec.*cursor-agent|cursor-agent.*codex-exec' "$SKILL_MD" \
   || fail "skills/supersaiyan/SKILL.md bash-dispatcher run row must name codex-exec and cursor-agent"
-# The bash-dispatcher family must load run.md (headless nohup), not only run-workflow.md.
-if grep -E '`supersaiyan run' "$SKILL_MD" | grep -q 'per-lane object' \
-  && grep -E '`supersaiyan run' "$SKILL_MD" | grep -q 'references/run.md'; then
-  :
-else
-  # Two-row form (workflow row + bash row) is also fine as long as a run row
-  # that mentions per-lane also points at run.md.
-  if ! grep -E 'per-lane object' "$SKILL_MD" | grep -q 'references/run.md'; then
-    fail "per-lane / bash-dispatcher run routing must load references/run.md"
-  fi
-fi
+# Same-line check: independent greps would pass a per-lane row that still loads
+# run-workflow.md whenever some *other* supersaiyan-run row mentions run.md
+# (the workflow row already does — "lane lifecycles from references/run.md").
+grep -E 'per-lane object' "$SKILL_MD" | grep -q 'references/run.md' \
+  || fail "per-lane / bash-dispatcher run routing must load references/run.md"
 
 # Stale "only claude-p" wording would send object/codex/cursor configs into this
 # in-session file. Source of truth is super-board/references/; the supersaiyan
@@ -96,7 +92,14 @@ esac
 
 # ── 4. Per-tool model flags reach the CLI argv ─────────────────────────────
 STUB_DIR=$(mktemp -d)
-trap 'rm -rf "$STUB_DIR" "$SMOKE_DIR"' EXIT
+SMOKE_DIR=""
+MODEL_CFG=""
+cleanup() {
+  rm -rf "$STUB_DIR"
+  [ -n "${SMOKE_DIR:-}" ] && rm -rf "$SMOKE_DIR"
+  [ -n "${MODEL_CFG:-}" ] && rm -f "$MODEL_CFG"
+}
+trap cleanup EXIT
 mkdir -p "$STUB_DIR/bin"
 
 # codex stub: `codex login status` must succeed (auth check); any exec run records its argv.
@@ -154,12 +157,13 @@ fi
 
 # Config JSON → argv, and non-empty env beating config. The dispatcher loads models via
 # apply_tool_model_overrides() so this can be tested without entering the tick loop.
-grep -q 'apply_tool_model_overrides()' "$RUN_SH" \
+HAS_MODEL_OVERRIDES=0
+grep -q 'apply_tool_model_overrides()' "$RUN_SH" && HAS_MODEL_OVERRIDES=1
+[ "$HAS_MODEL_OVERRIDES" -eq 1 ] \
   || fail "missing apply_tool_model_overrides() — env-then-config model loader"
 MODEL_CFG=$(mktemp)
-trap 'rm -rf "$STUB_DIR" "$SMOKE_DIR" "$MODEL_CFG"' EXIT
 printf '%s' '{"codex":{"model":"from-config","reasoning_effort":"low"},"cursor":{"model":"cursor-from-config"}}' > "$MODEL_CFG"
-if grep -q 'apply_tool_model_overrides()' "$RUN_SH"; then
+if [ "$HAS_MODEL_OVERRIDES" -eq 1 ]; then
   CONFIG_ARGV=$(
     cd "$ROOT" && PATH="$STUB_DIR/bin:$PATH" bash -c '
       set -euo pipefail

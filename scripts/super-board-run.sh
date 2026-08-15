@@ -177,6 +177,10 @@ load_backend() {
 # to the board config. Exported so the backend files pick them up; each backend still reads
 # them with inline `${VAR:-}` defaulting, so callers that never set them (super-build-dispatch,
 # super-qa-dispatch) keep working unchanged under `set -u`.
+# tests/test-multi-backend-dispatch.sh extracts this function with
+#   sed -n '/^apply_tool_model_overrides()/,/^}/p'
+# Keep the header at column 0 and do not add a nested column-0 `}` (heredoc, inner
+# function) or the test will eval a truncated body.
 apply_tool_model_overrides() {
   local config_path="${1:-}"
   [ -n "$config_path" ] || { echo "apply_tool_model_overrides: missing config path" >&2; return 64; }
