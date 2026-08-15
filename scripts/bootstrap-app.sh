@@ -12,6 +12,8 @@
 set -euo pipefail
 
 SAIYAN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+. "$SAIYAN_ROOT/scripts/lib/git-remote-host.sh"
 TARGET="$PWD"
 CHECK_ONLY=false
 
@@ -156,14 +158,7 @@ bootstrap_git_platform() {
     fi
   fi
   origin=$(git -C "$TARGET" remote get-url origin 2>/dev/null || true)
-  case "$origin" in
-    *gitlab.com*|*gitlab.*)
-      printf 'gitlab\n'
-      ;;
-    *)
-      printf 'github\n'
-      ;;
-  esac
+  git_remote_platform "$origin"
 }
 
 check_github_auth() {
@@ -187,10 +182,17 @@ check_github_auth() {
 
 check_gitlab_auth() {
   local raw effective host="" hostname_args=""
+  if ! type platform_config_resolve >/dev/null 2>&1; then
+    # shellcheck disable=SC1091
+    . "$SAIYAN_ROOT/scripts/platform-config.sh"
+  fi
   raw=$(platform_config_resolve "$TARGET" 2>/dev/null || true)
   if [ -n "$raw" ]; then
     effective=$(platform_config_effective "$raw" 2>/dev/null || printf '%s\n' "$raw")
     host=$(jq -r '.project.host // empty' "$effective" 2>/dev/null || true)
+  fi
+  if [ -z "$host" ]; then
+    host=$(git_remote_host "$(git -C "$TARGET" remote get-url origin 2>/dev/null || true)" 2>/dev/null || true)
   fi
   if [ -n "$host" ] && [ "$host" != "gitlab.com" ]; then
     hostname_args="--hostname $host"
@@ -362,6 +364,10 @@ check_app_git() {
     warn "App has no origin remote; add one and push main before super-board"
   fi
 }
+
+if [ "${BOOTSTRAP_SOURCE_ONLY:-}" = 1 ]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 echo "SuperSaiyan bootstrap"
 echo "Toolkit: $SAIYAN_ROOT"
