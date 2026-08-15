@@ -17,6 +17,8 @@ Assume the Builder agent has **only the issue body** plus `PROJECT.md` — not y
 
 **REQUIRED INPUT:** Design spec at `docs/superpowers/specs/<feature-slug>-design.md` (from Step 16 — refining-spec, office-hours copy, or brainstorming).
 
+**Open Questions gate:** If the spec's `## Open Questions` section contains unresolved items (not empty and not `None`), refuse and send the human back to refining-spec.
+
 **OPTIONAL INPUT:** An existing `docs/superpowers/plans/…` file if the user already ran `writing-plans` — use it as extra detail, but do not require it.
 
 **Save task files to:** `docs/superpowers/tasks/<feature-slug>/NN-short-name.md`
