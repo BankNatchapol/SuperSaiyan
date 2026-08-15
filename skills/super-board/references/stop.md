@@ -1,5 +1,10 @@
 # super-board stop — full contract
 
+> **GitHub-only.** If `config.git_platform` is `gitlab`, halt and tell the user
+> this verb is GitHub-only in this milestone. Do not run `gh` commands. See
+> `references/platforms.md`. Next step on GitLab is `super-board run` with a
+> bash-dispatcher backend (`claude-p` / `codex-exec` / `cursor-agent`).
+
 Pointer: spec `docs/superpowers/specs/2026-05-21-super-board-design.md` §9 (added in v1.3.0).
 
 **Where it runs:** interactive orchestrator. Spawns the headless `scripts/super-board-stop.sh` synchronously, reports the summary, exits. No background processes.

@@ -55,18 +55,26 @@
   // `references/run-workflow.md` §Preconditions) since `super-board-wave.js` — a Workflow
   // script — has no filesystem access to resolve `extends` itself.
   //
-  // Identity vs field-read: `platform_config_resolve` still returns the raw overlay
-  // (`configs/<slug>.json`) — that path is board identity (slug, PLATFORM_CONFIG_PATH).
-  // Field reads (`prepare.sh` `.project.owner`/`.project.number`, `git_platform`) go
-  // through `platform_config_effective`, which calls `persist_resolved_config` so an
-  // `extends` link is merged first. Do not substitute the effective path for identity.
+  // Identity vs field-read: `platform_config_resolve` / `--config` / slug / board
+  // discovery still use the raw overlay (`configs/<slug>.json`). Adapters export
+  // `PLATFORM_CONFIG_PATH` as the effective path (`persist_resolved_config` output)
+  // so GitLab field reads see `project.full_path` after an `extends` merge. Do not
+  // pass `PLATFORM_CONFIG_PATH` into `platform_config_effective` (re-entry on
+  // `resolved/` is a hard error), and do not substitute the effective path for identity.
   "extends": null,
 
   "project": {
+    // GitHub (`git_platform: "github"`, default):
     "owner": "<github-owner>",
-    "title": "<project title on GitHub>",
-    // Required; `gh project` CLI takes number, not title (titles aren't unique).
-    "number": 0
+    "title": "<project title>",
+    // Required on GitHub; `gh project` CLI takes number, not title (titles aren't unique).
+    "number": 0,
+    // GitLab (`git_platform: "gitlab"`) — used instead of owner/number:
+    "host": "gitlab.com",
+    "full_path": "<group/project>",
+    // Issue-board id from platform_board_ensure; null if the API failed and
+    // the human created lists in the GitLab UI (or has not yet).
+    "board_id": null
   },
 
   // "full" or "qa-only".

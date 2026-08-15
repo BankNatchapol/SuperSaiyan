@@ -94,8 +94,11 @@ platform_config_effective() {
   # Field-read view of a path returned by platform_config_resolve. Empty in → empty out
   # (no config selected). Otherwise persist_resolved_config: no `extends` returns the
   # absolute raw path; `extends` set persists the merge under <root>/resolved/.
-  # Identity (slug, PLATFORM_CONFIG_PATH, board discovery) stays on the raw path —
+  # Identity (slug, --config, board discovery) stays on the raw path —
   # never substitute this function's output for platform_config_resolve.
+  # Adapters export this function's output as PLATFORM_CONFIG_PATH (field-complete;
+  # no `extends`). A child must not feed that env value back into this function:
+  # re-entry on resolved/ is already a hard error.
   #
   # persist_resolved_config() lives in the sibling config-resolve.sh — same directory
   # whether this file is scripts/platform-config.sh (dev checkout) or

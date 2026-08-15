@@ -71,7 +71,7 @@ fi
 # shellcheck disable=SC1090
 source "$PLATFORM_FILE"
 
-export PLATFORM_CONFIG_PATH="$CONFIG_PATH"
+export PLATFORM_CONFIG_PATH="$EFFECTIVE"
 if [ "$BOARD" = true ] && [ -z "$CONFIG_PATH" ] && [ -z "${GH_PROJECT_NUMBER:-}" ]; then
   echo "--board requires --config, PLATFORM_CONFIG_PATH, an onboarded config, or GH_PROJECT_NUMBER" >&2
   exit 64
@@ -322,7 +322,8 @@ while IFS= read -r file; do
 
   url=$(platform_issue_create "$title" "$body_file")
   rm -f "$body_file"
-  num=$(echo "$url" | sed -E 's|.*/issues/([0-9]+)$|\1|')
+  # Last path segment — GitHub .../issues/N or GitLab .../work_items/N.
+  num="${url##*/}"
   remember_issue "$stem" "$num"
   write_map_entry "$stem" "$num" "$url" "${order:-0}"
   CREATED=$((CREATED + 1))

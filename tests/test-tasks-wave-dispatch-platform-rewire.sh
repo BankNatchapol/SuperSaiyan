@@ -63,6 +63,17 @@ if grep -vE '^\s*#' "$TASKS" | grep -qE 'gh[[:space:]]+project[[:space:]]+item-e
   fail "tasks-to-issues.sh still has inline 'gh project item-edit' (use platform_card_status_set)"
 fi
 
+# Adapter env must be the merged config. Raw overlay has no project.full_path.
+for f in "$TASKS" "$PREPARE" "$DISPATCH"; do
+  grep -q 'export PLATFORM_CONFIG_PATH="$EFFECTIVE"' "$f" \
+    || fail "$(basename "$f") does not export PLATFORM_CONFIG_PATH=\$EFFECTIVE"
+done
+# Schema must not call PLATFORM_CONFIG_PATH board identity (that contradicts the export).
+SCHEMA="$ROOT/skills/super-board/references/config-schema.json"
+if grep -q 'slug, PLATFORM_CONFIG_PATH' "$SCHEMA"; then
+  fail "config-schema.json still names PLATFORM_CONFIG_PATH as board identity"
+fi
+
 # ── 4. wave-plan: board snapshot via platform_board_snapshot ───────────────
 grep -q 'platform_board_snapshot' "$WAVE" \
   || fail "super-board-wave-plan.sh missing platform_board_snapshot"
@@ -112,6 +123,19 @@ cat > "$SMOKE_DIR/items.json" <<'EOF'
         "number": 1,
         "title": "First",
         "body": "No deps",
+        "repository": "octocat/demo",
+        "assignees": []
+      }
+    },
+    {
+      "id": "ITEM_CLOSED",
+      "status": "Ready",
+      "state": "CLOSED",
+      "content": {
+        "type": "Issue",
+        "number": 99,
+        "title": "Closed leftover",
+        "body": "must not be planned",
         "repository": "octocat/demo",
         "assignees": []
       }

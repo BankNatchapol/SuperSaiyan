@@ -33,6 +33,7 @@ FILES=(
   rate-limit-etiquette.md
   run-workflow.md
   backends.md
+  platforms.md
 )
 
 CHECK_ONLY=false

@@ -212,6 +212,9 @@ if [ ! -f "$PLATFORM_FILE" ]; then
 fi
 # shellcheck disable=SC1090
 source "$PLATFORM_FILE"
+# GitLab adapters resolve host/full_path from this path. GitHub ignores it
+# when owner/number are passed explicitly. Export before any platform_* call.
+export PLATFORM_CONFIG_PATH="$CONFIG_PATH"
 
 RUN_DATE=$(date +%Y-%m-%d)
 RUN_MANIFEST="docs/supersaiyan/runs/${RUN_DATE}-${CONFIG_SLUG}.md"
@@ -227,21 +230,17 @@ log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$RUN_MANIFEST"; }
 PROJECT_ITEMS_JSON=""
 fetch_project_items() {
   # One board snapshot per tick; all column lookups read from this cache.
-  PROJECT_ITEMS_JSON=$(platform_board_snapshot "$PROJECT_NUMBER" "$PROJECT_OWNER")
+  PROJECT_ITEMS_JSON=$(platform_board_snapshot "$CONFIG_PATH")
 }
 
 column_count() {
-  echo "$PROJECT_ITEMS_JSON" | jq --arg col "$1" '[.items[] | select(.status == $col)] | length'
+  platform_column_count "$1" "$PROJECT_ITEMS_JSON"
 }
 
 top_card_in_column() {
-  # Returns the FIRST issue number in $1 with no assignee AND no local in-flight lock.
+  # First unclaimed issue in $1 with no local in-flight lock.
   local col="$1" issue
-  for issue in $(echo "$PROJECT_ITEMS_JSON" | jq -r --arg col "$col" '
-        .items[]
-        | select(.status == $col and .content.type == "Issue")
-        | select((.content.assignees // []) | length == 0)
-        | .content.number'); do
+  for issue in $(platform_top_unclaimed_card "$col" "$PROJECT_ITEMS_JSON"); do
     if ! issue_locked "$issue"; then
       echo "$issue"
       return 0
@@ -288,6 +287,10 @@ gh_rate_guard() {
   # (reset timestamp is not part of platform_rate_remaining's return value).
   local remaining
   remaining=$(platform_rate_remaining graphql)
+  # GitLab often prints "unknown" (headers omitted). Non-digits fail-open.
+  case "$remaining" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
   if [ "$remaining" -lt 200 ]; then
     log "⚠ GraphQL rate limit low (${remaining} left) — sleeping until reset"
     platform_rate_guard 200

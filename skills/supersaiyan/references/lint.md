@@ -2,6 +2,11 @@
 
 # super-board lint — 7-phase interactive ticket clarifier
 
+> **GitHub-only.** If `config.git_platform` is `gitlab`, halt and tell the user
+> this verb is GitHub-only in this milestone. Do not run `gh` commands. See
+> `references/platforms.md`. Next step on GitLab is `super-board run` with a
+> bash-dispatcher backend (`claude-p` / `codex-exec` / `cursor-agent`).
+
 > Reference for the `super-board lint` verb. See spec §6 of
 > `docs/superpowers/specs/2026-05-21-super-board-design.md` for the full
 > design rationale. This file is the worker-facing playbook.
