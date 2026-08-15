@@ -332,11 +332,13 @@ function registerIpc(): void {
       mutatingSessions.delete(repoId);
     }
     const command = supersaiyanCommand(request);
-    // command:start intentionally opens an interactive PTY and writes the
-    // sanitized slash command into it. Keep this path interactive: both this
-    // path and the headless runner build command content via
-    // supersaiyanCommand(), which enforces the verb schema, rejects newlines,
-    // and restricts argument characters.
+    // command:start intentionally opens an interactive PTY and writes the slash
+    // command into it, where it is interpreted rather than passed as argv — so the
+    // content is built by supersaiyanCommand(), which enforces the verb schema,
+    // rejects newlines, and restricts argument characters. runner:start builds its
+    // initial command the same way. Follow-up turns (runner:continue) deliberately
+    // do not: the user's reply is passed as its own argv entry to the runner and is
+    // never shell-interpolated, so it stays free-form.
     const session = spawnTerminal(repository, `SuperSaiyan · ${request.verb}`, "supersaiyan", {
       file: "claude",
       args: ["--name", `supersaiyan-ui-${repository.name}-${request.verb}`],
