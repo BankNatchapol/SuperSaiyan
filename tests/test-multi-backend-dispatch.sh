@@ -2,7 +2,9 @@
 # test-multi-backend-dispatch.sh — verifies scripts/super-board-run.sh resolves worker_backend
 # per lane (Build/QA/Review may each use a different CLI backend in one run), keeps the
 # single-string shape working unchanged, and that the backend files assemble per-tool model
-# flags. No live board traffic; CLI binaries are stubbed on PATH.
+# flags. Also greps skills/supersaiyan/SKILL.md + run-workflow.md: those files ARE the
+# /supersaiyan run dispatch selector (workflow vs bash/per-lane), so a wording regression
+# there is a behavior regression. No live board traffic; CLI binaries are stubbed on PATH.
 
 set -euo pipefail
 
@@ -18,6 +20,35 @@ if [ ! -f "$RUN_SH" ]; then
 fi
 
 echo "checking scripts/super-board-run.sh per-lane backend routing"
+
+# ── 0. /supersaiyan run must branch on worker_backend (issue #24 AC1) ──────
+# A single always-workflow row silently sends per-lane / codex / cursor configs
+# into Claude Code's in-session wave loop. Super-board SKILL.md already splits
+# the two families; supersaiyan SKILL.md must do the same.
+SKILL_MD="$ROOT/skills/supersaiyan/SKILL.md"
+grep -q 'per-lane object' "$SKILL_MD" \
+  || fail "skills/supersaiyan/SKILL.md does not mention a per-lane object run path"
+grep -qE 'supersaiyan run.*worker_backend.*workflow' "$SKILL_MD" \
+  || fail "skills/supersaiyan/SKILL.md missing workflow-backend run routing"
+grep -qE 'codex-exec.*cursor-agent|cursor-agent.*codex-exec' "$SKILL_MD" \
+  || fail "skills/supersaiyan/SKILL.md bash-dispatcher run row must name codex-exec and cursor-agent"
+# Same-line check: independent greps would pass a per-lane row that still loads
+# run-workflow.md whenever some *other* supersaiyan-run row mentions run.md
+# (the workflow row already does — "lane lifecycles from references/run.md").
+grep -E 'per-lane object' "$SKILL_MD" | grep -q 'references/run.md' \
+  || fail "per-lane / bash-dispatcher run routing must load references/run.md"
+
+# Stale "only claude-p" wording would send object/codex/cursor configs into this
+# in-session file. Source of truth is super-board/references/; the supersaiyan
+# copy is generated from it.
+WF_SRC="$ROOT/skills/super-board/references/run-workflow.md"
+if grep -q 'runs only on explicit' "$WF_SRC"; then
+  fail "run-workflow.md still says bash dispatcher runs only on explicit claude-p"
+fi
+grep -q 'per-lane object' "$WF_SRC" \
+  || fail "run-workflow.md must name the per-lane object as a bash-dispatcher shape"
+grep -q 'codex-exec' "$WF_SRC" \
+  || fail "run-workflow.md must name codex-exec as a bash-dispatcher backend"
 
 # ── 1. Syntax ──────────────────────────────────────────────────────────────
 bash -n "$RUN_SH" || fail "bash -n reported a syntax error in super-board-run.sh"
@@ -61,7 +92,17 @@ esac
 
 # ── 4. Per-tool model flags reach the CLI argv ─────────────────────────────
 STUB_DIR=$(mktemp -d)
-trap 'rm -rf "$STUB_DIR" "$SMOKE_DIR"' EXIT
+SMOKE_DIR=""
+MODEL_CFG=""
+cleanup() {
+  rm -rf "$STUB_DIR"
+  [ -n "${SMOKE_DIR:-}" ] && rm -rf "$SMOKE_DIR"
+  [ -n "${MODEL_CFG:-}" ] && rm -f "$MODEL_CFG"
+  # An EXIT trap that returns non-zero overrides a zero exit status, so a cleanup ending on an
+  # unset-var guard would turn a passing run into rc=1. Never let cleanup decide the verdict.
+  return 0
+}
+trap cleanup EXIT
 mkdir -p "$STUB_DIR/bin"
 
 # codex stub: `codex login status` must succeed (auth check); any exec run records its argv.
@@ -115,6 +156,55 @@ ARGV_BARE=$(
 )
 if echo "$ARGV_BARE" | grep -q -- '--model'; then
   fail "codex emitted --model with no model configured (would break the CLI invocation)"
+fi
+
+# Config JSON → argv, and non-empty env beating config. The dispatcher loads models via
+# apply_tool_model_overrides() so this can be tested without entering the tick loop.
+HAS_MODEL_OVERRIDES=0
+grep -q 'apply_tool_model_overrides()' "$RUN_SH" && HAS_MODEL_OVERRIDES=1
+[ "$HAS_MODEL_OVERRIDES" -eq 1 ] \
+  || fail "missing apply_tool_model_overrides() — env-then-config model loader"
+MODEL_CFG=$(mktemp)
+printf '%s' '{"codex":{"model":"from-config","reasoning_effort":"low"},"cursor":{"model":"cursor-from-config"}}' > "$MODEL_CFG"
+if [ "$HAS_MODEL_OVERRIDES" -eq 1 ]; then
+  CONFIG_ARGV=$(
+    cd "$ROOT" && PATH="$STUB_DIR/bin:$PATH" bash -c '
+      set -euo pipefail
+      eval "$(sed -n "/^apply_tool_model_overrides()/,/^}/p" "'"$RUN_SH"'")"
+      unset CODEX_MODEL CODEX_REASONING_EFFORT CURSOR_MODEL
+      apply_tool_model_overrides "'"$MODEL_CFG"'"
+      source scripts/backends/codex-exec.sh
+      backend_run_sync "PROMPT-CFG" >/dev/null 2>&1
+      source scripts/backends/cursor-agent.sh
+      backend_run_sync "PROMPT-CFG-C" >/dev/null 2>&1
+    ' && cat "$STUB_DIR/codex-argv.txt" "$STUB_DIR/agent-argv.txt"
+  )
+  echo "$CONFIG_ARGV" | grep -q 'from-config' \
+    || fail "config JSON codex.model did not reach argv"
+  echo "$CONFIG_ARGV" | grep -q 'model_reasoning_effort="low"' \
+    || fail "config JSON codex.reasoning_effort did not reach argv"
+  echo "$CONFIG_ARGV" | grep -q 'cursor-from-config' \
+    || fail "config JSON cursor.model did not reach argv"
+
+  ENV_ARGV=$(
+    cd "$ROOT" && PATH="$STUB_DIR/bin:$PATH" bash -c '
+      set -euo pipefail
+      eval "$(sed -n "/^apply_tool_model_overrides()/,/^}/p" "'"$RUN_SH"'")"
+      export CODEX_MODEL=from-env CODEX_REASONING_EFFORT=high CURSOR_MODEL=cursor-from-env
+      apply_tool_model_overrides "'"$MODEL_CFG"'"
+      source scripts/backends/codex-exec.sh
+      backend_run_sync "PROMPT-ENV" >/dev/null 2>&1
+      source scripts/backends/cursor-agent.sh
+      backend_run_sync "PROMPT-ENV-C" >/dev/null 2>&1
+    ' && cat "$STUB_DIR/codex-argv.txt" "$STUB_DIR/agent-argv.txt"
+  )
+  echo "$ENV_ARGV" | grep -q 'from-env' \
+    || fail "non-empty CODEX_MODEL did not override config JSON"
+  echo "$ENV_ARGV" | grep -q 'cursor-from-env' \
+    || fail "non-empty CURSOR_MODEL did not override config JSON"
+  if echo "$ENV_ARGV" | grep -q 'from-config'; then
+    fail "env override lost: config JSON model still in argv"
+  fi
 fi
 
 # ── 5. Smoke: three distinct backends resolve in one run ───────────────────
@@ -234,10 +324,27 @@ run_smoke
 echo "$SMOKE_OUT" | grep -q 'backends: qa=codex-exec review=claude-p' \
   || fail "scenario E: qa-only summary should omit the build lane (rc=${SMOKE_RC})"
 
+# Scenario F — full variant omitted lanes default to claude-p.
+setup_smoke '{
+  "variant": "full",
+  "base_branch": "develop",
+  "human_approves_merge": true,
+  "max_workers": 1,
+  "tick_seconds": 120,
+  "git_platform": "github",
+  "worker_backend": { "qa": "cursor-agent" },
+  "project": { "owner": "octocat", "number": 1, "status_field_id": "PVTSSF_test", "status_option_ids": {} },
+  "notifications": { "bot_identity": "" }
+}'
+run_smoke
+echo "$SMOKE_OUT" | grep -q 'backends: build=claude-p qa=cursor-agent review=claude-p' \
+  || fail "scenario F: omitted lanes did not default to claude-p (rc=${SMOKE_RC}): $(echo "$SMOKE_OUT" | head -3)"
+[ "$SMOKE_RC" -eq 74 ] || fail "scenario F: expected exit 74 (wave lock), got ${SMOKE_RC}"
+
 if [ "$FAIL" -ne 0 ]; then
   echo "error: super-board-run.sh failed the per-lane backend contract check" >&2
   exit 1
 fi
 
-echo "  ✓ per-lane resolution + backend swap + model flags + 5 smoke scenarios"
+echo "  ✓ per-lane resolution + backend swap + model flags + 6 smoke scenarios"
 echo "PASS: test-multi-backend-dispatch.sh"

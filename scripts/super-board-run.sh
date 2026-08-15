@@ -177,13 +177,22 @@ load_backend() {
 # to the board config. Exported so the backend files pick them up; each backend still reads
 # them with inline `${VAR:-}` defaulting, so callers that never set them (super-build-dispatch,
 # super-qa-dispatch) keep working unchanged under `set -u`.
-CODEX_MODEL="${CODEX_MODEL:-}"
-CODEX_REASONING_EFFORT="${CODEX_REASONING_EFFORT:-}"
-CURSOR_MODEL="${CURSOR_MODEL:-}"
-[ -z "$CODEX_MODEL" ] && CODEX_MODEL=$(jq -r '.codex.model // ""' "$CONFIG_PATH")
-[ -z "$CODEX_REASONING_EFFORT" ] && CODEX_REASONING_EFFORT=$(jq -r '.codex.reasoning_effort // ""' "$CONFIG_PATH")
-[ -z "$CURSOR_MODEL" ] && CURSOR_MODEL=$(jq -r '.cursor.model // ""' "$CONFIG_PATH")
-export CODEX_MODEL CODEX_REASONING_EFFORT CURSOR_MODEL
+# tests/test-multi-backend-dispatch.sh extracts this function with
+#   sed -n '/^apply_tool_model_overrides()/,/^}/p'
+# Keep the header at column 0 and do not add a nested column-0 `}` (heredoc, inner
+# function) or the test will eval a truncated body.
+apply_tool_model_overrides() {
+  local config_path="${1:-}"
+  [ -n "$config_path" ] || { echo "apply_tool_model_overrides: missing config path" >&2; return 64; }
+  CODEX_MODEL="${CODEX_MODEL:-}"
+  CODEX_REASONING_EFFORT="${CODEX_REASONING_EFFORT:-}"
+  CURSOR_MODEL="${CURSOR_MODEL:-}"
+  [ -z "$CODEX_MODEL" ] && CODEX_MODEL=$(jq -r '.codex.model // ""' "$config_path")
+  [ -z "$CODEX_REASONING_EFFORT" ] && CODEX_REASONING_EFFORT=$(jq -r '.codex.reasoning_effort // ""' "$config_path")
+  [ -z "$CURSOR_MODEL" ] && CURSOR_MODEL=$(jq -r '.cursor.model // ""' "$config_path")
+  export CODEX_MODEL CODEX_REASONING_EFFORT CURSOR_MODEL
+}
+apply_tool_model_overrides "$CONFIG_PATH"
 
 # Distinct backends actually in use this run, scoped to the lanes this variant dispatches.
 # bash 3.2 (macOS default) has no associative arrays; with at most three known lane scalars,
