@@ -106,9 +106,9 @@ _gitlab_glab() {
   fi
 }
 
-_gitlab_not_implemented() {
-  echo "$1 is not implemented until a later gitlab-integration task" >&2
-  return 78
+_gitlab_first_url() {
+  # stdin = CLI stdout. Echo the first URL token only (glab may prefix a sentence).
+  grep -Eo 'https?://[^[:space:]]+' | head -1
 }
 
 # ───────────────────────────── Group A — Auth & identity ─────────────────────────────
@@ -518,20 +518,12 @@ platform_card_status_set() {
 
 # ───────────────────────────── Group E — Claim / release mutex ─────────────────────────────
 
-_gitlab_user_id() {
-  local host="$1" username="$2" id
-  id=$(_gitlab_api "$host" "users?username=${username}" 2>/dev/null | jq -r 'if type=="array" then .[0].id // empty else .id // empty end')
-  [ -n "$id" ] && printf '%s\n' "$id"
-}
-
 platform_claim_issue() {
   # $1 = issue iid, $2 = bot username.
   # GitLab assignee PUT replaces the whole set. Refuse (exit 1) if any
-  # assignee other than the claiming bot is already present. Always send a
-  # single-element assignee_ids[] — the comma-joined form is broken
-  # (gitlab-org/gitlab-foss#59302).
+  # assignee other than the claiming bot is already present.
   local iid="$1" bot="$2"
-  local cfg="" host="" full_path="" encoded raw others bot_id
+  local cfg="" host="" full_path="" encoded raw others
   cfg=$(_gitlab_config_path) || {
     echo "platform_claim_issue: GitLab config required" >&2
     return 65
@@ -592,7 +584,7 @@ platform_issue_create() {
   _gitlab_ctx || return
   out=$(_gitlab_glab "$_g_host" "$_g_path" issue create --title "$title" \
     --description "$(cat "$body_file")" --yes) || return 1
-  printf '%s\n' "$out" | awk '/https?:\/\//{print; exit}'
+  printf '%s\n' "$out" | _gitlab_first_url
 }
 
 platform_issue_view() {
@@ -672,7 +664,7 @@ platform_issue_edit_labels() {
 platform_mr_create_draft() {
   # GitHub-shaped flags (--base --head --title --body-file/--body) plus glab-native.
   # Always --draft, never --wip (removed in GitLab 14.8).
-  local base="" head="" title="" body_file="" body="" extra=""
+  local base="" head="" title="" body_file="" body="" extra="" out
   while [ $# -gt 0 ]; do
     case "$1" in
       --base|--target-branch) base="$2"; shift 2 ;;
@@ -688,9 +680,10 @@ platform_mr_create_draft() {
   if [ -n "$body_file" ]; then
     body=$(cat "$body_file")
   fi
-  _gitlab_glab "$_g_host" "$_g_path" mr create --draft \
+  out=$(_gitlab_glab "$_g_host" "$_g_path" mr create --draft \
     --source-branch "$head" --target-branch "$base" \
-    --title "$title" --description "${body:-.}" --yes --no-editor
+    --title "$title" --description "${body:-.}" --yes --no-editor) || return 1
+  printf '%s\n' "$out" | _gitlab_first_url
 }
 
 platform_mr_mark_ready() {

@@ -48,7 +48,7 @@ case "$cmd" in
   issue)
     sub="${1:-}"
     case "$sub" in
-      create) echo "https://gitlab.com/group/demo/-/issues/42" ;;
+      create) echo "Created issue https://gitlab.com/group/demo/-/issues/42" ;;
       note|close|update) echo "ok" ;;
       *) echo "ok" ;;
     esac
@@ -56,7 +56,7 @@ case "$cmd" in
   mr)
     sub="${1:-}"
     case "$sub" in
-      create) echo "https://gitlab.com/group/demo/-/merge_requests/3" ;;
+      create) echo "Created merge request https://gitlab.com/group/demo/-/merge_requests/3" ;;
       *) echo "ok" ;;
     esac
     ;;
@@ -112,8 +112,10 @@ grep -q -- '--label' "$GLAB_LOG" || tfail "edit_labels did not translate --add-l
 grep -q -- '--unlabel' "$GLAB_LOG" || tfail "edit_labels did not translate --remove-label to --unlabel"
 
 : > "$GLAB_LOG"
-platform_mr_create_draft --base main --head feat --title "T" --body-file "$body" >/dev/null \
+mr_url=$(platform_mr_create_draft --base main --head feat --title "T" --body-file "$body") \
   || tfail "mr_create_draft failed"
+[ "$mr_url" = "https://gitlab.com/group/demo/-/merge_requests/3" ] \
+  || tfail "mr_create_draft url=$mr_url"
 grep -q -- '--draft' "$GLAB_LOG" || tfail "mr_create_draft did not pass --draft"
 grep -q -- '--wip' "$GLAB_LOG" && tfail "mr_create_draft passed --wip"
 grep -q -- '--source-branch' "$GLAB_LOG" || tfail "mr_create_draft did not map --head to --source-branch"
