@@ -12,6 +12,9 @@ echo "checking gitlab.sh Group K (onboard labels/board)"
 bash -n "$GITLAB_SH" || tfail "syntax"
 # shellcheck disable=SC1090
 . "$GITLAB_SH"
+# shellcheck disable=SC1091
+. "$ROOT/tests/lib/gitlab-live-gate.sh"
+gitlab_live_gate_assert "$0"
 
 grep -q 'glab label list' "$GITLAB_SH" || grep -q 'projects/.*/labels' "$GITLAB_SH" \
   || tfail "label_ensure does not list before create"
@@ -24,7 +27,6 @@ cat > "$CFG" <<EOF
 {"git_platform":"gitlab","variant":"full","project":{"host":"gitlab.com","full_path":"$SANDBOX","board_id":null}}
 EOF
 export PLATFORM_CONFIG_PATH="$CFG"
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 # Extends overlay: variant lives on the base; do not export raw PLATFORM_CONFIG_PATH.
 mkdir -p "$TD/configs"
@@ -45,7 +47,7 @@ forced=$(GITLAB_BOARD_ENSURE_FAIL=1 platform_board_ensure "$CFG" 2>"$TD/ui.txt")
 [ "$forced" = "null" ] || tfail "force-fail printed '$forced' not null"
 grep -q 'Issue boards' "$TD/ui.txt" || tfail "force-fail did not print UI steps"
 
-if command -v glab >/dev/null && glab auth status >/dev/null 2>&1; then
+if gitlab_live_enabled; then
   # Create the empty onboard project if missing.
   if ! glab api "projects/$(printf '%s' "$SANDBOX" | sed 's|/|%2F|g')" >/dev/null 2>&1; then
     ( cd "${TMPDIR:-/tmp}" && glab repo create "$SANDBOX" --public --skipGitInit \
@@ -66,7 +68,7 @@ if command -v glab >/dev/null && glab auth status >/dev/null 2>&1; then
   forced2=$(GITLAB_BOARD_ENSURE_FAIL=1 platform_board_ensure "$CFG" 2>"$TD/ui2.txt")
   [ "$forced2" = "null" ] || tfail "second force-fail printed '$forced2'"
 else
-  echo "  skip live onboard project (glab not authenticated)"
+  echo "  skip live sandbox checks (set GITLAB_LIVE=1 with glab auth to run)"
 fi
 
 rm -rf "$TD"

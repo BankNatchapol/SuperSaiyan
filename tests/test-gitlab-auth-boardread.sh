@@ -2,7 +2,7 @@
 # test-gitlab-auth-boardread.sh — issue #7 / gitlab-integration task 07.
 # Groups A–C of scripts/platforms/gitlab.sh: auth, bot identity, rate-limit
 # (fail open), and board snapshot with status:: derivation.
-# Offline stubs always run. Live sandbox checks run when glab is logged in.
+# Offline stubs always run. Live sandbox checks require GITLAB_LIVE=1 and glab auth.
 
 set -euo pipefail
 
@@ -36,6 +36,9 @@ fi
 
 # shellcheck disable=SC1090
 . "$GITLAB_SH"
+# shellcheck disable=SC1091
+. "$ROOT/tests/lib/gitlab-live-gate.sh"
+gitlab_live_gate_assert "$0" --orig-path --auth-ok-closed
 
 # ── 2. status:: derivation (single place, no API) ──────────────────────────
 if ! declare -f platform_gitlab_status_from_labels >/dev/null 2>&1; then
@@ -78,7 +81,7 @@ cmd="${1:-}"
 shift || true
 case "$cmd" in
   auth)
-    [ "${GLAB_AUTH_OK:-1}" = 1 ] || exit 1
+    [ "${GLAB_AUTH_OK:-0}" = 1 ] || exit 1
     exit 0
     ;;
   api)
@@ -144,6 +147,7 @@ cat > "$CFG" <<EOF
 }
 EOF
 export PLATFORM_CONFIG_PATH="$CFG"
+ORIG_PATH="$PATH"
 export PATH="$TD/bin:$PATH"
 export GLAB_LOG
 export GLAB_AUTH_OK=1
@@ -337,12 +341,12 @@ paged_ready=$(platform_column_count Ready "$paged")
 paged_top=$(platform_top_unclaimed_card Ready "$paged")
 [ "$paged_top" = "1" ] || tfail "top_unclaimed picked CLOSED leftover: $paged_top"
 
-# ── 4. Live sandbox (skip when glab is not authenticated) ──────────────────
+# ── 4. Live sandbox (opt-in; never run against leftover stub glab) ─────────
 unset PLATFORM_CONFIG_PATH
-# Restore real glab (stub was first on PATH).
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export GLAB_AUTH_OK=0
+export PATH="$ORIG_PATH"
 
-if command -v glab >/dev/null 2>&1 && glab auth status >/dev/null 2>&1; then
+if gitlab_live_enabled; then
   LIVE_CFG="$TD/live.json"
   cat > "$LIVE_CFG" <<EOF
 {
@@ -387,7 +391,7 @@ EOF
   ' >/dev/null 2>&1 || tfail "live snapshot missing Ready/Backlog or normalized fields: $live_snap"
   unset PLATFORM_CONFIG_PATH
 else
-  echo "  skip live sandbox checks (glab not authenticated)"
+  echo "  skip live sandbox checks (set GITLAB_LIVE=1 with glab auth to run)"
 fi
 
 rm -rf "$TD"

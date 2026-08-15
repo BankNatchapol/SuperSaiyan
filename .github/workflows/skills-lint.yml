@@ -42,6 +42,8 @@ on:
       - "tests/test-gitlab-review-threads.sh"
       - "tests/test-gitlab-ci-raw-url.sh"
       - "tests/test-gitlab-onboard.sh"
+      - "tests/test-gitlab-live-gate.sh"
+      - "tests/lib/**"
       - "tests/test-status-json-gitlab.py"
       - "scripts/platforms/**"
       - ".github/workflows/skills-lint.yml"
@@ -87,6 +89,8 @@ on:
       - "tests/test-gitlab-review-threads.sh"
       - "tests/test-gitlab-ci-raw-url.sh"
       - "tests/test-gitlab-onboard.sh"
+      - "tests/test-gitlab-live-gate.sh"
+      - "tests/lib/**"
       - "tests/test-status-json-gitlab.py"
       - "scripts/platforms/**"
 
@@ -198,6 +202,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./tests/test-gitlab-onboard.sh
+
+  gitlab-live-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-gitlab-live-gate.sh
 
   status-json-gitlab:
     runs-on: ubuntu-latest

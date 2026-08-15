@@ -12,6 +12,9 @@ echo "checking gitlab.sh Groups I–J (CI detect, raw URL)"
 bash -n "$GITLAB_SH" || tfail "syntax"
 # shellcheck disable=SC1090
 . "$GITLAB_SH"
+# shellcheck disable=SC1091
+. "$ROOT/tests/lib/gitlab-live-gate.sh"
+gitlab_live_gate_assert "$0"
 
 TD=$(mktemp -d)
 # fixture: deploy job on main
@@ -78,8 +81,7 @@ url=$(platform_raw_file_url g/p main docs/shot.png)
   || tfail "raw url=$url"
 echo "$url" | grep -q 'gitlab.com' && tfail "raw URL hardcoded gitlab.com despite config host"
 
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
-if command -v glab >/dev/null && glab auth status >/dev/null 2>&1; then
+if gitlab_live_enabled; then
   LIVE="$TD/live.json"
   cat > "$LIVE" <<EOF
 {"git_platform":"gitlab","project":{"host":"gitlab.com","full_path":"$SANDBOX"}}
@@ -98,7 +100,7 @@ EOF
     -f "body=raw embed: ${live_url}" >/dev/null || tfail "could not post raw URL embed"
   unset PLATFORM_CONFIG_PATH
 else
-  echo "  skip live protection/embed (glab not authenticated)"
+  echo "  skip live sandbox checks (set GITLAB_LIVE=1 with glab auth to run)"
 fi
 
 rm -rf "$TD"
