@@ -160,7 +160,7 @@ After writing the spec file:
 1. **Design coverage** — does every office-hours commitment appear in Requirements or Out of Scope?
 2. **Placeholder scan** — fix vague language
 3. **Code consistency** — do file paths and stack choices match what you read in Phase 3?
-4. **Open Questions gate** — the spec MUST include `## Open Questions`. Hand off to writing-board-tasks only when that section is empty or explicitly `None`.
+4. **Open Questions gate** — the spec MUST include a `## Open Questions` heading. Hand off to writing-board-tasks only when that section exists and is empty or explicitly `None`. If the heading is missing, add it before finishing.
 5. **writing-board-tasks readiness** — could `writing-board-tasks` decompose this without asking scope questions?
 
 Fix inline before finishing.
@@ -171,9 +171,9 @@ Fix inline before finishing.
 
 After saving `docs/superpowers/specs/<feature-slug>-design.md`:
 
-If `## Open Questions` still has unresolved items (not empty and not `None`), **stop and ask the human** to resolve them before continuing. Do not suggest writing-board-tasks.
+If the spec lacks a `## Open Questions` heading, or that section still has unresolved items (not empty and not `None`), **stop and ask the human** to add or resolve them before continuing. Do not suggest writing-board-tasks.
 
-When Open Questions are cleared:
+When the section exists and Open Questions are cleared:
 
 ```text
 Refined spec saved. Next:
