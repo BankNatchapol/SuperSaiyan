@@ -332,7 +332,7 @@ a nested `project.gitlab{}` sub-object — see Open Judgment Call 8 for the alte
   spec scopes it as an investigation spike, not a specified mechanism, given no clean
   reference implementation was found during research.
 
-## Open judgment calls
+## Resolved judgment calls
 
 1. **Skill-doc abstraction level** — should `run.md` etc. call `platform_*` function names
    inline, or stay fully CLI-agnostic in prose ("resolve the thread") with `platforms.md`
@@ -360,4 +360,9 @@ a nested `project.gitlab{}` sub-object — see Open Judgment Call 8 for the alte
    Free-tier availability universally.
 8. Config schema shape — flat optional fields on `project` (chosen above, minimal diff) vs. a
    nested `project.gitlab{}` sub-object (cleaner separation, slightly bigger diff to existing
-   config-reading code). Flagged as debatable, not resolved.
+   config-reading code). Chose the flat shape; the nested alternative is a possible follow-up,
+   not a blocker.
+
+## Open Questions
+
+None

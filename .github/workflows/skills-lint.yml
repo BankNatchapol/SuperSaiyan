@@ -17,6 +17,7 @@ on:
       - "scripts/super-board-wave-plan.sh"
       - "scripts/super-board-status.py"
       - "scripts/config-resolve.sh"
+      - "AGENTS.md"
       - "install.sh"
       - "scripts/bootstrap-app.sh"
       - "skills/supersaiyan/scripts/prepare.sh"
@@ -35,6 +36,8 @@ on:
       - "tests/test-md-block.sh"
       - "tests/test-glab-bootstrap.sh"
       - "tests/test-agents-md-install.sh"
+      - "tests/test-agents-md-map.py"
+      - "tests/test-open-questions-gate.py"
       - "tests/test-platform-contract.sh"
       - "tests/test-gitlab-auth-boardread.sh"
       - "tests/test-gitlab-cardmove-race.sh"
@@ -64,6 +67,7 @@ on:
       - "scripts/super-board-wave-plan.sh"
       - "scripts/super-board-status.py"
       - "scripts/config-resolve.sh"
+      - "AGENTS.md"
       - "install.sh"
       - "scripts/bootstrap-app.sh"
       - "skills/supersaiyan/scripts/prepare.sh"
@@ -82,6 +86,8 @@ on:
       - "tests/test-md-block.sh"
       - "tests/test-glab-bootstrap.sh"
       - "tests/test-agents-md-install.sh"
+      - "tests/test-agents-md-map.py"
+      - "tests/test-open-questions-gate.py"
       - "tests/test-platform-contract.sh"
       - "tests/test-gitlab-auth-boardread.sh"
       - "tests/test-gitlab-cardmove-race.sh"
@@ -220,3 +226,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./tests/test-agents-md-install.sh
+
+  agents-md-map:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/test-agents-md-map.py
+
+  open-questions-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/test-open-questions-gate.py

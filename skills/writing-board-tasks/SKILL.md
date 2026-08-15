@@ -17,6 +17,11 @@ Assume the Builder agent has **only the issue body** plus `PROJECT.md` — not y
 
 **REQUIRED INPUT:** Design spec at `docs/superpowers/specs/<feature-slug>-design.md` (from Step 16 — refining-spec, office-hours copy, or brainstorming).
 
+**Open Questions gate:** Look for an equivalent heading — `## Open Questions`, `## Open judgment calls`, or `## Unresolved`.
+- Heading present with **unanswered** items (no recorded recommendation, resolution, acceptance, or chosen option): **Refuse.** The human needs to resolve those items before task decomposition. Send them back to refining-spec only if they came from that path; do not bounce them solely to rename the heading.
+- No equivalent heading: **Warn and ask** whether to proceed. Do not refuse. Office-hours and brainstorming specs are not guaranteed to emit this heading.
+- Heading present and empty, `None`, or every item records a recommendation/resolution: proceed. A decision log belongs under a heading outside that set (for example `## Resolved judgment calls`). This gate is a documented convention for agents, not an enforcement boundary — relocating a section outside those three headings is a legitimate bypass for decision logs, and heading matching is not proof that a spec has no open work.
+
 **OPTIONAL INPUT:** An existing `docs/superpowers/plans/…` file if the user already ran `writing-plans` — use it as extra detail, but do not require it.
 
 **Save task files to:** `docs/superpowers/tasks/<feature-slug>/NN-short-name.md`

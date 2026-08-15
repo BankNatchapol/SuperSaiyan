@@ -88,6 +88,8 @@ install_claude() {
   fi
 
   echo "  → installing Claude Code with the official installer"
+  # Trust https://claude.ai over TLS — no stable checksum is published. Download to a
+  # complete temp file before execution instead of piping partial content.
   local installer
   installer=$(mktemp)
   curl -fsSL https://claude.ai/install.sh -o "$installer"

@@ -8,10 +8,10 @@ Read this first when working in **this repository** (`SuperSaiyan`). Humans foll
 
 | Repo | Role |
 |------|------|
-| **SuperSaiyan** (here) | Toolkit source: vendored **gstack**, **superpowers**, **super-board**; bridge skills; setup scripts; guides |
+| **SuperSaiyan** (here) | Toolkit source: flattened **skills** (super-board fork + bridge skills); setup scripts; guides; optional Control Center |
 | **User's app repo** (e.g. `my-first-agent-app`) | Real product code, GitHub issues, Project board, PRs — **where the pipeline runs** |
 
-Do not confuse the two. super-board slash commands and the feature pipeline run in the **app repo**, not in SuperSaiyan (except studying upstream code here).
+Do not confuse the two. super-board slash commands and the feature pipeline run in the **app repo**, not in SuperSaiyan (except studying skill sources here).
 
 ---
 
@@ -36,21 +36,31 @@ writing-board-tasks              → docs/superpowers/tasks/<slug>/*.md
 SuperSaiyan/
   AGENTS.md                          ← this file
   README.md
+  CLAUDE.md                          `@AGENTS.md` pointer
+  FUTURE_WORK.md                     backlog notes
+  TESTING.md                         test conventions
+  install.sh                         app-repo installer (skills + pipeline scripts)
   apps/desktop/                      optional Electron control center
   packages/
     control-protocol/                typed UI/main-process contract
     control-core/                    repo, GitHub, config, and watcher services
     ui/                              shared React renderer (no Electron imports)
-  design/dashboard-control-center/  extracted Aura Console design reference
+  design/dashboard-control-center/   extracted Aura Console design reference
   docs/
     GETTING-STARTED.md               ← primary human tutorial (20 steps)
     templates/                       issue.md, task-file.md, github-project-columns.md
     superpowers/tasks/README.md      task-folder convention
     super-board-analysis/            architecture + plan-to-issues bridge
-  .claude/skills/
+  skills/
     refining-spec/                   office-hours design → repo spec
     writing-board-tasks/             spec → PR-sized task .md files
-    supersaiyan/                      prepare tasks → Ready issues → lint
+    supersaiyan/                     prepare tasks → Ready issues → lint
+    super-board/                     board orchestration (fork)
+    super-build/                     Build lane
+    super-qa/                        QA lane
+    super-review/                    Review lane
+    test-driven-development/         TDD discipline used by Builder
+    verification-before-completion/  verification gate used by Builder and QA
   scripts/
     bootstrap-app.sh                 check/install dependencies + configure app repo
     install-bridge-skills.sh         copy bridge skills + templates → app repo
@@ -58,16 +68,19 @@ SuperSaiyan/
     tasks-to-issues.sh               task .md → gh issue create (run from app repo)
     split-plan-to-tasks.sh           stub only — prefer writing-board-tasks agent
     verify-super-board-setup.sh      smoke check for toolkit clones
-  super-board/                       upstream super-board (install.sh → app)
-  superpowers/                       upstream superpowers (plugin, not copied wholesale)
-  gstack/                            upstream gstack (global ~/.claude/skills/gstack)
+    super-board-wave.js              wave planner (issues only)
+  tests/                             shell/python integration tests for scripts/skills
+  .claude-plugin/                    Claude Code plugin manifest
+  .codex-plugin/                     Codex plugin manifest
+  .supersaiyan/configs/              onboard config for this repo (GitHub Project #3)
+  .gstack/                           optional local gstack artifact cache (gitignored)
 ```
 
 ---
 
 ## App repo layout (after bootstrap)
 
-Created by `super-board/install.sh` + `install-bridge-skills.sh` + `setup-gstack-artifacts-path.sh`:
+Created by `install.sh` + `install-bridge-skills.sh` + `setup-gstack-artifacts-path.sh`:
 
 ```text
 my-first-agent-app/
@@ -146,7 +159,7 @@ in this working tree have zero effect on any Claude Code session until:
 | **writing-board-tasks** | `docs/superpowers/specs/<slug>-design.md` | `docs/superpowers/tasks/<slug>/NN-*.md` | `Use writing-board-tasks for docs/superpowers/specs/…` |
 | **supersaiyan** | Task folder + onboard config | Ready GitHub issues + linted pre-flight | `/supersaiyan prepare <feature-slug>` |
 
-Both are forks/adaptations of superpowers/gstack patterns — see each `SKILL.md` under `.claude/skills/`.
+Both are forks/adaptations of superpowers/gstack patterns — see each `SKILL.md` under `skills/`.
 
 **writing-board-tasks** rules of thumb:
 - One task file = one GitHub issue = one PR through Build → QA → Review
@@ -211,10 +224,10 @@ Two asymmetries are real and not worth pretending away:
 - **Verbs:** `onboard`, `lint`, `status`, `run`, `stop`
 - **Trigger:** GitHub Project card in **Ready** linked to an **Issue**
 - **Does not:** auto-read plan files, auto-create issues from specs, run without a Ready card
-- **Wave planner:** issues only (`content.type == "Issue"`) — see `super-board/workflows/super-board-wave.js`
-- **Install:** `super-board/install.sh` — do not hand-copy skills unless debugging
+- **Wave planner:** issues only (`content.type == "Issue"`) — see `scripts/super-board-wave.js`
+- **Install:** `install.sh` — do not hand-copy skills unless debugging
 
-Config schema: `super-board/skills/super-board/references/config-schema.json`
+Config schema: `skills/super-board/references/config-schema.json`
 
 ---
 
@@ -236,14 +249,13 @@ Issue template: [docs/templates/issue.md](docs/templates/issue.md)
 | Change | Edit here |
 |--------|-----------|
 | Tutorial steps, human onboarding | `docs/GETTING-STARTED.md` |
-| Bridge skill behavior | `.claude/skills/refining-spec/`, `writing-board-tasks/` |
+| Bridge skill behavior | `skills/refining-spec/`, `skills/writing-board-tasks/` |
 | Issue/task file shape | `docs/templates/` |
 | Agent instructions installed into an app repo (AGENTS.md blocks) | `docs/templates/agent-blocks/` — never the installed copy |
 | Anything under a generated path | The source named in `.cursor/rules/supersaiyan-generated-files.mdc`, then re-run that generator |
 | Plan → issues analysis | `docs/super-board-analysis/plan-to-issues-bridge.md` |
-| super-board upstream behavior | `super-board/` (fork/vendor) |
-| gstack upstream behavior | `gstack/` — prefer SuperSaiyan bridge over patching |
-| superpowers upstream | `superpowers/` — use plugin + bridge skills |
+| super-board fork behavior | `skills/super-board/` |
+| gstack / superpowers upstream | installed plugins + bridge skills — do not vendor or patch here |
 
 After changing bridge skills in SuperSaiyan, re-run `install-bridge-skills.sh` on app repos to propagate.
 
@@ -298,7 +310,7 @@ Trigger phrases for supersaiyan include plain English (“fix the first issue”
 2. **Do not commit** unless the user explicitly asks. After a completed issue/task the user asked to ship, **commit and push** (user preference: always push after done).
 3. **Prefer bridge skills** over new one-off scripts for plan/spec/task decomposition.
 4. **bash 3.2** — scripts must run on macOS default bash (`mapfile` / `declare -A` break).
-5. **Upstream submodules** — `gstack/`, `superpowers/`, `super-board/` may be upstream clones; avoid drive-by edits.
+5. **super-board fork** — lives in `skills/super-board/`; avoid drive-by edits. Prefer SuperSaiyan bridge skills over patching upstream gstack or superpowers plugins.
 6. **Control Center stays optional** — UI code lives in `apps/` and `packages/`; never make it a prerequisite for skills or CLI use.
 7. **This repo has an onboarded `.supersaiyan/configs/supersaiyan.json`** (added 2026-08-08, moved from `.claude/supersaiyan/configs/` 2026-08-10), linked to GitHub Project #3 ("SuperSaiyan") which is used for real issue tracking here. `/supersaiyan run` drives the full autonomous Build → QA → Review loop in this repo now, same as any onboarded app repo — hand-driving branch → PR → Super QA → Super Review is no longer the only path, just still fine for ad hoc asks. That config sets `human_approves_merge: true`, though: even a clean Review pass only marks the PR ready, it does not squash-merge — a human still clicks merge. Don't flip that to auto-merge without asking; this repo ships as a pinned-commit Claude Code plugin, so a bad auto-merge to `main` doesn't go live until someone updates the plugin, but it then moves everyone on that pin at once. **Each arrow is a separate turn** still applies to manual/ad-hoc lane work done outside the autonomous loop: do one lane (Build, QA, or Review), post its result, then stop and report back — never chain two lanes (e.g. QA straight into Review) in the same response. The automated pipeline enforces this via separate worker dispatches per lane; collapsing lanes into one pass turns Review from an independent re-check of QA into the same reasoning re-approving itself, and removes the checkpoint where the user would otherwise see one lane's result before the next begins.
 8. **Never implement issue work directly on `main` in the primary worktree** — always create an issue-scoped branch first (`issue-N-<slug>`), even for a quick ad hoc "implement issue #N" ask that isn't going through a full `run` dispatch. See `skills/supersaiyan/SKILL.md` → "Golden rule: never implement issue work directly on the primary branch."
