@@ -35,6 +35,9 @@ on:
       - "tests/test-md-block.sh"
       - "tests/test-glab-bootstrap.sh"
       - "tests/test-agents-md-install.sh"
+      - "tests/test-platform-contract.sh"
+      - "tests/test-gitlab-auth-boardread.sh"
+      - "scripts/platforms/**"
       - ".github/workflows/skills-lint.yml"
   push:
     branches: [main]
@@ -71,6 +74,9 @@ on:
       - "tests/test-md-block.sh"
       - "tests/test-glab-bootstrap.sh"
       - "tests/test-agents-md-install.sh"
+      - "tests/test-platform-contract.sh"
+      - "tests/test-gitlab-auth-boardread.sh"
+      - "scripts/platforms/**"
 
 jobs:
   reference-sync:
@@ -138,6 +144,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./tests/test-glab-bootstrap.sh
+
+  platform-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-platform-contract.sh
+
+  gitlab-auth-boardread:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-gitlab-auth-boardread.sh
 
   agents-md-install:
     runs-on: ubuntu-latest
