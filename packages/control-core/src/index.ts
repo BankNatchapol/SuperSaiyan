@@ -107,7 +107,7 @@ async function resolveExtends(
   return merged;
 }
 
-function formatWorkerBackend(value: unknown): string {
+export function formatWorkerBackend(value: unknown): string {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const lanes = value as Record<string, unknown>;
     return ["build", "qa", "review"]

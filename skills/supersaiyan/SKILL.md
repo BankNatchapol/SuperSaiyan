@@ -48,7 +48,8 @@ One command set. Idea → merged PR.
 | `supersaiyan new <name>` | Read `references/new.md`, follow exactly |
 | `supersaiyan prepare <feature>` | Read `references/prepare.md`, follow exactly |
 | `supersaiyan prepare <slug> --phase N` | Read `references/project.md` → "Prepare — Phase Unlock" section |
-| `supersaiyan run [slug]` | Read `references/run-workflow.md`; lane lifecycles from `references/run.md` |
+| `supersaiyan run [slug]` (default — `worker_backend` unset or `"workflow"`) | Read `references/run-workflow.md`; lane lifecycles from `references/run.md` |
+| `supersaiyan run [slug]` with config `worker_backend` set to `"claude-p"`, `"codex-exec"`, `"cursor-agent"`, or a per-lane object (explicit opt-in) | Read `references/run.md` (+ `references/backends.md` for backend selection); spawn `nohup ./scripts/super-board-run.sh` |
 | `supersaiyan lint` | Read `references/lint.md`, follow exactly |
 | `supersaiyan status [slug]` | Read `references/status.md`, follow exactly |
 | `supersaiyan stop` | Read `references/stop.md`, follow exactly |
@@ -134,7 +135,7 @@ For multi-phase projects, `spec.md` routes to `references/project.md` which hand
 
 ## Internal pipeline skills — do not invoke directly for issue work
 
-These skills power the autonomous loop. **Do not invoke `super-build`, `super-qa`, or `super-review` directly to fix, implement, or close a GitHub issue** — even if the phrasing sounds like it names one of them. Route through this skill's `run` verb (`references/run-workflow.md`); it resolves config and dispatches with the `Read run.md → <Lane> lifecycle. Config: <path>.` instruction those skills need to behave safely. `super-build` does still guard itself if invoked directly (see its own Autonomy preflight) — but the correct path is through `run`, not through catching that guard.
+These skills power the autonomous loop. **Do not invoke `super-build`, `super-qa`, or `super-review` directly to fix, implement, or close a GitHub issue** — even if the phrasing sounds like it names one of them. Route through this skill's `run` verb: `"workflow"` / omitted → `references/run-workflow.md`; `"claude-p"` / `"codex-exec"` / `"cursor-agent"` or a per-lane object → `references/run.md` (headless `super-board-run.sh`). Both paths resolve config and dispatch with the `Read run.md → <Lane> lifecycle. Config: <path>.` instruction those skills need to behave safely. `super-build` does still guard itself if invoked directly (see its own Autonomy preflight) — but the correct path is through `run`, not through catching that guard.
 
 - `super-build` — Builder lane agent (implements code, opens PR; never merges/closes on its own)
 - `super-qa` — QA lane agent (runs tests, captures evidence)
