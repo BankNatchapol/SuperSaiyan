@@ -59,6 +59,8 @@ SuperSaiyan/
     super-build/                     Build lane
     super-qa/                        QA lane
     super-review/                    Review lane
+    test-driven-development/         TDD discipline used by Builder
+    verification-before-completion/  verification gate used by Builder and QA
   scripts/
     bootstrap-app.sh                 check/install dependencies + configure app repo
     install-bridge-skills.sh         copy bridge skills + templates → app repo
