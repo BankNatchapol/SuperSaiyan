@@ -13,6 +13,14 @@ test("enforces Electron isolation and rejects unsafe IPC payloads", async () => 
     expect(preferences.contextIsolation).toBe(true);
     expect(preferences.sandbox).toBe(true);
 
+    // Wait until the first snapshot finishes so diagnostic `claude --version`
+    // has been recorded. The security property is that rejected IPC did not
+    // spawn a command — not that Claude never ran. E2E fixtures already have
+    // SKILL.md, so `plugin list` is skipped.
+    await expect(page.getByText("E2E Project · full · main")).toBeVisible();
+    const commandLog = join(workspace.records, "commands.jsonl");
+    const before = await readJsonLines(commandLog);
+
     const checks = await page.evaluate(async () => {
       const bridge = (window as any).supersaiyan;
       const attempt = async (action: () => Promise<unknown>) => {
@@ -28,8 +36,9 @@ test("enforces Electron isolation and rejects unsafe IPC payloads", async () => 
       };
     });
     for (const result of Object.values(checks)) expect(result).not.toBe("accepted");
-    const commands = await readJsonLines(join(workspace.records, "commands.jsonl"));
-    expect(commands.filter((entry) => entry.tool === "claude")).toEqual([]);
+    // startCommand records `claude --name supersaiyan-ui-<repo>-<verb>` (and
+    // stdin later), not a `"rm"` argv token — so assert no new jsonl lines.
+    expect(await readJsonLines(commandLog)).toEqual(before);
     await expectNoRendererErrors(errors);
   } finally {
     await app.close();

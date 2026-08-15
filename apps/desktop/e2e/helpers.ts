@@ -1,5 +1,6 @@
 import { _electron as electron, chromium, expect, type Browser, type ElectronApplication, type Page, type TestInfo } from "@playwright/test";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { parseJsonLines } from "./json-lines";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
@@ -10,6 +11,7 @@ const exec = promisify(execFile);
 const root = resolve(__dirname, "../../..");
 const require = createRequire(__filename);
 const electronExecutable = require("electron") as string;
+const jsonEncode = `${JSON.stringify(process.execPath)} ${JSON.stringify(join(__dirname, "json-encode.mjs"))}`;
 
 type FixtureItem = {
   id: string;
@@ -156,12 +158,12 @@ process.exit(2);
 set -u
 record_dir="\${SUPERSAIYAN_E2E_RECORD_DIR}"
 mkdir -p "$record_dir"
-printf '{"tool":"claude","args":%s,"cwd":"%s"}\\n' "$(node -e 'console.log(JSON.stringify(process.argv.slice(1)))' "$@")" "$PWD" >> "$record_dir/commands.jsonl"
+printf '{"tool":"claude","args":%s,"cwd":"%s"}\\n' "$(${jsonEncode} "$@")" "$PWD" >> "$record_dir/commands.jsonl"
 if [ "\${1:-}" = "--version" ]; then echo "2.1.153 (Claude Code)"; exit 0; fi
 if [ "\${1:-}" = "plugin" ] && [ "\${2:-}" = "list" ]; then echo "supersaiyan"; exit 0; fi
 if printf '%s\n' "$@" | grep -qx -- "-p"; then
   prompt="\${@: -1}"
-  printf '{"tool":"claude-print","line":%s,"cwd":"%s"}\n' "$(node -e 'console.log(JSON.stringify(process.argv[1]))' "$prompt")" "$PWD" >> "$record_dir/commands.jsonl"
+  printf '{"tool":"claude-print","line":%s,"cwd":"%s"}\n' "$(${jsonEncode} --value "$prompt")" "$PWD" >> "$record_dir/commands.jsonl"
   printf '{"type":"assistant","message":{"content":[{"type":"text","text":"Running %s"}]}}\n' "$prompt"
   printf '{"type":"tool_use","name":"Bash","input":{"command":"git status --short"}}\n'
   printf '{"type":"tool_result","content":[{"type":"text","text":"clean"}]}\n'
@@ -170,7 +172,7 @@ if printf '%s\n' "$@" | grep -qx -- "-p"; then
 fi
 echo "Fake Claude ready"
 while IFS= read -r line; do
-  printf '{"tool":"claude-stdin","line":%s,"cwd":"%s"}\\n' "$(node -e 'console.log(JSON.stringify(process.argv[1]))' "$line")" "$PWD" >> "$record_dir/commands.jsonl"
+  printf '{"tool":"claude-stdin","line":%s,"cwd":"%s"}\\n' "$(${jsonEncode} --value "$line")" "$PWD" >> "$record_dir/commands.jsonl"
   echo "received: $line"
 done
 `);
@@ -287,12 +289,10 @@ export async function launchPackagedControlCenter(
 
 export async function readJsonLines(path: string): Promise<any[]> {
   try {
-    return (await readFile(path, "utf8")).split(/\r?\n/).filter(Boolean).flatMap((line) => {
-      try { return [JSON.parse(line)]; }
-      catch { return []; }
-    });
-  } catch {
-    return [];
+    return parseJsonLines(await readFile(path, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
   }
 }
 

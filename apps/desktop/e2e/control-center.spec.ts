@@ -224,6 +224,7 @@ test("refreshes feature discovery from filesystem watcher changes", async () => 
   await seedRegistry(workspace, [workspace.repoA]);
   const { app, page } = await launchControlCenter(workspace);
   try {
+    await expect(page.getByText("E2E Project · full · main")).toBeVisible();
     await page.getByRole("button", { name: /^Features/ }).click();
     await expect(page.getByText("new-watched-feature", { exact: true })).toHaveCount(0);
     await writeFile(join(workspace.repoA, "docs", "superpowers", "specs", "new-watched-feature-design.md"), "# Watched\n");
