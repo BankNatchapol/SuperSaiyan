@@ -16,9 +16,15 @@ gitlab_live_enabled() {
 _glg_fail() {
   if declare -f tfail >/dev/null 2>&1; then
     tfail "$1"
-  else
-    echo "  FAIL: $1" >&2
+    return 0
   fi
+  # No tfail to accumulate into. gitlab_live_gate_assert always returns 0 so a bare
+  # call under set -e keeps going, which means a caller without tfail would print
+  # this failure and still exit 0 — a broken gate reported as green, the exact bug
+  # class this helper exists to prevent. Fail loudly instead of silently.
+  echo "  FAIL: $1" >&2
+  echo "gitlab-live-gate: caller must define tfail() so gate failures are recorded" >&2
+  exit 1
 }
 
 # gitlab_live_gate_assert FILE [--orig-path] [--stub-auth] [--auth-ok-closed]

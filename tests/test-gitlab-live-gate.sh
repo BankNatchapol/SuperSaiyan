@@ -87,6 +87,17 @@ gitlab_live_gate_assert
 echo "$captured" | grep -q 'missing file' \
   || { echo "  FAIL: no-arg assert did not report missing file (unbound \$1?): $captured" >&2; FAIL=1; }
 
+# A caller with no tfail() cannot accumulate, and assert always returns 0 — so it must
+# hard-fail rather than print a failure and still exit 0 (a broken gate reported green).
+if bash -c '
+  set -euo pipefail
+  . "$1/tests/lib/gitlab-live-gate.sh"
+  gitlab_live_gate_assert "$2"
+' _ "$ROOT" "$BAD" >/dev/null 2>&1; then
+  echo "  FAIL: assert exited 0 for a caller with no tfail() (broken gate reads as green)" >&2
+  FAIL=1
+fi
+
 # Assert: gate + optional flags
 GOOD="$TD/gated.sh"
 cat > "$GOOD" <<'EOF'
