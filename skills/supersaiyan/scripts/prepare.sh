@@ -168,7 +168,7 @@ fi
 }
 # shellcheck disable=SC1090
 source "$PLATFORM_FILE"
-export PLATFORM_CONFIG_PATH="$CONFIG_FILE"
+export PLATFORM_CONFIG_PATH="$EFFECTIVE"
 platform_auth_check board || {
   echo "${GIT_PLATFORM} platform authentication check failed (Project access required)" >&2
   exit 69

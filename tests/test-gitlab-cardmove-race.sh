@@ -167,6 +167,35 @@ if ! grep -q 'add_labels=status::ready' "$GLAB_LOG"; then
   tfail "--add did not add status::ready"
 fi
 
+# 2b2. --add with CONFIG_PATH != EFFECTIVE must not verify against an empty project id
+# shellcheck disable=SC1091
+. "$ROOT/scripts/platform-config.sh"
+EXT_ROOT="$TD/extends-root"
+mkdir -p "$EXT_ROOT/configs"
+cat > "$EXT_ROOT/configs/base.json" <<'EOF'
+{
+  "git_platform": "gitlab",
+  "project": {"host": "gitlab.com", "full_path": "grp/realproj"}
+}
+EOF
+printf '%s\n' '{"extends":"base"}' > "$EXT_ROOT/configs/overlay.json"
+EXT_EFFECTIVE=$(platform_config_effective "$EXT_ROOT/configs/overlay.json") \
+  || tfail "platform_config_effective failed on extends overlay"
+: > "$GLAB_LOG"
+jq '.labels=["bug"]' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+export PLATFORM_CONFIG_PATH="$EXT_ROOT/configs/overlay.json"
+if ! platform_card_status_set --add "$EXT_EFFECTIVE" \
+  "https://gitlab.com/grp/realproj/-/work_items/7" Ready >/dev/null 2>&1; then
+  tfail "--add with overlay PLATFORM_CONFIG_PATH and effective --add config failed"
+fi
+if grep -q 'projects//issues' "$GLAB_LOG"; then
+  tfail "--add verify used empty project id (projects//issues) under extends overlay"
+fi
+if ! grep -q 'projects/grp%2Frealproj/issues/7' "$GLAB_LOG"; then
+  tfail "--add under extends did not hit projects/grp%2Frealproj/issues/7"
+fi
+export PLATFORM_CONFIG_PATH="$CFG"
+
 # 2c. retry-once on verify mismatch (force a duplicate on the first PUT only)
 jq '.labels=["status::ready"]' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
 : > "$GLAB_LOG"

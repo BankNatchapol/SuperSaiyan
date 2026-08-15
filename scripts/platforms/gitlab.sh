@@ -373,18 +373,10 @@ _gitlab_status_labels_csv() {
   jq -r '[.labels[]? | (if type == "object" then .name else . end) | select(startswith("status::"))] | join(",")'
 }
 
-platform_card_move_verify() {
-  # $1 = issue iid, $2 = expected column (Ready/QA/…). Exactly one status::*
-  # and it must project to $2. Used after every card-move write.
-  local iid="$1" expected="$2"
-  local cfg="" host="" full_path="" encoded raw labels status
-  cfg=$(_gitlab_config_path) || {
-    echo "platform_card_move_verify: GitLab config required" >&2
-    return 65
-  }
-  host=$(_gitlab_host_from_config "$cfg")
-  full_path=$(_gitlab_full_path_from_config "$cfg")
-  encoded=$(_gitlab_project_api_id "$full_path")
+_gitlab_card_move_verify_at() {
+  # $1 = host, $2 = encoded project id, $3 = iid, $4 = expected column.
+  local host="$1" encoded="$2" iid="$3" expected="$4"
+  local raw labels status
   raw=$(_gitlab_issue_get "$host" "$encoded" "$iid") || return 1
   labels=$(printf '%s' "$raw" | _gitlab_status_labels_csv)
   case "$labels" in
@@ -392,6 +384,21 @@ platform_card_move_verify() {
   esac
   status=$(printf '%s' "[\"$labels\"]" | platform_gitlab_status_from_labels)
   [ "$status" = "$expected" ]
+}
+
+platform_card_move_verify() {
+  # $1 = issue iid, $2 = expected column (Ready/QA/…). Exactly one status::*
+  # and it must project to $2. Used after every card-move write.
+  local iid="$1" expected="$2"
+  local cfg="" host="" full_path="" encoded
+  cfg=$(_gitlab_config_path) || {
+    echo "platform_card_move_verify: GitLab config required" >&2
+    return 65
+  }
+  host=$(_gitlab_host_from_config "$cfg")
+  full_path=$(_gitlab_full_path_from_config "$cfg")
+  encoded=$(_gitlab_project_api_id "$full_path")
+  _gitlab_card_move_verify_at "$host" "$encoded" "$iid" "$expected"
 }
 
 _gitlab_put_issue_labels() {
@@ -456,7 +463,7 @@ _gitlab_card_status_set_locked() {
   raw=$(_gitlab_issue_get "$host" "$encoded" "$iid") || return 1
   old=$(printf '%s' "$raw" | _gitlab_status_labels_csv)
   _gitlab_put_issue_labels "$host" "$encoded" "$iid" "$old" "$want" >/dev/null || return 1
-  if platform_card_move_verify "$iid" "$target"; then
+  if _gitlab_card_move_verify_at "$host" "$encoded" "$iid" "$target"; then
     return 0
   fi
   # Retry once: explicit two-step remove-then-add (remove verified first).
@@ -474,7 +481,7 @@ _gitlab_card_status_set_locked() {
   if [ -n "$want" ]; then
     _gitlab_put_issue_labels "$host" "$encoded" "$iid" "" "$want" >/dev/null || return 1
   fi
-  platform_card_move_verify "$iid" "$target"
+  _gitlab_card_move_verify_at "$host" "$encoded" "$iid" "$target"
 }
 
 platform_card_status_set() {

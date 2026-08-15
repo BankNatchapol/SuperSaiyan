@@ -69,7 +69,7 @@ source "$CONFIG_RESOLVER"
 CONFIG_PATH=$(platform_config_resolve "$REPO_DIR" "$EXPLICIT_CONFIG_PATH") || exit $?
 EFFECTIVE=$(platform_config_effective "$CONFIG_PATH") || exit 66
 GIT_PLATFORM=$(platform_config_resolve_platform "$EFFECTIVE" "${GIT_PLATFORM:-}") || exit $?
-export PLATFORM_CONFIG_PATH="$CONFIG_PATH"
+export PLATFORM_CONFIG_PATH="$EFFECTIVE"
 
 # Backend contract (see .claude/skills/super-board/references/backends.md). Three-tier lookup,
 # repo-root-relative: .supersaiyan/bin/backends/<name>.sh (new installs, install.sh's current
