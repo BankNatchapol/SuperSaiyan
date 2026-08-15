@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as controlCore from "./index";
 import { formatWorkerBackend, isPathInside } from "./index";
 
 const repository = {
@@ -8,6 +9,25 @@ const repository = {
   addedAt: "",
   lastOpenedAt: "",
 };
+
+// The barrel is the only entry point apps/desktop/src/main.ts has into this package, so the
+// module split behind it must not add or drop names.
+describe("package barrel", () => {
+  it("publishes exactly the documented public surface", () => {
+    expect(Object.keys(controlCore).sort()).toEqual([
+      "RepositoryRegistry",
+      "RepositoryWatchService",
+      "buildSnapshot",
+      "createSessionId",
+      "formatWorkerBackend",
+      "isPathInside",
+      "moveBoardCard",
+      "registerRepository",
+      "runnerEventsFromClaudeJson",
+      "runnerEventsFromClaudeJsonLine",
+    ]);
+  });
+});
 
 describe("control core safety", () => {
   it("accepts paths inside a registered repository", () => {
