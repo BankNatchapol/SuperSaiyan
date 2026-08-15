@@ -16,14 +16,16 @@ echo "checking gitlab.sh Group H (review threads)"
 bash -n "$GITLAB_SH" || tfail "syntax"
 # shellcheck disable=SC1090
 . "$GITLAB_SH"
+# shellcheck disable=SC1091
+. "$ROOT/tests/lib/gitlab-live-gate.sh"
+gitlab_live_gate_assert "$0"
 grep -q 'Open Judgment Call 5' "$GITLAB_SH" || tfail "OJC 5 comment missing in gitlab.sh"
 grep -q 'resolved (task 10)' "$ROOT/docs/superpowers/specs/gitlab-integration-design.md" \
   || tfail "OJC 5 not marked resolved in the design spec"
 grep -q 'position\[base_sha\]' "$GITLAB_SH" || tfail "thread_create missing form-field position spike notes"
 
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
-if ! command -v glab >/dev/null || ! glab auth status >/dev/null 2>&1; then
-  echo "  skip live thread checks (glab not authenticated)"
+if ! gitlab_live_enabled; then
+  echo "  skip live sandbox checks (set GITLAB_LIVE=1 with glab auth to run)"
   [ "$FAIL" -eq 0 ] || exit 1
   echo "PASS: test-gitlab-review-threads.sh (docs only)"
   exit 0

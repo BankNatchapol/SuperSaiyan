@@ -18,19 +18,9 @@ echo "checking gitlab.sh Groups D–E (card-move, claim/release)"
 bash -n "$GITLAB_SH" || tfail "bash -n reported a syntax error in gitlab.sh"
 # shellcheck disable=SC1090
 . "$GITLAB_SH"
-
-# issue #41: leftover stub glab must not be treated as an authenticated live CLI.
-# These greps inspect this file's live-gate / PATH restore / stub auth handler.
-# They must not match themselves — patterns are the implemented forms, not the regex.
-if ! grep -Eq '\[ "\$\{GITLAB_LIVE:-\}" = "1" \]' "$0"; then
-  tfail "live sandbox is not gated on GITLAB_LIVE=1"
-fi
-if ! awk '/^ORIG_PATH=/{s=1} /PATH="\$ORIG_PATH"/{r=1} END{exit !(s && r)}' "$0"; then
-  tfail "does not save and restore ORIG_PATH around stub glab"
-fi
-if ! grep -Eq '^[[:space:]]+auth\)' "$0"; then
-  tfail "stub glab has no auth) handler (must exit 1 so leftover PATH cannot impersonate a login)"
-fi
+# shellcheck disable=SC1091
+. "$ROOT/tests/lib/gitlab-live-gate.sh"
+gitlab_live_gate_assert "$0" --orig-path --stub-auth
 
 # ── 1. column ↔ status:: label ─────────────────────────────────────────────
 if ! declare -f platform_gitlab_label_from_status >/dev/null 2>&1; then
@@ -298,7 +288,7 @@ esac
 unset PLATFORM_CONFIG_PATH FORCE_DUP_STATUS
 export PATH="$ORIG_PATH"
 
-if [ "${GITLAB_LIVE:-}" = "1" ] && command -v glab >/dev/null 2>&1 && glab auth status >/dev/null 2>&1; then
+if gitlab_live_enabled; then
   LIVE_CFG="$TD/live.json"
   cat > "$LIVE_CFG" <<EOF
 {

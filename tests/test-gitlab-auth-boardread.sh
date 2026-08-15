@@ -36,21 +36,9 @@ fi
 
 # shellcheck disable=SC1090
 . "$GITLAB_SH"
-
-# issue #41 follow-up: leftover stub glab must not be treated as live GitLab.
-# Patterns must not match these greps themselves.
-if ! grep -Eq '\[ "\$\{GITLAB_LIVE:-\}" = "1" \]' "$0"; then
-  tfail "live sandbox is not gated on GITLAB_LIVE=1"
-fi
-if ! awk '/^ORIG_PATH=/{s=1} /PATH="\$ORIG_PATH"/{r=1} END{exit !(s && r)}' "$0"; then
-  tfail "does not save and restore ORIG_PATH around stub glab"
-fi
-if ! grep -Eq '\$\{GLAB_AUTH_OK:-0\}' "$0"; then
-  tfail "stub auth defaults to authenticated (want GLAB_AUTH_OK:-0)"
-fi
-if ! grep -Eq '^export GLAB_AUTH_OK=0$' "$0"; then
-  tfail "does not export GLAB_AUTH_OK=0 before the live gate"
-fi
+# shellcheck disable=SC1091
+. "$ROOT/tests/lib/gitlab-live-gate.sh"
+gitlab_live_gate_assert "$0" --orig-path --auth-ok-closed
 
 # ── 2. status:: derivation (single place, no API) ──────────────────────────
 if ! declare -f platform_gitlab_status_from_labels >/dev/null 2>&1; then
@@ -358,7 +346,7 @@ unset PLATFORM_CONFIG_PATH
 export GLAB_AUTH_OK=0
 export PATH="$ORIG_PATH"
 
-if [ "${GITLAB_LIVE:-}" = "1" ] && command -v glab >/dev/null 2>&1 && glab auth status >/dev/null 2>&1; then
+if gitlab_live_enabled; then
   LIVE_CFG="$TD/live.json"
   cat > "$LIVE_CFG" <<EOF
 {

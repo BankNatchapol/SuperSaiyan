@@ -15,6 +15,9 @@ echo "checking gitlab.sh Groups F–G (issue + MR CRUD)"
 bash -n "$GITLAB_SH" || tfail "bash -n reported a syntax error"
 # shellcheck disable=SC1090
 . "$GITLAB_SH"
+# shellcheck disable=SC1091
+. "$ROOT/tests/lib/gitlab-live-gate.sh"
+gitlab_live_gate_assert "$0" --orig-path --stub-auth
 
 if grep -vE '^\s*#' "$GITLAB_SH" | grep -qE -- '--wip\b'; then
   tfail "gitlab.sh still uses removed --wip (must use --draft)"
@@ -152,7 +155,7 @@ grep -q -- '--remove-source-branch' "$GLAB_LOG" || tfail "mr_merge_squash missin
 # ── live ───────────────────────────────────────────────────────────────────
 unset PLATFORM_CONFIG_PATH
 export PATH="$ORIG_PATH"
-if [ "${GITLAB_LIVE:-}" = "1" ] && command -v glab >/dev/null 2>&1 && glab auth status >/dev/null 2>&1; then
+if gitlab_live_enabled; then
   LIVE="$TD/live.json"
   cat > "$LIVE" <<EOF
 {"git_platform":"gitlab","project":{"host":"gitlab.com","full_path":"$SANDBOX"}}
