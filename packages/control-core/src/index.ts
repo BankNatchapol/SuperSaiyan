@@ -471,8 +471,9 @@ export async function buildSnapshot(repository: RepositoryRecord): Promise<Repos
     diagnostic("claude", "Claude Code", () => run(repository.path, "claude", ["--version"])),
     diagnostic("installed", "SuperSaiyan runtime", async () => {
       const skill = join(repository.path, ".claude", "skills", "supersaiyan", "SKILL.md");
+      if (await exists(skill)) return "Installed";
       const plugin = await run(repository.path, "claude", ["plugin", "list"]);
-      if ((await exists(skill)) || plugin.includes("supersaiyan")) return "Installed";
+      if (plugin.includes("supersaiyan")) return "Installed";
       throw new Error("Not installed in this repository");
     }),
   ]);

@@ -13,6 +13,11 @@ test("enforces Electron isolation and rejects unsafe IPC payloads", async () => 
     expect(preferences.contextIsolation).toBe(true);
     expect(preferences.sandbox).toBe(true);
 
+    // Wait until the first snapshot finishes so diagnostic `claude --version` /
+    // `plugin list` have been recorded. The security property is that rejected
+    // IPC did not spawn a command — not that Claude never ran.
+    await expect(page.getByText("E2E Project · full · main")).toBeVisible();
+
     const checks = await page.evaluate(async () => {
       const bridge = (window as any).supersaiyan;
       const attempt = async (action: () => Promise<unknown>) => {
@@ -29,7 +34,11 @@ test("enforces Electron isolation and rejects unsafe IPC payloads", async () => 
     });
     for (const result of Object.values(checks)) expect(result).not.toBe("accepted");
     const commands = await readJsonLines(join(workspace.records, "commands.jsonl"));
-    expect(commands.filter((entry) => entry.tool === "claude")).toEqual([]);
+    const unsafe = commands.filter((entry) => {
+      const blob = JSON.stringify(entry);
+      return blob.includes('"rm"') || blob.includes("ok\\nbad") || blob.includes("ok\nbad");
+    });
+    expect(unsafe).toEqual([]);
     await expectNoRendererErrors(errors);
   } finally {
     await app.close();
