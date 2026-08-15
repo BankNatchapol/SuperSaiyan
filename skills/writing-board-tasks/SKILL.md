@@ -15,9 +15,25 @@ Assume the Builder agent has **only the issue body** plus `PROJECT.md` — not y
 
 **Announce at start:** "I'm using the writing-board-tasks skill to create super-board task files."
 
-**REQUIRED INPUT:** Design spec at `docs/superpowers/specs/<feature-slug>-design.md` (from Step 16 — refining-spec, office-hours copy, or brainstorming).
+**REQUIRED INPUT:** A **canonical design spec** already written by one of the spec flows:
 
-**Open Questions gate:** Refuse if the spec lacks a `## Open Questions` heading, or if that section contains unresolved items (not empty and not `None`). Send the human back to refining-spec.
+| Input | Written by | Open Questions gate |
+|-------|------------|---------------------|
+| `docs/superpowers/specs/<feature-slug>-design.md` | refining-spec (Step 16), or the `/supersaiyan new` spec phase (`skills/supersaiyan/references/spec.md`) | **Applies** — the heading is required |
+| `docs/superpowers/projects/<project-slug>/phase-N/PHASE.md` | `/supersaiyan new` project mode (`skills/supersaiyan/references/project.md`), which dispatches this skill once per phase | Does not apply — PHASE.md carries no Open Questions section; project.md's own self-review is that gate |
+
+Raw `/office-hours` or superpowers `brainstorming` output is **not** an accepted input on its own — it is upstream product framing, not a canonical spec. Normalize it through the spec flow that owns it (see routing below) and come back with the file above.
+
+**Open Questions gate:** For a `docs/superpowers/specs/…-design.md` input, refuse if the spec lacks a `## Open Questions` heading, or if that section contains unresolved items (not empty and not `None`). Do not add the heading yourself — a heading you invent asserts "no open questions" that nobody verified.
+
+**Recovery routing — follow the spec's provenance, not a fixed skill.** Read the spec's `## Source` section (or ask, if it has none):
+
+| Provenance | Send the human back to |
+|------------|------------------------|
+| Office-hours design (`docs/gstack/designs/…`, `~/.gstack/…`) | **refining-spec** |
+| Brainstorm design (`docs/supersaiyan/designs/…`) | **`/supersaiyan new <slug>`** — its spec phase owns this file |
+| Project phase spec (`docs/superpowers/projects/…/PHASE.md`) | **`skills/supersaiyan/references/project.md`** Phase C, which writes PHASE.md |
+| No `## Source`, or unrecognized | **Ask which flow produced the spec** — do not guess a recovery skill |
 
 **OPTIONAL INPUT:** An existing `docs/superpowers/plans/…` file if the user already ran `writing-plans` — use it as extra detail, but do not require it.
 
@@ -182,7 +198,8 @@ runs lint.
 
 | Skill | Role in super-board pipeline |
 |-------|------------------------------|
-| **refining-spec** | **Before** — tightens spec (Step 16) |
+| **refining-spec** | **Before** — tightens an office-hours design into the spec (Step 16) |
+| **`/supersaiyan new` spec phase** | **Before** — the other canonical spec writer (`skills/supersaiyan/references/spec.md`) |
 | **writing-board-tasks** | **After spec** — PR-sized task files (Step 17) |
 | superpowers:writing-plans | **Not used** — optional; only if you want a plan file for humans |
 | superpowers:subagent-driven-development | Alternative path — interactive, no GitHub issues |

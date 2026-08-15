@@ -127,7 +127,8 @@ Next: /supersaiyan run
 
 **If B — Single feature:**
 
-Write `docs/superpowers/specs/<slug>-design.md` using the structure below, then announce:
+Write `docs/superpowers/specs/<slug>-design.md` using the structure below, run **Self-Review
+Before Continuing** (including the Open Questions gate) against it, then announce:
 ```
 Spec saved. Next: I'll break this into board tasks.
 ```
@@ -192,5 +193,16 @@ Never write: TBD, "as needed", "appropriate", "handle edge cases", "etc." withou
 - No placeholder language
 - File paths match what you actually read in Phase 3
 - Could `writing-board-tasks` decompose this without asking scope questions?
+
+**Open Questions gate (route B — single feature).** `writing-board-tasks` refuses a spec whose
+`## Open Questions` section is missing or still lists unresolved items, so clear it here rather
+than handing off into that refusal:
+
+- The spec MUST include a `## Open Questions` heading, and that section MUST be empty or
+  explicitly `None` before you announce the tasks phase.
+- If items are unresolved, **stop and ask the user** to resolve them — do not proceed to
+  `writing-board-tasks`.
+- Never add an empty heading just to pass the gate; an invented heading asserts "none" that
+  nobody verified.
 
 Fix anything that fails. Then announce next step.

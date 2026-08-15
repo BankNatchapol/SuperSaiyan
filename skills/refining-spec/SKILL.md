@@ -160,7 +160,7 @@ After writing the spec file:
 1. **Design coverage** — does every office-hours commitment appear in Requirements or Out of Scope?
 2. **Placeholder scan** — fix vague language
 3. **Code consistency** — do file paths and stack choices match what you read in Phase 3?
-4. **Open Questions gate** — the spec MUST include a `## Open Questions` heading. Hand off to writing-board-tasks only when that section exists and is empty or explicitly `None`. If the heading is missing, add it before finishing.
+4. **Open Questions gate** — the spec MUST include a `## Open Questions` heading. Hand off to writing-board-tasks only when that section exists and is empty or explicitly `None`. If the heading is missing, or the section still lists unresolved items, **stop and ask the human** (same as Execution Handoff below). Never add an empty heading yourself — that silently asserts there are no open questions when nobody checked.
 5. **writing-board-tasks readiness** — could `writing-board-tasks` decompose this without asking scope questions?
 
 Fix inline before finishing.
