@@ -26,6 +26,7 @@ on:
       - "tests/test-reference-sync.py"
       - "tests/test-backend-contract.sh"
       - "tests/test-build-safety-contract.sh"
+      - "tests/test-worker-docs-platform-agnostic.sh"
       - "tests/test-multi-backend-dispatch.sh"
       - "tests/test-config-extends.sh"
       - "tests/test-config-root-fallback.sh"
@@ -60,6 +61,7 @@ on:
       - "tests/test-reference-sync.py"
       - "tests/test-backend-contract.sh"
       - "tests/test-build-safety-contract.sh"
+      - "tests/test-worker-docs-platform-agnostic.sh"
       - "tests/test-multi-backend-dispatch.sh"
       - "tests/test-config-extends.sh"
       - "tests/test-config-root-fallback.sh"
@@ -86,6 +88,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./tests/test-build-safety-contract.sh
+
+  worker-docs-platform-agnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-worker-docs-platform-agnostic.sh
 
   multi-backend-dispatch:
     runs-on: ubuntu-latest

@@ -49,9 +49,9 @@ This board is the durable, machine-readable state for the loop. `docs/super-qa/q
 
 Resolution order (used by `scripts/super-qa-file-bug.sh` and the orchestrator):
 
-1. If `SUPER_QA_PROJECT_TITLE` is set, resolve the board via `platform_board_snapshot` (or the onboarded config) and pick the project whose title matches (case-insensitive).
+1. If `SUPER_QA_PROJECT_TITLE` is set, resolve the onboarded config (`project.owner` / `project.number`, or `project.full_path` on GitLab) and pick the project whose title matches (case-insensitive). `platform_board_snapshot` reads cards of that project after it is known — it does not list boards.
 2. Otherwise default to title `Super Ultimate QA`.
-3. Owner defaults to `$(gh repo view --json owner -q .owner.login)` or `SUPER_QA_PROJECT_OWNER` if set.
+3. Owner defaults to the onboarded config's `project.owner` (GitHub) or `project.full_path` (GitLab), or `SUPER_QA_PROJECT_OWNER` if set.
 
 If no matching project exists, the loop halts with a one-line error and instructs the operator to create one. Do not silently fall back to the repo's primary project — column semantics differ.
 
@@ -183,7 +183,9 @@ The `iteration-N.md` Section 3 is the per-iter audit (with `gh_issue: <N>` back-
 
 **Triage all loop-filed findings:**
 ```
-platform_issue_view / board snapshot filtered to label source:qa, state open
+platform_board_snapshot <number-or-config> <owner>
+  # then filter snapshot items by label source:qa and state open
+  # (listing-by-label is not a platform_* function)
 ```
 
 This is a carved exception to the project rule "ask before `platform_issue_create`": the loop is autonomous and unattended, so it is authorized to auto-file — but ONLY with the clear `source:qa` label and the evidence template below.

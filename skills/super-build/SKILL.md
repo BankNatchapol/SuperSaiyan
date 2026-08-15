@@ -50,7 +50,7 @@ Reads `Ready` from the repo's feature project. Resolution order:
 
 1. **`BUILD_LOOP_PROJECT`** env var — project number (e.g. `2`)
 2. **`BUILD_LOOP_OWNER`** env var — project owner (e.g. `EricTechPro`)
-3. **Auto-discovery fallback:** if env vars unset, resolve the onboarded config and use `platform_board_snapshot` to list boards/projects; pick the one whose `title` matches the repo name (`Fitbox Admin` for this project), or the only open project if there's exactly one.
+3. **Auto-discovery fallback:** if env vars unset, resolve the onboarded config and read `project.number` + `project.owner` (GitHub) or `project.full_path` (GitLab). `platform_board_snapshot` then reads cards of that already-known project — it does not list boards.
 
 Surface: `🎯 Reading project: EricTechPro/Fitbox Admin (#2), column "Ready"`.
 
@@ -78,7 +78,7 @@ Standalone and QA-loop mode never run in the same orchestrator session by defaul
 Before reading the board:
 
 - Confirm the main worktree is clean: `git status --porcelain` must be empty.
-- Confirm `gh auth status` works and the repo remote points at the expected GitHub repo.
+- Confirm `platform_auth_check` succeeds and the repo remote points at the expected forge.
 - Confirm `jq`, `git`, and `claude` are available.
 - Resolve and print `BUILD_LOOP_OWNER` and `BUILD_LOOP_PROJECT`.
 - Run `git fetch origin` and identify the base branch from the current checkout; do **not** assume `main`.
@@ -92,7 +92,8 @@ Source column is `Ready` in standalone mode, `Bug` in QA-loop mode (override wit
 SOURCE_COLUMN="${BUILD_LOOP_SOURCE_COLUMN:-${BUILD_LOOP_QA_MODE:+Bug}}"
 SOURCE_COLUMN="${SOURCE_COLUMN:-Ready}"
 
-platform_board_snapshot  # filter to $SOURCE_COLUMN Issues via jq on the normalized snapshot
+platform_board_snapshot "$BUILD_LOOP_PROJECT" "$BUILD_LOOP_OWNER" \
+  | jq --arg col "$SOURCE_COLUMN" '.items[] | select(.status == $col and .content.type == "Issue")'
 ```
 
 For each Ready item:
@@ -228,7 +229,7 @@ The preamble at `references/worker-preamble.md` is the worker contract: decision
 ## Recovery / re-entry
 
 If the user invokes `/super-build` after a partial run:
-- Re-read open issues via `platform_board_snapshot` / `platform_issue_view`. Issues already closed are skipped automatically.
+- Re-read open issues via `platform_board_snapshot <number-or-config> <owner>` (then `platform_issue_view N` per card if needed). Issues already closed are skipped automatically.
 - If issue N already has an open PR from a prior `loop/issue-N` branch: skip re-dispatch, report the existing PR URL instead — don't open a duplicate PR.
 - If `.worktrees/issue-N` exists for an N that's still open: a previous worker was interrupted. Default: notify the user and ask before auto-resuming (a re-dispatch overwrites the previous attempt's branch).
 - If the `loop:in-progress` label is set on issue N but no worktree exists: stale lock from a crashed orchestrator. Remove the label and treat as ready.
