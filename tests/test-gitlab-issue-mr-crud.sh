@@ -87,6 +87,9 @@ case "$cmd" in
       *) echo '{}' ;;
     esac
     ;;
+  auth)
+    exit 1
+    ;;
   *) echo "ok" ;;
 esac
 EOF
@@ -95,6 +98,7 @@ CFG="$TD/cfg.json"
 cat > "$CFG" <<'EOF'
 {"git_platform":"gitlab","project":{"host":"gitlab.com","full_path":"group/demo"}}
 EOF
+ORIG_PATH="$PATH"
 export PLATFORM_CONFIG_PATH="$CFG" PATH="$TD/bin:$PATH" GLAB_LOG
 
 body="$TD/body.md"
@@ -147,7 +151,7 @@ grep -q -- '--remove-source-branch' "$GLAB_LOG" || tfail "mr_merge_squash missin
 
 # ── live ───────────────────────────────────────────────────────────────────
 unset PLATFORM_CONFIG_PATH
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export PATH="$ORIG_PATH"
 if [ "${GITLAB_LIVE:-}" = "1" ] && command -v glab >/dev/null 2>&1 && glab auth status >/dev/null 2>&1; then
   LIVE="$TD/live.json"
   cat > "$LIVE" <<EOF
