@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Play, Plus, Search, Wrench, X, Zap } from "lucide-react";
 import type { CommandRequest, ControlTransport, RunnerEvent, RunnerSession } from "@supersaiyan/control-protocol";
+import { detectChoices, type ParsedChoices } from "./detectChoices";
 
 type RunnerLine = {
   kind: "assistant" | "error" | "user" | "question";
@@ -21,28 +22,6 @@ type ThinkingBlock = {
 type DisplayItem = RunnerLine | ThinkingBlock;
 
 const TOOL_PREVIEW_LINES = 3;
-
-type Choice = { letter: string; description: string };
-
-type ParsedChoices = { choices: Choice[]; preamble: string };
-
-function detectChoices(text: string): ParsedChoices | null {
-  const lines = text.split("\n");
-  const choices: Choice[] = [];
-  let firstChoiceLine = -1;
-
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i]!.match(/^(?:>\s*)?\*{0,2}([A-Z])\)\*{0,2}\s+(.*)/);
-    if (m && m[1] && m[2]) {
-      if (firstChoiceLine === -1) firstChoiceLine = i;
-      choices.push({ letter: m[1], description: m[2].replace(/\*+/g, "").trim() });
-    }
-  }
-  if (choices.length < 2) return null;
-
-  const preamble = lines.slice(0, firstChoiceLine).join("\n").trim();
-  return { choices, preamble };
-}
 
 function inlineNodes(text: string, lineKey: number): ReactNode[] {
   const parts: ReactNode[] = [];
