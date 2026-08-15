@@ -59,14 +59,17 @@ SuperSaiyan/
     super-build/                     Build lane
     super-qa/                        QA lane
     super-review/                    Review lane
+    test-driven-development/         TDD discipline workers cite in task frontmatter
+    verification-before-completion/  evidence-before-claims gate for Build and QA
   scripts/
     bootstrap-app.sh                 check/install dependencies + configure app repo
     install-bridge-skills.sh         copy bridge skills + templates → app repo
     setup-gstack-artifacts-path.sh   docs/gstack/ layout + AGENTS.md rules → app repo
     tasks-to-issues.sh               task .md → gh issue create (run from app repo)
     split-plan-to-tasks.sh           stub only — prefer writing-board-tasks agent
-    verify-super-board-setup.sh      smoke check for toolkit clones
+    verify-super-board-setup.sh      smoke check for this flattened toolkit's own layout
     super-board-wave.js              wave planner (issues only)
+    super-board-status.py            renders the live board status template
   tests/                             shell/python integration tests for scripts/skills
   .claude-plugin/                    Claude Code plugin manifest
   .codex-plugin/                     Codex plugin manifest

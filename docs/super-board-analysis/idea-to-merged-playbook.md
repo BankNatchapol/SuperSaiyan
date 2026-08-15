@@ -67,9 +67,9 @@ flowchart TB
 | Claude Code + dynamic workflows | `/config` |
 | `gh` CLI authenticated (`project`, `repo` scopes) | `gh auth login` |
 | `jq`, bash 4+, Python 3 | system |
-| **super-board** installed | `./super-board/install.sh .` |
+| **super-board** installed | `./install.sh .` (root installer — skills live at `skills/`, nothing vendored) |
 | **superpowers** plugin | `/plugin install superpowers@claude-plugins-official` |
-| **gstack** | `cd gstack && ./setup` (needs Bun) |
+| **gstack** | `scripts/bootstrap-app.sh` clones and runs gstack's `setup` (needs Bun) |
 | GitHub Project v2 | Columns: `Backlog`, `Ready`, `Building`, `QA`, `Review`, `Done`, `Blocked`, `Skipped` |
 
 ---
