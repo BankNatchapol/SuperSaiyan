@@ -33,6 +33,7 @@ on:
       - "tests/test-status-json.py"
       - "tests/test-agent-config-sync.py"
       - "tests/test-md-block.sh"
+      - "tests/test-glab-bootstrap.sh"
       - "tests/test-agents-md-install.sh"
       - ".github/workflows/skills-lint.yml"
   push:
@@ -68,6 +69,7 @@ on:
       - "tests/test-status-json.py"
       - "tests/test-agent-config-sync.py"
       - "tests/test-md-block.sh"
+      - "tests/test-glab-bootstrap.sh"
       - "tests/test-agents-md-install.sh"
 
 jobs:
@@ -130,6 +132,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./tests/test-md-block.sh
+
+  glab-bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-glab-bootstrap.sh
 
   agents-md-install:
     runs-on: ubuntu-latest
