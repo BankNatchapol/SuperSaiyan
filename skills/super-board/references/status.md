@@ -1,5 +1,10 @@
 # `super-board status` — read-only live snapshot
 
+> **GitHub-only.** If `config.git_platform` is `gitlab`, halt and tell the user
+> this verb is GitHub-only in this milestone. Do not run `gh` commands. See
+> `references/platforms.md`. Next step on GitLab is `super-board run` with a
+> bash-dispatcher backend (`claude-p` / `codex-exec` / `cursor-agent`).
+
 > **Source of truth:** spec §7.5 in
 > `docs/superpowers/specs/2026-05-21-super-board-design.md`.
 >

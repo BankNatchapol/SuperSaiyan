@@ -244,9 +244,13 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
 
 13. SUMMARY
     "✅ Onboard complete.
-     📋 Go write your tickets here: <project URL>
-     🧹 Then run `super-board lint` to make sure each issue has clear
-        success criteria."
+     📋 Go write your tickets here: <project URL>"
+    ├─ github: "🧹 Then run `super-board lint` to make sure each issue has
+    │          clear success criteria."
+    └─ gitlab: "⏭ lint / status / stop are GitHub-only in this milestone
+               (see `references/platforms.md`). Next: `super-board run`
+               with `worker_backend` set to `claude-p` / `codex-exec` /
+               `cursor-agent` (not `workflow`)."
 ```
 
 ---
