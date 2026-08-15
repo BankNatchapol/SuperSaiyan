@@ -22,6 +22,7 @@ export const meta = {
 //   cards: [{ number, status, title }],     // output of super-board-wave-plan.sh
 //   humanApprovesMerge: boolean (optional, default false),
 //   tier: 'low' | 'medium' | 'high' (optional, default 'medium'),  // run model ladder
+//   gitPlatform: 'github' | 'gitlab' (optional, default 'github'),
 // }
 // The harness can deliver `args` as a JSON-encoded string (the tool param is
 // untyped) — normalize before validating.
@@ -124,7 +125,8 @@ const results = await pipeline(
   async (card) => {
     if (card.status !== 'Ready') return { card, cls: null }
     const cls = await agent(
-      `Read GitHub issue #${card.number} ("${card.title}") — body and all comments — using gh issue view. ` +
+      `Read issue #${card.number} ("${card.title}") — body and all comments — using platform_issue_view ` +
+      `(git_platform=${input.gitPlatform || 'github'}; never call gh/glab directly). ` +
       `Classify it: kind (feature|bug|docs|chore) and complexity (low|medium|high) judged by the scope of code change required.`,
       { label: `classify:#${card.number}`, phase: 'Classify', model: classifyModel, schema: CLASSIFY_SCHEMA }
     )

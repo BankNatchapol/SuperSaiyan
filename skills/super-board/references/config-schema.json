@@ -62,10 +62,17 @@
   "extends": null,
 
   "project": {
+    // GitHub (`git_platform: "github"`, default):
     "owner": "<github-owner>",
-    "title": "<project title on GitHub>",
-    // Required; `gh project` CLI takes number, not title (titles aren't unique).
-    "number": 0
+    "title": "<project title>",
+    // Required on GitHub; `gh project` CLI takes number, not title (titles aren't unique).
+    "number": 0,
+    // GitLab (`git_platform: "gitlab"`) — used instead of owner/number:
+    "host": "gitlab.com",
+    "full_path": "<group/project>",
+    // Issue-board id from platform_board_ensure; null if the API failed and
+    // the human created lists in the GitLab UI (or has not yet).
+    "board_id": null
   },
 
   // "full" or "qa-only".

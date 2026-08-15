@@ -523,9 +523,23 @@ def main() -> int:
 
     cfg = json.loads(config_path.read_text())
     cfg = resolve_extends(cfg, config_path)
-    project_owner: str = cfg["project"]["owner"]
-    project_number: int = int(cfg["project"]["number"])
-    adapter = get_status_adapter(cfg.get("git_platform", "github"))
+    git_platform = cfg.get("git_platform", "github")
+    proj_cfg = cfg.get("project") or {}
+    if git_platform == "gitlab":
+        if not proj_cfg.get("full_path"):
+            print("gitlab config requires project.full_path", file=sys.stderr)
+            return 66
+        project_owner = str(proj_cfg.get("full_path") or "")
+        project_number = 0
+        adapter = get_status_adapter("gitlab", cfg)
+    else:
+        try:
+            project_owner = str(proj_cfg["owner"])
+            project_number = int(proj_cfg["number"])
+        except (KeyError, TypeError, ValueError):
+            print("github config requires project.owner and project.number", file=sys.stderr)
+            return 66
+        adapter = get_status_adapter("github")
     # `null`/absent key both mean "use the documented default of 2"; an
     # explicit `null` for *unlimited* is only distinguishable by checking the
     # key is present — callers that want unlimited must still see None here,
@@ -710,11 +724,20 @@ def main() -> int:
                 "truth_threshold": tt,
                 "max_workers": max_workers,
             },
-            "project": {
-                "owner": project_owner,
-                "number": project_number,
-                "title": proj.get("title", config_slug),
-            },
+            "project": (
+                {
+                    "host": proj.get("host", "gitlab.com"),
+                    "full_path": proj.get("full_path"),
+                    "board_id": proj.get("board_id"),
+                    "title": proj.get("title", config_slug),
+                }
+                if git_platform == "gitlab"
+                else {
+                    "owner": project_owner,
+                    "number": project_number,
+                    "title": proj.get("title", config_slug),
+                }
+            ),
             "lanes": {
                 status: by_status[status]
                 for status in ("Backlog", "Ready", "Building", "QA", "Review", "Done", "Blocked", "Skipped")
@@ -737,7 +760,10 @@ def main() -> int:
         print(json.dumps(payload, ensure_ascii=False))
         return 0
 
-    print(f"📊 super-board · {proj['title']} (#{proj['number']})")
+    if git_platform == "gitlab":
+        print(f"📊 super-board · {proj.get('title', config_slug)} ({proj.get('full_path', '?')})")
+    else:
+        print(f"📊 super-board · {proj.get('title', config_slug)} (#{proj.get('number')})")
     print("─" * 80)
     print(f"config: {config_slug}   variant: {cfg.get('variant', '?')}   base: {cfg.get('base_branch', '?')}")
     print(f"mode:   {mode_label:<22} truth gate: {gate_label}")

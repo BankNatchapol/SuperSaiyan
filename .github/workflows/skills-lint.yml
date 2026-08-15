@@ -37,6 +37,12 @@ on:
       - "tests/test-agents-md-install.sh"
       - "tests/test-platform-contract.sh"
       - "tests/test-gitlab-auth-boardread.sh"
+      - "tests/test-gitlab-cardmove-race.sh"
+      - "tests/test-gitlab-issue-mr-crud.sh"
+      - "tests/test-gitlab-review-threads.sh"
+      - "tests/test-gitlab-ci-raw-url.sh"
+      - "tests/test-gitlab-onboard.sh"
+      - "tests/test-status-json-gitlab.py"
       - "scripts/platforms/**"
       - ".github/workflows/skills-lint.yml"
   push:
@@ -76,6 +82,12 @@ on:
       - "tests/test-agents-md-install.sh"
       - "tests/test-platform-contract.sh"
       - "tests/test-gitlab-auth-boardread.sh"
+      - "tests/test-gitlab-cardmove-race.sh"
+      - "tests/test-gitlab-issue-mr-crud.sh"
+      - "tests/test-gitlab-review-threads.sh"
+      - "tests/test-gitlab-ci-raw-url.sh"
+      - "tests/test-gitlab-onboard.sh"
+      - "tests/test-status-json-gitlab.py"
       - "scripts/platforms/**"
 
 jobs:
@@ -156,6 +168,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./tests/test-gitlab-auth-boardread.sh
+
+  gitlab-cardmove-race:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-gitlab-cardmove-race.sh
+
+  gitlab-issue-mr-crud:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-gitlab-issue-mr-crud.sh
+
+  gitlab-review-threads:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-gitlab-review-threads.sh
+
+  gitlab-ci-raw-url:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-gitlab-ci-raw-url.sh
+
+  gitlab-onboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tests/test-gitlab-onboard.sh
+
+  status-json-gitlab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/test-status-json-gitlab.py
 
   agents-md-install:
     runs-on: ubuntu-latest

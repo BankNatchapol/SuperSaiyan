@@ -19,10 +19,10 @@ inferred. Lead with one big "goal" question — it branches the entire flow.
 ```
 super-board onboard
 ─────────────────────────────────────────────────────────
-super-board = a GitHub Project pipeline that runs autonomously.
-              It drains issues from Ready across columns
-              (Building → QA → Review → Done) until the board
-              is empty or only Blocked/Skipped cards remain.
+super-board = a GitHub Project or GitLab Issue Board pipeline
+              that runs autonomously. It drains issues from Ready
+              across columns (Building → QA → Review → Done) until
+              the board is empty or only Blocked/Skipped cards remain.
 
 Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
 ─────────────────────────────────────────────────────────
@@ -35,6 +35,12 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
 ```
 0. SILENT DETECT (no questions yet)
    ├─ CWD: git repo? any commits? remote URL?
+   ├─ git_platform from `git remote get-url origin` host via
+   │    scripts/lib/git-remote-host.sh (`git_remote_platform`).
+   │    github.com → github; gitlab.com / gitlab.* → gitlab.
+   │    Ask ONLY if the host is ambiguous (neither).
+   │    git_platform is orthogonal to worker_backend — do not infer
+   │    one from the other.
    ├─ Existing configs in .supersaiyan/configs/ (or a legacy .claude/supersaiyan/configs/ / .claude/super-board/configs/ install)?
    └─ Existing PROJECT.md?
 
@@ -133,36 +139,53 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
       have no plugin skill cache and can only read files that physically
       exist in the repo. See `references/backends.md`.
 
-3. VERIFY GITHUB AUTH (always)
-   ├─ `gh auth status`  — must be authenticated
-   ├─ Scope check: `repo`, `project` (`project` already includes Project read access)
-   ├─ If missing → `gh auth refresh -s repo,project`
-   └─ Tell user WHY: "needed to move cards on your board and create
-       projects on your behalf"
+3. VERIFY FORGE AUTH (always; branches on git_platform)
+   ├─ github:
+   │    ├─ `platform_auth_check board` (wraps `gh auth status`)
+   │    ├─ Scope check: `repo`, `project`
+   │    ├─ If missing → `gh auth refresh -s repo,project`
+   │    └─ Why: move cards and create projects on the user's behalf
+   └─ gitlab:
+        ├─ `platform_auth_check board` (wraps `glab auth status`)
+        ├─ PAT needs `api` + `write_repository`; OAuth needs Developer+
+        │    on the target project (`access_level >= 30`)
+        ├─ If missing → `glab auth login` (add `--hostname` for self-hosted)
+        └─ Why: move `status::*` labels and create the Issue Board
 
 4. ENFORCE LOCAL GIT REPO (mandatory)
    ├─ If CWD is not a git repo → "I need to init git before continuing. Proceed? [y/n]"
    ├─ If no remote on local repo and user picked B or C with `push`/`pr`/`merge` authority later
-   │     → offer `gh repo create`
+   │     → offer `platform_repo_create` (`gh repo create` / `glab repo create`)
    └─ Reason: version control is required to manage worktrees, branches, and merges.
 
 5. RESOLVE TARGET (branches by Q1 answer)
    ├─ A (URL only): ask for the URL → save target.url. Repo = null.
    ├─ B (build local repo):
-   │    ├─ Auto-detect remote. Offer `gh repo create` if missing.
+   │    ├─ Auto-detect remote. Offer `platform_repo_create` if missing.
    │    ├─ No commits? Offer "scaffold from template? [NestJS / Next.js / Vite / blank]"
    │    └─ Save repo = {path, remote_or_null}. Optionally also save target.url.
    └─ C (QA local repo): auto-detect repo. Ask only for target URL if any.
 
-6. PICK OR CREATE GITHUB PROJECT
-   ├─ List existing projects under repo owner (or user's account if no repo)
-   ├─ If picked → validate column shape matches variant (fix if not)
-   └─ If new → `gh project create --title <name>` → create columns for variant
+6. PICK OR CREATE THE BOARD (branches on git_platform)
+   ├─ github:
+   │    ├─ List existing projects under repo owner (or user's account if no repo)
+   │    ├─ If picked → validate column shape matches variant (fix if not)
+   │    └─ If new → `gh project create --title <name>` → create columns for variant
+   └─ gitlab:
+        ├─ Write `project.host` + `project.full_path` from the remote
+        ├─ `platform_board_ensure <config>` creates the SuperSaiyan Issue Board
+        │    (`POST .../boards` + one list per `status::*` label)
+        └─ On API failure: print the exact GitLab UI steps from the adapter
+             and continue with `board_id: null` — do not hard-fail
 
-7. VALIDATE / CREATE COLUMNS (idempotent)
+7. VALIDATE / CREATE COLUMNS (idempotent; branches on git_platform)
    ├─ Full variant (7 total):    Ready · Building · QA · Review · Done · Blocked · Skipped
    ├─ QA-only variant (6 total): Ready ·            QA · Review · Done · Blocked · Skipped
-   └─ Read Status field, add missing options, re-read to confirm.
+   ├─ github: Read Status field, add missing options, re-read to confirm
+   │          (`platform_board_ensure <number> <owner> <options…>`).
+   └─ gitlab: `platform_label_ensure` each `status::<column>` (list, then create
+              if missing — do not suppress-and-ignore). Then `platform_board_ensure`
+              writes `project.board_id` (or null).
 
 8. AUTO-GENERATE PROJECT.md (skip if URL-only or user opts out)
    ├─ Spawn sub-agent: read whichever manifest set exists + README + top-level structure:
@@ -181,10 +204,13 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
 9. PICK BASE BRANCH (Full variant with local repo, OR QA-only with a local repo)
    (Skip entirely only when target.type == "url" with no repo.)
    ├─ Detect current branch + remote default branch
-   ├─ Production-detection (any of these signals → treat as production):
-   │    • `.github/workflows/*.yml` contains `deploy` job triggered on push to base
-   │    • `vercel.json` / `netlify.toml` present at repo root
-   │    • Branch protection rules require PR review on base (gh api repos/.../branches/<base>/protection)
+   ├─ Production-detection via `platform_detect_production_ci` +
+   │    `platform_detect_branch_protection` (any signal → treat as production):
+   │    • github: `.github/workflows/*.yml` deploy-on-push-to-base
+   │    • gitlab: `.gitlab-ci.yml` job with `environment:` + main-branch rule
+   │      (one local `include:` is resolved)
+   │    • `vercel.json` / `netlify.toml` present at repo root (both platforms)
+   │    • Branch protection on base
    │    • README contains "production" or live URL on the base branch
    ├─ Ask: "Which branch should super-board cut feature branches from
    │        and squash-merge them back into?"
@@ -210,10 +236,11 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
 
 12. WRITE CONFIG + ACTIVE POINTER
     ├─ Generate `description` (short, scannable)
-    ├─ Record notifications.bot_identity — either `super-board-bot[bot]`
-    │  (when a GitHub App is installed on the repo) or the user's own
-    │  GitHub login (solo projects). Pick during step 3 based on what
-    │  `gh auth status` returned.
+    ├─ Record notifications.bot_identity via `platform_bot_identity_resolve`
+    │  (GitHub App / personal login, or GitLab project bot / personal username).
+    ├─ github project block: owner / number / title
+    ├─ gitlab project block: host / full_path / board_id (null allowed)
+    ├─ Write git_platform alongside worker_backend (they are independent)
     ├─ Write .supersaiyan/configs/<slug>.json (committed)
     └─ Write .supersaiyan/active ← <slug> (gitignored)
 
@@ -228,17 +255,18 @@ Progress: 🛠 onboard (you are here)  →  🧹 lint  →  🤖 run
 
 ## Error recovery during onboard
 
-Every onboard step that touches GitHub or the filesystem has a defined recovery path. The user never gets a raw `gh` stack trace — they get a friendly diagnosis and the exact next command.
+Every onboard step that touches the forge or the filesystem has a defined recovery path. The user never gets a raw `gh`/`glab` stack trace — they get a friendly diagnosis and the exact next command.
 
 | Step | Failure mode | What the user sees |
 |---|---|---|
 | 2. which tool(s) | `codex login status` / `agent status` fails for a selected tool | `🔑 <tool> isn't logged in. Run: \`codex login\` / \`agent login\` — then re-run super-board onboard.` |
-| 3. gh auth | Not logged in | `🔑 You're not signed in to GitHub. Run: \`gh auth login\` — then re-run super-board onboard.` |
-| 3. gh auth | Scope refused (user said no on browser) | `🔑 GitHub asked for repo,project scopes and you said no. Without them I can't read or move project cards. Re-run: \`gh auth refresh -s repo,project\`.` |
+| 3. forge auth | Not logged in | github: `🔑 You're not signed in to GitHub. Run: \`gh auth login\` — then re-run super-board onboard.` gitlab: `🔑 You're not signed in to GitLab. Run: \`glab auth login\` — then re-run.` |
+| 3. forge auth | Scope refused | github: `🔑 GitHub asked for repo,project scopes and you said no. Re-run: \`gh auth refresh -s repo,project\`.` gitlab: `🔑 GitLab token needs api+write_repository (PAT) or Developer+ on the project (OAuth).` |
 | 4. git init | User declined | Halt with: `🛑 super-board needs a git repo. Re-run when ready.` |
-| 5. gh repo create | Quota/perm denied | `📦 GitHub refused to create the repo (org admin required, or you hit your free-repo quota). Options: (a) pick an existing repo, (b) create one in the web UI then re-run, (c) skip repo and run URL-only.` |
-| 6. gh project create | Org project denied | `🔑 You don't have permission to create projects under <org>. Either ask an org admin, or pick your personal account: \`gh project create --owner @me\`.` |
-| 6. gh project pick | Project deleted between list + pick | `📋 That project was deleted after I listed it. Reloading…` then auto-retry. |
+| 5. repo create | Quota/perm denied | `📦 The forge refused to create the repo. Options: (a) pick an existing repo, (b) create one in the web UI then re-run, (c) skip repo and run URL-only.` |
+| 6. github project create | Org project denied | `🔑 You don't have permission to create projects under <org>. Either ask an org admin, or pick your personal account: \`gh project create --owner @me\`.` |
+| 6. github project pick | Project deleted between list + pick | `📋 That project was deleted after I listed it. Reloading…` then auto-retry. |
+| 6. gitlab board ensure | `POST .../boards` or lists failed | Print the adapter's GitLab UI steps and continue with `board_id: null`. Do not halt. |
 | 7. column create | Column add denied (read-only project) | `🔑 Project is read-only for your account. Either get write access, or pick a different project.` |
 | 8. PROJECT.md autogen | Sub-agent timeout / empty draft | `📝 Couldn't auto-draft PROJECT.md. Skip for now, or write one paragraph and I'll seed from that.` |
 | 9. base branch | gh API rate limit on protection-rule lookup | Soft-fail production detection, warn the user, fall back to asking. Do not halt. |
@@ -270,11 +298,15 @@ Before exiting `onboard` successfully, the worker MUST verify:
    as a failed check, don't attempt to resolve further).
 2. **Active pointer is updated** — `.supersaiyan/active` is a one-line
    file containing exactly the new slug, no trailing whitespace beyond a single `\n`.
-3. **Project columns are present on GitHub** — running
-   `gh project field-list <project.number> --owner <project.owner>` returns all
-   required column options for the chosen variant:
-   - Full: `Ready, Building, QA, Review, Done, Blocked, Skipped`
-   - QA-only: `Ready, QA, Review, Done, Blocked, Skipped`
+3. **Board columns match the variant**
+   - github: `gh project field-list <project.number> --owner <project.owner>`
+     returns all required Status options:
+     - Full: `Ready, Building, QA, Review, Done, Blocked, Skipped`
+     - QA-only: `Ready, QA, Review, Done, Blocked, Skipped`
+   - gitlab: `project.board_id` resolves (`GET projects/:id/boards/:board_id`)
+     and the list count matches the variant (7 full / 6 qa-only). A null
+     `board_id` after a documented API failure is acceptable only when the
+     human confirmed the UI lists exist; otherwise re-run `platform_board_ensure`.
 4. **PROJECT.md exists** — when `paths.project_md` is non-null (i.e. any flow with
    a local repo), the file at that path exists and is non-empty.
 5. **Local skills mirror exists for non-`claude-p` backends** — when any resolved

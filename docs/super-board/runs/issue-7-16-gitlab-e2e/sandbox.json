@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "description": "GitLab sandbox for issues #15–#16",
+  "git_platform": "gitlab",
+  "variant": "full",
+  "worker_backend": "cursor-agent",
+  "project": {
+    "host": "gitlab.com",
+    "full_path": "BankNatchapol/supersaiyan-gitlab-sandbox",
+    "title": "supersaiyan-gitlab-sandbox",
+    "board_id": 11532822
+  },
+  "target": {
+    "type": "repo"
+  },
+  "repo": {
+    "path": ".",
+    "remote": "https://gitlab.com/BankNatchapol/supersaiyan-gitlab-sandbox.git"
+  },
+  "base_branch": "main",
+  "columns": [
+    "Ready",
+    "Building",
+    "QA",
+    "Review",
+    "Done",
+    "Blocked",
+    "Skipped"
+  ],
+  "human_approves_merge": false,
+  "tick_seconds": 20,
+  "max_workers": 1,
+  "notifications": {
+    "channel": "gitlab",
+    "bot_identity": "BankNatchapol"
+  }
+}

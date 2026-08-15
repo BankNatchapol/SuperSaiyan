@@ -121,7 +121,9 @@ Repeat until a done condition or halt gate fires:
    (or /loop re-entries) against the same board without bot_identity.
 4. **Launch** — Workflow tool with
    `scriptPath: .supersaiyan/workflows/super-board-wave.js` and
-   `args: { configPath, variant, cards, humanApprovesMerge, tier }`. `configPath` MUST be the
+   `args: { configPath, variant, cards, humanApprovesMerge, tier, gitPlatform }`. `gitPlatform`
+   is `config.git_platform` (`github` default) so classify/lane prompts say `platform_issue_view`
+   instead of `gh issue view`. `configPath` MUST be the
    effective path from Preconditions step 1 (`config-resolve.sh --effective-path`'s output),
    never the raw `configs/<slug>.json` path — `super-board-wave.js` is a Workflow script with
    no filesystem access, so it cannot resolve `extends` itself; it only forwards whatever

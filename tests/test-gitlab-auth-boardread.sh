@@ -295,7 +295,7 @@ echo "$snap" | jq -e '
           and .number == 1
           and .title == "Ready card"
           and .url == "https://gitlab.example.com/g/p/-/issues/1"
-          and .state == "opened"
+          and .state == "OPEN"
           and .repository == "group/demo"
           and (.assignees | type == "array")
           and (.labels | index("status::ready"))

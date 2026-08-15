@@ -212,6 +212,9 @@ if [ ! -f "$PLATFORM_FILE" ]; then
 fi
 # shellcheck disable=SC1090
 source "$PLATFORM_FILE"
+# GitLab adapters resolve host/full_path from this path. GitHub ignores it
+# when owner/number are passed explicitly. Export before any platform_* call.
+export PLATFORM_CONFIG_PATH="$CONFIG_PATH"
 
 RUN_DATE=$(date +%Y-%m-%d)
 RUN_MANIFEST="docs/supersaiyan/runs/${RUN_DATE}-${CONFIG_SLUG}.md"
@@ -227,11 +230,19 @@ log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$RUN_MANIFEST"; }
 PROJECT_ITEMS_JSON=""
 fetch_project_items() {
   # One board snapshot per tick; all column lookups read from this cache.
-  PROJECT_ITEMS_JSON=$(platform_board_snapshot "$PROJECT_NUMBER" "$PROJECT_OWNER")
+  PROJECT_ITEMS_JSON=$(platform_board_snapshot "$CONFIG_PATH")
 }
 
 column_count() {
-  echo "$PROJECT_ITEMS_JSON" | jq --arg col "$1" '[.items[] | select(.status == $col)] | length'
+  # Active lanes ignore CLOSED cards (GitLab scope=all keeps leftover status::*
+  # on closed issues). Done/Blocked/Skipped still count every state.
+  echo "$PROJECT_ITEMS_JSON" | jq --arg col "$1" '
+    [.items[]
+     | select(.status == $col)
+     | select(
+         ($col != "Ready" and $col != "Building" and $col != "QA" and $col != "Review")
+         or ((.state // "OPEN") | ascii_upcase) != "CLOSED"
+       )] | length'
 }
 
 top_card_in_column() {
@@ -240,6 +251,7 @@ top_card_in_column() {
   for issue in $(echo "$PROJECT_ITEMS_JSON" | jq -r --arg col "$col" '
         .items[]
         | select(.status == $col and .content.type == "Issue")
+        | select(((.state // "OPEN") | ascii_upcase) != "CLOSED")
         | select((.content.assignees // []) | length == 0)
         | .content.number'); do
     if ! issue_locked "$issue"; then
@@ -288,6 +300,10 @@ gh_rate_guard() {
   # (reset timestamp is not part of platform_rate_remaining's return value).
   local remaining
   remaining=$(platform_rate_remaining graphql)
+  # GitLab often prints "unknown" (headers omitted). Non-digits fail-open.
+  case "$remaining" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
   if [ "$remaining" -lt 200 ]; then
     log "⚠ GraphQL rate limit low (${remaining} left) — sleeping until reset"
     platform_rate_guard 200

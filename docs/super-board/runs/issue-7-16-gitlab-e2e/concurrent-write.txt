@@ -1,0 +1,12 @@
+During the #16 live super-board-run (Builder claimed #10), a second
+platform_card_status_set ran against a different card:
+
+  platform_card_status_set 2 Blocked
+
+Independent re-GET:
+
+  iid: 2
+  labels: ["status::blocked"]
+  status::* count: 1
+
+Exactly one status::* remained (task 08 race mitigation under concurrent load).

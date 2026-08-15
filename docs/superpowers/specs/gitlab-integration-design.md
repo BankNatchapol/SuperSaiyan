@@ -347,10 +347,11 @@ a nested `project.gitlab{}` sub-object — see Open Judgment Call 8 for the alte
 4. Python/bash duplication of the `status::` label-projection rule — recommend
    `GitlabStatusAdapter` shells out to a bash helper for that one derivation rather than
    reimplementing it twice.
-5. GitLab discussions vs. GitHub review threads — GitHub's "unprefixed top-level human PR
-   comment = Block signal" convention needs an explicit GitLab equivalent (unprefixed +
-   non-resolvable note? resolvable-but-not-bot-authored?) — not resolved by research, needs a
-   decision during the review-thread task, not left implicit.
+5. GitLab discussions vs. GitHub review threads — **resolved (task 10):** GitLab Block
+   signal = a **non-resolvable** top-level MR note whose body has no `[QA]` / `[Review]` /
+   lane prefix and whose author is not `notifications.bot_identity`. Resolvable
+   discussions stay Gate 1 review threads (`platform_thread_list_unresolved` /
+   `platform_thread_resolve`). Do not treat resolvable-but-human notes as Block.
 6. Self-hosted GitLab instances — rate-limit headers and possibly scoped-label enforcement may
    differ from gitlab.com; `project.host` must be threaded through every `platform_*` call,
    and `platform_rate_guard` must fail open on missing signals rather than fail closed.
