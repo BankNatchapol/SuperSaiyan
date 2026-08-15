@@ -116,6 +116,9 @@ platform_issue_edit_labels 42 --add-label loop:in-progress --remove-label bug >/
   || tfail "issue_edit_labels failed"
 grep -q -- '--label' "$GLAB_LOG" || tfail "edit_labels did not translate --add-label to --label"
 grep -q -- '--unlabel' "$GLAB_LOG" || tfail "edit_labels did not translate --remove-label to --unlabel"
+rc=0
+platform_issue_edit_labels 5 --add-label >/dev/null 2>&1 || rc=$?
+[ "$rc" = 64 ] || tfail "edit_labels missing value exit $rc (want 64)"
 
 : > "$GLAB_LOG"
 mr_url=$(platform_mr_create_draft --base main --head feat --title "T" --body-file "$body") \

@@ -471,9 +471,14 @@ _gitlab_with_cardmove_lock() {
     if [ -f "$lockdir/pid" ]; then
       missing=0
       holder=$(cat "$lockdir/pid" 2>/dev/null || true)
-      if [ -z "$holder" ] || ! kill -0 "$holder" 2>/dev/null; then
+      if [ -z "$holder" ]; then
         rm -rf "$lockdir"
-        continue
+      elif kill -0 "$holder" 2>/dev/null; then
+        :
+      elif ps -p "$holder" >/dev/null 2>&1; then
+        :
+      else
+        rm -rf "$lockdir"
       fi
     else
       # mkdir-to-pid write is not atomic; do not reap on the first miss.
@@ -481,7 +486,6 @@ _gitlab_with_cardmove_lock() {
       if [ "$missing" -ge 5 ]; then
         rm -rf "$lockdir"
         missing=0
-        continue
       fi
     fi
     i=$((i + 1))
@@ -494,8 +498,10 @@ _gitlab_with_cardmove_lock() {
   printf '%s\n' "$$" > "$lockdir/pid"
   "$@"
   local rc=$?
-  rm -f "$lockdir/pid"
-  rmdir "$lockdir" 2>/dev/null || true
+  if [ -f "$lockdir/pid" ] && [ "$(cat "$lockdir/pid" 2>/dev/null)" = "$$" ]; then
+    rm -f "$lockdir/pid"
+    rmdir "$lockdir" 2>/dev/null || true
+  fi
   return "$rc"
 }
 
@@ -682,10 +688,17 @@ platform_issue_edit_labels() {
   local add="" rem="" extra=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --add-label) add="${add:+$add,}$2"; shift 2 ;;
-      --remove-label) rem="${rem:+$rem,}$2"; shift 2 ;;
-      --label) add="${add:+$add,}$2"; shift 2 ;;
-      --unlabel) rem="${rem:+$rem,}$2"; shift 2 ;;
+      --add-label|--remove-label|--label|--unlabel)
+        [ $# -ge 2 ] || {
+          echo "platform_issue_edit_labels: $1 requires a value" >&2
+          return 64
+        }
+        case "$1" in
+          --add-label|--label) add="${add:+$add,}$2" ;;
+          *) rem="${rem:+$rem,}$2" ;;
+        esac
+        shift 2
+        ;;
       *) extra="$extra $1"; shift ;;
     esac
   done
@@ -709,11 +722,20 @@ platform_mr_create_draft() {
   local base="" head="" title="" body_file="" body="" extra="" out
   while [ $# -gt 0 ]; do
     case "$1" in
-      --base|--target-branch) base="$2"; shift 2 ;;
-      --head|--source-branch) head="$2"; shift 2 ;;
-      --title) title="$2"; shift 2 ;;
-      --body-file|--description-file) body_file="$2"; shift 2 ;;
-      --body) body="$2"; shift 2 ;;
+      --base|--target-branch|--head|--source-branch|--title|--body-file|--description-file|--body)
+        [ $# -ge 2 ] || {
+          echo "platform_mr_create_draft: $1 requires a value" >&2
+          return 64
+        }
+        case "$1" in
+          --base|--target-branch) base="$2" ;;
+          --head|--source-branch) head="$2" ;;
+          --title) title="$2" ;;
+          --body-file|--description-file) body_file="$2" ;;
+          --body) body="$2" ;;
+        esac
+        shift 2
+        ;;
       --draft) shift ;;
       *) extra="$extra $1"; shift ;;
     esac
@@ -927,7 +949,7 @@ platform_detect_production_ci() {
   [ -n "$inc" ] || return 1
   for i in $inc; do
     case "$i" in
-      /*) _gitlab_ci_has_prod_job "$i" && return 0 ;;
+      /*) _gitlab_ci_has_prod_job "$root$i" && return 0 ;;
       *) _gitlab_ci_has_prod_job "$root/$i" && return 0 ;;
     esac
   done

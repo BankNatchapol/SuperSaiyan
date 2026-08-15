@@ -44,6 +44,25 @@ deploy_prod:
 YML
 platform_detect_production_ci "$TD/inc" || tfail "local include: deploy job not detected"
 
+# GitLab docs form: include: local: '/ci/deploy.yml' is repo-root-relative.
+mkdir -p "$TD/slash/ci"
+cat > "$TD/slash/.gitlab-ci.yml" <<'YML'
+include:
+  - local: /ci/deploy.yml
+test:
+  script: echo hi
+YML
+cat > "$TD/slash/ci/deploy.yml" <<'YML'
+deploy_prod:
+  environment:
+    name: production
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script: echo deploy
+YML
+platform_detect_production_ci "$TD/slash" \
+  || tfail "leading-slash include: local: '/ci/deploy.yml' was not detected"
+
 mkdir -p "$TD/none"
 echo "test:\n  script: echo" > "$TD/none/.gitlab-ci.yml"
 platform_detect_production_ci "$TD/none" && tfail "non-deploy CI was treated as production"

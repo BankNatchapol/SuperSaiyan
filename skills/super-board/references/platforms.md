@@ -1,10 +1,12 @@
 # Git forges — Platform interface contract + per-forge reference
 
 `config.git_platform` selects which forge the dispatcher talks to (`github` or
-`gitlab`). It is **orthogonal to `worker_backend`**. Any combination is valid:
-a GitLab board can dispatch `cursor-agent` workers; a GitHub board can use
-`workflow`. `workflow` staying Claude-Code-only is a **backend** fact (see
-`references/backends.md`), not a platform fact.
+`gitlab`). It is **orthogonal to `worker_backend`**, with one exception: the
+**workflow backend remains GitHub-only** (`run-workflow.md` is still `gh`-literal
+for rate guard, claim/release, and the lane allowlist). GitLab requires
+`worker_backend: claude-p` / `codex-exec` / `cursor-agent` (string or per-lane
+object). `workflow` staying Claude-Code-only is a separate **backend** fact (see
+`references/backends.md`).
 
 Dispatch scripts `source` `scripts/platforms/<git_platform>.sh` (installed as
 `.supersaiyan/bin/platforms/<git_platform>.sh`). Callers never invoke `gh` or
