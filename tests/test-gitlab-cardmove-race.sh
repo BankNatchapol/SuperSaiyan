@@ -19,6 +19,19 @@ bash -n "$GITLAB_SH" || tfail "bash -n reported a syntax error in gitlab.sh"
 # shellcheck disable=SC1090
 . "$GITLAB_SH"
 
+# issue #41: leftover stub glab must not be treated as an authenticated live CLI.
+# These greps inspect this file's live-gate / PATH restore / stub auth handler.
+# They must not match themselves — patterns are the implemented forms, not the regex.
+if ! grep -Eq '\[ "\$\{GITLAB_LIVE:-\}" = "1" \]' "$0"; then
+  tfail "live sandbox is not gated on GITLAB_LIVE=1"
+fi
+if ! awk '/^ORIG_PATH=/{s=1} /PATH="\$ORIG_PATH"/{r=1} END{exit !(s && r)}' "$0"; then
+  tfail "does not save and restore ORIG_PATH around stub glab"
+fi
+if ! grep -Eq '^[[:space:]]+auth\)' "$0"; then
+  tfail "stub glab has no auth) handler (must exit 1 so leftover PATH cannot impersonate a login)"
+fi
+
 # ── 1. column ↔ status:: label ─────────────────────────────────────────────
 if ! declare -f platform_gitlab_label_from_status >/dev/null 2>&1; then
   tfail "platform_gitlab_label_from_status is missing"
@@ -42,6 +55,20 @@ mkdir -p "$TD/bin"
 cat > "$TD/bin/glab" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${GLAB_LOG:?}"
+# Drop flag pairs so $1 is the subcommand. Stub is never authenticated
+# (issue #41): leftover PATH must not impersonate `glab auth status`.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --hostname|--output|-R|--repo) shift 2 ;;
+    --include|--paginate|-i) shift ;;
+    *) break ;;
+  esac
+done
+case "${1:-}" in
+  auth)
+    exit 1
+    ;;
+esac
 method="GET"
 path=""
 add_labels=""
@@ -49,7 +76,7 @@ remove_labels=""
 assignee_csv=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --hostname|--output) shift 2 ;;
+    --hostname|--output|-R|--repo) shift 2 ;;
     --method|-X) method="$2"; shift 2 ;;
     --include|--paginate|-i) shift ;;
     -f|-F)
@@ -138,6 +165,7 @@ cat > "$CFG" <<EOF
 }
 EOF
 export PLATFORM_CONFIG_PATH="$CFG"
+ORIG_PATH="$PATH"
 export PATH="$TD/bin:$PATH"
 export GLAB_LOG STATE
 
@@ -249,11 +277,28 @@ if ! platform_release_issue 7 bot-user >/dev/null 2>&1; then
   tfail "platform_release_issue failed"
 fi
 
-# ── 3. Live sandbox ────────────────────────────────────────────────────────
-unset PLATFORM_CONFIG_PATH FORCE_DUP_STATUS
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+# 2g. concurrent writers leave exactly one status::* (task 08 AC, CI-safe)
+jq '.labels=["status::ready"] | .assignees=[]' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+: > "$GLAB_LOG"
+platform_card_status_set 7 Ready >/dev/null 2>&1 &
+pid_a=$!
+platform_card_status_set 7 Building >/dev/null 2>&1 &
+pid_b=$!
+wait "$pid_a" || true
+wait "$pid_b" || true
+status_n=$(jq '[.labels[] | select(startswith("status::"))] | length' "$STATE")
+[ "$status_n" = "1" ] || tfail "stub concurrent move left status count=$status_n (want 1)"
+got=$(jq -r '.labels | map(select(startswith("status::"))) | join(",")' "$STATE")
+case "$got" in
+  status::ready|status::building) ;;
+  *) tfail "stub concurrent move landed on unexpected $got" ;;
+esac
 
-if command -v glab >/dev/null 2>&1 && glab auth status >/dev/null 2>&1; then
+# ── 3. Live sandbox (opt-in; never run against leftover stub glab) ─────────
+unset PLATFORM_CONFIG_PATH FORCE_DUP_STATUS
+export PATH="$ORIG_PATH"
+
+if [ "${GITLAB_LIVE:-}" = "1" ] && command -v glab >/dev/null 2>&1 && glab auth status >/dev/null 2>&1; then
   LIVE_CFG="$TD/live.json"
   cat > "$LIVE_CFG" <<EOF
 {
@@ -308,7 +353,7 @@ EOF
   fi
   unset PLATFORM_CONFIG_PATH
 else
-  echo "  skip live sandbox checks (glab not authenticated)"
+  echo "  skip live sandbox checks (set GITLAB_LIVE=1 with glab auth to run)"
 fi
 
 rm -rf "$TD"
