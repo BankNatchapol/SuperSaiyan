@@ -28,7 +28,7 @@ below are **as implemented**, not the spec's first guesses.
 | `platform_top_unclaimed_card <column> [snapshot]` | First unassigned Issue number in that column. |
 | `platform_card_status_set <issue> <column>` | Move the card. `--add <config> <url> <column>` enqueues a new issue onto Ready. |
 | `platform_card_move_verify <issue> <column>` | GitLab: re-GET and require exactly one matching `status::*`. GitHub: no-op success. |
-| `platform_claim_issue <issue> <bot>` | Claim for the bot. Refuse (exit 1) if another assignee is already present. |
+| `platform_claim_issue <issue> <bot>` | Claim for the bot. GitLab refuses (exit 1) if another assignee is already present; GitHub is additive (`--add-assignee`) and does not refuse. |
 | `platform_release_issue <issue> <bot>` | Drop the bot claim. |
 | `platform_issue_create <title> <body-file>` | Echo the new issue URL. |
 | `platform_issue_view <issue>` | Normalized `{number,title,body,labels:string[],state:OPEN\|CLOSED}`. Exits `0/44/69/70`. |
@@ -41,9 +41,9 @@ below are **as implemented**, not the spec's first guesses.
 | `platform_mr_merge_squash <iid>` | Squash-merge and delete the source branch. |
 | `platform_mr_view <iid>` | Echo MR/PR JSON. |
 | `platform_mr_list_by_branch <branch>` | Echo MRs/PRs whose source/head is that branch. |
-| `platform_thread_list_unresolved <iid>` | Echo unresolved **review** thread ids (not plain top-level notes). |
+| `platform_thread_list_unresolved <owner/repo> <iid>` | Echo unresolved **review** thread ids (not plain top-level notes). |
 | `platform_thread_resolve <id>` | Resolve one thread. Idempotent. |
-| `platform_thread_create <iid> <path> <line> <body>` | Start a line-level review discussion. |
+| `platform_thread_create <owner/repo> <iid> <commit> <path> <line> <body>` | Start a line-level review discussion. |
 | `platform_detect_production_ci <root>` | 0 if CI/hosting looks like production. |
 | `platform_detect_branch_protection [base]` | 0 if `base` (default `main`) is protected. |
 | `platform_raw_file_url <owner/repo> <branch> <path>` | Echo a raw-file URL for screenshot embeds. |

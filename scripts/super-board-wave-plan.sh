@@ -110,6 +110,7 @@ echo "$ITEMS" | jq --argjson cols "$COLUMNS" --argjson cap "$MAX_WORKERS" --argj
     | { col: $col,
         cands: [ .items[]
                  | select(.status == $col and .content.type == "Issue")
+                 | select(((.state // "OPEN") | ascii_upcase) != "CLOSED")
                  | select((.content.assignees // []) | length == 0)
                  | . as $candidate
                  | select(

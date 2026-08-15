@@ -212,15 +212,14 @@ _gitlab_rate_probe() {
   _GITLAB_RATE_RESET=""
   raw=$(_gitlab_api "$host" --include user 2>/dev/null) || raw=""
   [ -n "$raw" ] || return 0
+  # BSD awk (macOS) has no IGNORECASE; glab may canonicalize header names.
   _GITLAB_RATE_REMAINING=$(printf '%s\n' "$raw" | awk '
-    BEGIN { IGNORECASE=1 }
     /^$/ { exit }
-    /^RateLimit-Remaining:/ { print $2; exit }
+    tolower($0) ~ /^ratelimit-remaining:/ { print $2; exit }
   ')
   _GITLAB_RATE_RESET=$(printf '%s\n' "$raw" | awk '
-    BEGIN { IGNORECASE=1 }
     /^$/ { exit }
-    /^RateLimit-Reset:/ { print $2; exit }
+    tolower($0) ~ /^ratelimit-reset:/ { print $2; exit }
   ')
   case "${_GITLAB_RATE_REMAINING}" in
     ''|*[!0-9]*) _GITLAB_RATE_REMAINING="unknown" ;;
@@ -282,7 +281,8 @@ platform_board_snapshot() {
     echo "platform_board_snapshot: failed to list issues for $full_path" >&2
     return 1
   }
-  printf '%s' "$issues" | jq --arg repo "$full_path" "${_GITLAB_STATUS_JQ}"'
+  # --paginate emits one JSON array per page; slurp+add before projecting.
+  printf '%s' "$issues" | jq -s 'add // []' | jq --arg repo "$full_path" "${_GITLAB_STATUS_JQ}"'
     {items: [ .[] | {
       number: .iid,
       title: .title,
@@ -311,7 +311,13 @@ platform_column_count() {
   if [ -z "$snapshot" ]; then
     snapshot=$(cat)
   fi
-  echo "$snapshot" | jq --arg col "$col" '[.items[] | select(.status == $col)] | length'
+  echo "$snapshot" | jq --arg col "$col" '
+    [.items[]
+     | select(.status == $col)
+     | select(
+         ($col != "Ready" and $col != "Building" and $col != "QA" and $col != "Review")
+         or ((.state // "OPEN") | ascii_upcase) != "CLOSED"
+       )] | length'
 }
 
 platform_top_unclaimed_card() {
@@ -323,6 +329,10 @@ platform_top_unclaimed_card() {
   echo "$snapshot" | jq -r --arg col "$col" '
     .items[]
     | select(.status == $col and .content.type == "Issue")
+    | select(
+        ($col != "Ready" and $col != "Building" and $col != "QA" and $col != "Review")
+        or ((.state // "OPEN") | ascii_upcase) != "CLOSED"
+      )
     | select((.content.assignees // []) | length == 0)
     | .content.number' | head -1
 }
@@ -407,8 +417,24 @@ _gitlab_with_cardmove_lock() {
   local encoded="$1" iid="$2"
   shift 2
   local lockdir="${TMPDIR:-/tmp}/ss-gitlab-move-${encoded}-${iid}"
-  local i=0
+  local i=0 holder missing=0
   while ! mkdir "$lockdir" 2>/dev/null; do
+    if [ -f "$lockdir/pid" ]; then
+      missing=0
+      holder=$(cat "$lockdir/pid" 2>/dev/null || true)
+      if [ -z "$holder" ] || ! kill -0 "$holder" 2>/dev/null; then
+        rm -rf "$lockdir"
+        continue
+      fi
+    else
+      # mkdir-to-pid write is not atomic; do not reap on the first miss.
+      missing=$((missing + 1))
+      if [ "$missing" -ge 5 ]; then
+        rm -rf "$lockdir"
+        missing=0
+        continue
+      fi
+    fi
     i=$((i + 1))
     [ "$i" -lt 50 ] || {
       echo "platform_card_status_set: timed out waiting for move lock on #$iid" >&2
@@ -416,8 +442,10 @@ _gitlab_with_cardmove_lock() {
     }
     sleep 0.1
   done
+  printf '%s\n' "$$" > "$lockdir/pid"
   "$@"
   local rc=$?
+  rm -f "$lockdir/pid"
   rmdir "$lockdir" 2>/dev/null || true
   return "$rc"
 }
@@ -459,7 +487,6 @@ platform_card_status_set() {
   if [ "${1:-}" = "--add" ]; then
     shift
     cfg="${1:-}"
-    PLATFORM_CONFIG_PATH="${cfg:-$PLATFORM_CONFIG_PATH}"
     iid=$(_gitlab_iid_from_url "${2:-}")
     target="${3:-}"
   else
@@ -564,10 +591,12 @@ platform_issue_create() {
 platform_issue_view() {
   # $1 = iid. Normalized {number,title,body,labels:string[],state:OPEN|CLOSED}.
   # Exits: 0 found, 44 not-found, 69 auth, 70 other/malformed.
-  local iid="$1" raw err
-  _gitlab_ctx || return
-  if ! raw=$(_gitlab_api "$_g_host" "projects/${_g_enc}/issues/${iid}" 2>/tmp/ss-gl-issue-view.err); then
-    err=$(cat /tmp/ss-gl-issue-view.err 2>/dev/null || true)
+  local iid="$1" raw err errfile
+  _gitlab_ctx || return 70
+  errfile=$(mktemp)
+  if ! raw=$(_gitlab_api "$_g_host" "projects/${_g_enc}/issues/${iid}" 2>"$errfile"); then
+    err=$(cat "$errfile" 2>/dev/null || true)
+    rm -f "$errfile"
     printf '%s\n' "$err" >&2
     case "$err" in
       *"404"*|*"Not Found"*) return 44 ;;
@@ -575,6 +604,7 @@ platform_issue_view() {
       *) return 70 ;;
     esac
   fi
+  rm -f "$errfile"
   printf '%s' "$raw" | jq -ce '
     if type == "object" and (.iid | type == "number") then
       {
@@ -810,9 +840,9 @@ platform_detect_branch_protection() {
 
 platform_raw_file_url() {
   # $1 = owner/repo, $2 = branch, $3 = path. Host from config, never hardcoded.
-  local repo="$1" branch="$2" path="$3" host
-  _gitlab_ctx || true
-  host="${_g_host:-}"
+  local repo="$1" branch="$2" path="$3" host cfg
+  cfg=$(_gitlab_config_path) || true
+  host=$(_gitlab_host_from_config "$cfg")
   [ -n "$host" ] || host="gitlab.com"
   printf 'https://%s/%s/-/raw/%s/%s\n' "$host" "$repo" "$branch" "$path"
 }
@@ -945,7 +975,7 @@ platform_board_ensure() {
   if [ -w "$cfg" ]; then
     local tmp
     tmp=$(mktemp)
-    jq --argjson id "$board_id" '.project.board_id = $id' "$cfg" > "$tmp" && mv "$tmp" "$cfg"
+    jq --argjson id "$board_id" '.project.board_id = $id' "$cfg" > "$tmp" && mv "$tmp" "$cfg" || rm -f "$tmp"
   fi
   printf '%s\n' "$board_id"
 }

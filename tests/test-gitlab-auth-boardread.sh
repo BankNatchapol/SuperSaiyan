@@ -229,6 +229,9 @@ got=$(platform_bot_identity_resolve) || tfail "platform_bot_identity_resolve fai
 GLAB_INCLUDE_HEADERS=$'HTTP/2.0 200 OK\nRateLimit-Remaining: 321\nRateLimit-Reset: 9999999999'
 got=$(platform_rate_remaining)
 [ "$got" = "321" ] || tfail "platform_rate_remaining → $got (want 321)"
+GLAB_INCLUDE_HEADERS=$'HTTP/2.0 200 OK\nratelimit-remaining: 210\nratelimit-reset: 9999999999'
+got=$(platform_rate_remaining)
+[ "$got" = "210" ] || tfail "platform_rate_remaining lowercase headers → $got (want 210)"
 
 # 3l. rate remaining fail-open: absent headers are unknown, never 0
 GLAB_INCLUDE_HEADERS=$'HTTP/2.0 200 OK\nCache-Control: private'
@@ -314,6 +317,17 @@ backlog_n=$(platform_column_count Backlog "$snap")
 [ "$backlog_n" = "1" ] || tfail "platform_column_count Backlog → $backlog_n (want 1)"
 top=$(platform_top_unclaimed_card Ready "$snap")
 [ "$top" = "1" ] || tfail "platform_top_unclaimed_card Ready → $top (want 1)"
+
+# 3p. --paginate emits one JSON array per page; slurp must yield one object.
+GLAB_ISSUES_JSON='[{"iid":1,"title":"Ready card","web_url":"https://gitlab.example.com/g/p/-/issues/1","state":"opened","labels":["status::ready"],"assignees":[],"description":"seed"}]
+[{"iid":2,"title":"Unlabeled card","web_url":"https://gitlab.example.com/g/p/-/issues/2","state":"opened","labels":[],"assignees":[{"username":"bob"}],"description":""},{"iid":3,"title":"Closed leftover","web_url":"https://gitlab.example.com/g/p/-/issues/3","state":"closed","labels":["status::ready"],"assignees":[],"description":""}]'
+paged=$(platform_board_snapshot "$CFG") || tfail "two-page snapshot failed"
+echo "$paged" | jq -e 'type == "object" and (.items | length == 3)' >/dev/null 2>&1 \
+  || tfail "two-page snapshot was not one object of 3 items: $paged"
+paged_ready=$(platform_column_count Ready "$paged")
+[ "$paged_ready" = "1" ] || tfail "CLOSED Ready leftover counted: $paged_ready (want 1)"
+paged_top=$(platform_top_unclaimed_card Ready "$paged")
+[ "$paged_top" = "1" ] || tfail "top_unclaimed picked CLOSED leftover: $paged_top"
 
 # ── 4. Live sandbox (skip when glab is not authenticated) ──────────────────
 unset PLATFORM_CONFIG_PATH

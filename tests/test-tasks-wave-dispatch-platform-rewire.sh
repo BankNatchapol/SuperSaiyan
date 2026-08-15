@@ -115,6 +115,19 @@ cat > "$SMOKE_DIR/items.json" <<'EOF'
         "repository": "octocat/demo",
         "assignees": []
       }
+    },
+    {
+      "id": "ITEM_CLOSED",
+      "status": "Ready",
+      "state": "CLOSED",
+      "content": {
+        "type": "Issue",
+        "number": 99,
+        "title": "Closed leftover",
+        "body": "must not be planned",
+        "repository": "octocat/demo",
+        "assignees": []
+      }
     }
   ]
 }

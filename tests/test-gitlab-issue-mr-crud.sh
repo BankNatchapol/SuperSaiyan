@@ -130,7 +130,7 @@ grep -q -- '--remove-source-branch' "$GLAB_LOG" || tfail "mr_merge_squash missin
 # ── live ───────────────────────────────────────────────────────────────────
 unset PLATFORM_CONFIG_PATH
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
-if command -v glab >/dev/null 2>&1 && glab auth status >/dev/null 2>&1; then
+if [ "${GITLAB_LIVE:-}" = "1" ] && command -v glab >/dev/null 2>&1 && glab auth status >/dev/null 2>&1; then
   LIVE="$TD/live.json"
   cat > "$LIVE" <<EOF
 {"git_platform":"gitlab","project":{"host":"gitlab.com","full_path":"$SANDBOX"}}
@@ -179,13 +179,12 @@ EOF
   keep_url=$(platform_mr_create_draft --base main --head "issue-10-threads-$$" --title "draft #10 threads" --body-file "$body") \
     || tfail "could not leave draft MR for #10"
   keep_iid="${keep_url##*/}"
-  mkdir -p "$ROOT/docs/super-board/runs/issue-7-16-gitlab-e2e"
-  printf '%s\n' "$keep_iid" > "$ROOT/docs/super-board/runs/issue-7-16-gitlab-e2e/draft-mr-iid.txt"
-  printf '%s\n' "$keep_url" > "$ROOT/docs/super-board/runs/issue-7-16-gitlab-e2e/draft-mr-url.txt"
+  printf '%s\n' "$keep_iid" > "$TD/draft-mr-iid.txt"
+  printf '%s\n' "$keep_url" > "$TD/draft-mr-url.txt"
   platform_issue_close "$live_iid" "closing #9 live issue" >/dev/null || tfail "live close failed"
   unset PLATFORM_CONFIG_PATH
 else
-  echo "  skip live sandbox checks (glab not authenticated)"
+  echo "  skip live sandbox checks (set GITLAB_LIVE=1 with glab auth to run)"
 fi
 
 rm -rf "$TD"
