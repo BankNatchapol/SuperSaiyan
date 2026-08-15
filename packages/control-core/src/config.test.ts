@@ -24,8 +24,13 @@ describe("deepMerge", () => {
     });
   });
 
+  // The sibling `variant` key must survive: without it, a wholesale "overlay replaces base"
+  // implementation would satisfy this assertion just as well as per-key array replacement.
   it("replaces arrays rather than concatenating them", () => {
-    expect(deepMerge({ labels: ["a", "b"] }, { labels: ["c"] })).toEqual({ labels: ["c"] });
+    expect(deepMerge({ labels: ["a", "b"], variant: "full" }, { labels: ["c"] })).toEqual({
+      labels: ["c"],
+      variant: "full",
+    });
   });
 
   it("replaces base outright when the two sides are different shapes", () => {
@@ -49,14 +54,22 @@ describe("resolveExtends", () => {
   const writeConfig = (slug: string, config: unknown) =>
     writeFile(join(directory, `${slug}.json`), JSON.stringify(config));
 
+  // Both "unchanged" paths assert against an object literal rather than against the input
+  // variable, so an implementation that mutated its argument in place could not pass; the
+  // identity assertion additionally pins the current contract of handing the same object back
+  // instead of a copy.
   it("returns the config unchanged when there is no extends key", async () => {
     const config = { project: { owner: "@me", number: 3 } };
-    expect(await resolveExtends(directory, config)).toEqual(config);
+    const resolved = await resolveExtends(directory, config);
+    expect(resolved).toEqual({ project: { owner: "@me", number: 3 } });
+    expect(resolved).toBe(config);
   });
 
   it("returns the config unchanged when the extends target is missing", async () => {
     const config = { extends: "absent", variant: "lite" };
-    expect(await resolveExtends(directory, config)).toEqual({ extends: "absent", variant: "lite" });
+    const resolved = await resolveExtends(directory, config);
+    expect(resolved).toEqual({ extends: "absent", variant: "lite" });
+    expect(resolved).toBe(config);
   });
 
   it("inherits base fields and strips the extends key from the merged output", async () => {
