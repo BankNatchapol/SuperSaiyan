@@ -10,6 +10,8 @@ description: >-
 
 # super-qa — BFS Route-Crawler that Builds the Spec Suite
 
+Concrete per-platform commands: see `references/platforms.md`.
+
 ## Auth bootstrap — auto-discover, never ask
 
 Before iter 1, resolve a test login. **Never ask the user; discover or create.** Order:
@@ -47,9 +49,9 @@ This board is the durable, machine-readable state for the loop. `docs/super-qa/q
 
 Resolution order (used by `scripts/super-qa-file-bug.sh` and the orchestrator):
 
-1. If `SUPER_QA_PROJECT_TITLE` is set, query `gh project list --owner $SUPER_QA_PROJECT_OWNER --format json` and pick the project whose title matches (case-insensitive).
+1. If `SUPER_QA_PROJECT_TITLE` is set, resolve the onboarded config (`project.owner` / `project.number`, or `project.full_path` on GitLab) and pick the project whose title matches (case-insensitive). `platform_board_snapshot` reads cards of that project after it is known — it does not list boards.
 2. Otherwise default to title `Super Ultimate QA`.
-3. Owner defaults to `$(gh repo view --json owner -q .owner.login)` or `SUPER_QA_PROJECT_OWNER` if set.
+3. Owner defaults to the onboarded config's `project.owner` (GitHub) or `project.full_path` (GitLab), or `SUPER_QA_PROJECT_OWNER` if set.
 
 If no matching project exists, the loop halts with a one-line error and instructs the operator to create one. Do not silently fall back to the repo's primary project — column semantics differ.
 
@@ -180,11 +182,13 @@ The script adds the issue to the resolved `Super Ultimate QA` project and moves 
 The `iteration-N.md` Section 3 is the per-iter audit (with `gh_issue: <N>` back-references); the GH issue is the durable tracker. The fix-commit message includes `(closes #<N>)` so the issue auto-closes on merge.
 
 **Triage all loop-filed findings:**
-```bash
-gh issue list -l source:qa --state open
+```
+platform_board_snapshot <number-or-config> <owner>
+  # then filter snapshot items by label source:qa and state open
+  # (listing-by-label is not a platform_* function)
 ```
 
-This is a carved exception to the project rule "ask before `gh issue create`": the loop is autonomous and unattended, so it is authorized to auto-file — but ONLY with the clear `source:qa` label and the evidence template below.
+This is a carved exception to the project rule "ask before `platform_issue_create`": the loop is autonomous and unattended, so it is authorized to auto-file — but ONLY with the clear `source:qa` label and the evidence template below.
 
 ### Required issue body template
 
@@ -627,7 +631,7 @@ The Tester's issue comment is the user's primary visibility into "is this actual
 
 ### Lifecycle (Tester, rebuild — when Reviewer bounced for [QA] thread fixes)
 1. Read PR review threads; filter `[QA]` prefix.
-2. For each unresolved `[QA]` thread: apply fix to test files → resolve thread via `gh api graphql resolveReviewThread`.
+2. For each unresolved `[QA]` thread: apply fix to test files → resolve thread via `platform_thread_resolve`.
 3. Re-run full test suite for the ticket.
 4. Save evidence to `runs/issue-<N>-qa-v<N+1>/`.
 5. Commit + push. Verify ALL `[QA]` threads resolved.

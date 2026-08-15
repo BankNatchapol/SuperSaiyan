@@ -5,6 +5,8 @@ description: Super Build canonical workflow — the Build lane inside the supers
 
 # Super Build / Super Build — Headless Parallel GitHub-Project Executor
 
+Concrete per-platform commands: see `references/platforms.md`.
+
 You are the orchestrator. The source of truth is the **`Ready` column of the configured GitHub Project board**. Your job: dispatch every issue in `Ready` (in board order) as a parallel headless `claude -p` worker in a git worktree, push the branch, and open a PR per issue — then stop. By default you do **not** merge results back, close the issue, or advance its project card to `Done` yourself; ping Telegram on each completion regardless. See **Autonomy preflight** below before doing anything past "open a PR."
 
 **Curation contract:** the human moves cards into `Ready` when they should be worked. The loop never reads `Backlog`, `In Progress`, or `Done` cards. If `Ready` is empty, the loop reports "queue empty" and exits cleanly — no error.
@@ -21,7 +23,7 @@ Super Build may implement, test, commit, and push. **By default it stops at "ope
 
 ## Autonomy preflight (read before ANY merge, close, or move-to-Done action)
 
-Applies everywhere in this file. Before you run `git merge`, `gh pr merge`, `gh issue close`, or move a card to `Done` for any issue, run:
+Applies everywhere in this file. Before you run `git merge`, `platform_mr_merge_squash`, `platform_issue_close`, or move a card to `Done` for any issue, run:
 
 ```bash
 git rev-parse --show-toplevel | xargs basename
@@ -48,7 +50,7 @@ Reads `Ready` from the repo's feature project. Resolution order:
 
 1. **`BUILD_LOOP_PROJECT`** env var — project number (e.g. `2`)
 2. **`BUILD_LOOP_OWNER`** env var — project owner (e.g. `EricTechPro`)
-3. **Auto-discovery fallback:** if env vars unset, run `gh project list --owner $(gh repo view --json owner -q .owner.login) --format json` and pick the project whose `title` matches the repo name (`Fitbox Admin` for this project), or the only open project if there's exactly one.
+3. **Auto-discovery fallback:** if env vars unset, resolve the onboarded config and read `project.number` + `project.owner` (GitHub) or `project.full_path` (GitLab). `platform_board_snapshot` then reads cards of that already-known project — it does not list boards.
 
 Surface: `🎯 Reading project: EricTechPro/Fitbox Admin (#2), column "Ready"`.
 
@@ -76,7 +78,7 @@ Standalone and QA-loop mode never run in the same orchestrator session by defaul
 Before reading the board:
 
 - Confirm the main worktree is clean: `git status --porcelain` must be empty.
-- Confirm `gh auth status` works and the repo remote points at the expected GitHub repo.
+- Confirm `platform_auth_check` succeeds and the repo remote points at the expected forge.
 - Confirm `jq`, `git`, and `claude` are available.
 - Resolve and print `BUILD_LOOP_OWNER` and `BUILD_LOOP_PROJECT`.
 - Run `git fetch origin` and identify the base branch from the current checkout; do **not** assume `main`.
@@ -90,18 +92,18 @@ Source column is `Ready` in standalone mode, `Bug` in QA-loop mode (override wit
 SOURCE_COLUMN="${BUILD_LOOP_SOURCE_COLUMN:-${BUILD_LOOP_QA_MODE:+Bug}}"
 SOURCE_COLUMN="${SOURCE_COLUMN:-Ready}"
 
-gh project item-list "$BUILD_LOOP_PROJECT" --owner "$BUILD_LOOP_OWNER" --limit 200 --format json \
+platform_board_snapshot "$BUILD_LOOP_PROJECT" "$BUILD_LOOP_OWNER" \
   | jq --arg col "$SOURCE_COLUMN" '.items[] | select(.status == $col and .content.type == "Issue")'
 ```
 
 For each Ready item:
-- Capture `content.number` (issue #), `content.title`, `content.body`, `content.labels` (via separate `gh issue view N --json labels` if `item-list` doesn't include them).
+- Capture `content.number` (issue #), `content.title`, `content.body`, `content.labels` (via separate `platform_issue_view N` if the snapshot doesn't include them).
 - **Skip** issues with the `loop:in-progress` label (in flight in another orchestrator) or `loop:halted` label (manually paused) or `human-gated` label (requires manual handling).
 - Parse `body` for `Depends on: #N1, #N2` lines (case-insensitive). If any dependency is still open, the issue is blocked — leave it for a future run even when both cards are in Ready.
 - Parse `body` for an optional `Skills:` line (e.g. `Skills: superpowers:test-driven-development, superpowers:verification-before-completion`). If absent, the worker uses defaults from the preamble.
 
 **Ordering:**
-1. **Board order first** — `gh project item-list` returns items in the human's manual board order. Respect that. If the user wants Issue X before Issue Y, they drag X above Y on the board.
+1. **Board order first** — `platform_board_snapshot` returns items in the human's manual board order. Respect that. If the user wants Issue X before Issue Y, they drag X above Y on the board.
 2. **Tiebreaker (rare):** within the same drag-position, sort by priority extracted from title regex `^\[?(P[1-4])\]?`: `P1` < `P2` < `P4` < `P3` < no priority. Then issue number ascending.
 
 If `Ready` is empty: print `📭 Project board "Ready" column is empty — nothing to dispatch.` and exit 0. This is not an error; it means the human hasn't curated work yet.
@@ -109,10 +111,10 @@ If `Ready` is empty: print `📭 Project board "Ready" column is empty — nothi
 ### 2. Ensure required labels exist (idempotent)
 
 Once per run, before first dispatch:
-```bash
-gh label create loop:in-progress --color FFA500 --description "Currently being worked on by /super-build" 2>/dev/null || true
-gh label create loop:halted --color B60205 --description "Manually paused — /super-build will skip" 2>/dev/null || true
-gh label create human-gated --color B60205 --description "Requires manual handling — /super-build will not auto-execute" 2>/dev/null || true
+```
+platform_label_ensure loop:in-progress FFA500 "Currently being worked on by /super-build"
+platform_label_ensure loop:halted B60205 "Manually paused — /super-build will skip"
+platform_label_ensure human-gated B60205 "Requires manual handling — /super-build will not auto-execute"
 ```
 
 ### 3. Dispatch wave (max 3 concurrent)
@@ -122,13 +124,13 @@ Notify Telegram once per wave: `▶️ Super Build dispatching: Issues [#N1, #N2
 For each issue N in the ready set (up to 3 at a time):
 
 a. **Lock the issue:**
-```bash
-gh issue edit N --add-label loop:in-progress
+```
+platform_issue_edit_labels N --add-label loop:in-progress
 ```
 
 b. **Announce on the issue** (so a human reading the issue page knows it's being worked):
-```bash
-gh issue comment N --body "🤖 Dispatched by /super-build — worker spinning up in worktree \`.worktrees/issue-N\` on branch \`loop/issue-N\`. Skills: <skills-line-from-body-or-defaults>."
+```
+platform_issue_comment N "🤖 Dispatched by /super-build — worker spinning up in worktree \`.worktrees/issue-N\` on branch \`loop/issue-N\`. Skills: <skills-line-from-body-or-defaults>."
 ```
 
 c. **Dispatch:**
@@ -139,7 +141,7 @@ bash scripts/super-build-dispatch.sh N
 
 The dispatcher (at `scripts/super-build-dispatch.sh`) handles:
 - `git worktree add -b loop/issue-N .worktrees/issue-N <base-branch>`
-- `gh issue view N --json title,body,labels` to compose the worker prompt
+- `platform_issue_view N` to compose the worker prompt
 - prepend `references/worker-preamble.md` + append working-directory footer
 - `cd` into worktree and exec `claude -p --dangerously-skip-permissions --output-format stream-json --verbose --max-turns 250`
 - verify the worker produced a `chore(loop): close #N` commit on its branch
@@ -154,9 +156,9 @@ Poll BashOutput on each in-flight shell. As each finishes:
 **On dispatcher exit 0 (success) — DEFAULT: open a PR, do not merge or close.** This is the outcome unless Autonomy preflight case 4 (Standalone Auto-Merge mode) applies to this run:
 - `cd <repo-root>`
 - `git push origin loop/issue-N`
-- `gh pr create --base "$BASE_BRANCH" --head loop/issue-N --draft --title "<issue title>" --body "Closes #N\n\n<summary of what changed>\n\n🤖 Opened by /super-build — awaiting QA/Review. Does not merge or close on its own; see Autonomy preflight in skills/super-build/SKILL.md."`
-- `gh issue comment N --body "🔨 Super Build opened PR #<pr> — implementation done, awaiting QA/Review (or a human merge). Issue stays open until the PR merges."`
-- `gh issue edit N --remove-label loop:in-progress --add-label needs-review`
+- `platform_mr_create_draft --base "$BASE_BRANCH" --head loop/issue-N --title "<issue title>" --body "Closes #N\n\n<summary of what changed>\n\n🤖 Opened by /super-build — awaiting QA/Review. Does not merge or close on its own; see Autonomy preflight in skills/super-build/SKILL.md."`
+- `platform_issue_comment N "🔨 Super Build opened PR #<pr> — implementation done, awaiting QA/Review (or a human merge). Issue stays open until the PR merges."`
+- `platform_issue_edit_labels N --remove-label loop:in-progress --add-label needs-review`
 - `git worktree remove .worktrees/issue-N` (leave `loop/issue-N` on origin — don't delete; it's cleaned up when the PR merges or closes)
 - Notify Telegram: `✅ Super Build opened PR #<pr> for issue #N — awaiting QA/Review`
 - Recompute ready set; if new issues are now unblocked, dispatch in the next wave (respecting the 3-concurrent throttle)
@@ -166,8 +168,8 @@ If Autonomy preflight case 4 applies, use the merge+close sequence in **## Stand
 **On dispatcher exit 5 (intentional WIP-PARTIAL — merge as partial, do NOT close):**
 - `cd <repo-root>`
 - `git merge --no-ff loop/issue-N -m "merge: loop/issue-N partial — <slice from worker's final message> (#N)"` — the issue number reference (no `closes #` keyword) means GitHub will not auto-close the issue.
-- `gh issue edit N --remove-label loop:in-progress --add-label human-gated`
-- `gh issue comment N --body "✅ Foundation/partial slice merged to main as $(git rev-parse --short HEAD). Issue stays open with \`human-gated\` label until the rest of the implementation lands. Worker's reason for stopping at a partial:\n\n> $(<final assistant message excerpt>)"`
+- `platform_issue_edit_labels N --remove-label loop:in-progress --add-label human-gated`
+- `platform_issue_comment N "✅ Foundation/partial slice merged to main as $(git rev-parse --short HEAD). Issue stays open with \`human-gated\` label until the rest of the implementation lands. Worker's reason for stopping at a partial:\n\n> $(<final assistant message excerpt>)"`
 - Before cleanup, archive the branch as a tag: `git tag archive/loop-issue-N-$(date +%Y%m%d-%H%M%S) loop/issue-N` (so `git branch -D` is recoverable)
 - `git worktree remove .worktrees/issue-N`
 - `git branch -D loop/issue-N`
@@ -175,15 +177,15 @@ If Autonomy preflight case 4 applies, use the merge+close sequence in **## Stand
 - **Continue dispatching the next issue in the wave.** A WIP-PARTIAL is NOT a halt. The worker did intentional, scoped work and the orchestrator advances.
 
 **On dispatcher exit 2 or 3 (worker failed or no done-commit):**
-- `gh issue edit N --remove-label loop:in-progress`
-- `gh issue comment N --body "❌ /super-build worker failed (exit code <X>). Last 50 lines of log:\n\n\`\`\`\n$(tail -50 .planning/super-build-logs/issue-N.log)\n\`\`\`\nWorktree at \`.worktrees/issue-N\` left intact for human inspection."`
+- `platform_issue_edit_labels N --remove-label loop:in-progress`
+- `platform_issue_comment N "❌ /super-build worker failed (exit code <X>). Last 50 lines of log:\n\n\`\`\`\n$(tail -50 .planning/super-build-logs/issue-N.log)\n\`\`\`\nWorktree at \`.worktrees/issue-N\` left intact for human inspection."`
 - Notify Telegram with `tail -50` of `.planning/super-build-logs/issue-N.log`
 - Do NOT merge; leave the worktree intact for human inspection
 - Halt the loop
 
 **On dispatcher exit 4 (HUMAN GATE TRIPPED):**
-- `gh issue edit N --remove-label loop:in-progress --add-label human-gated`
-- `gh issue comment N --body "🔴 HUMAN GATE TRIPPED — needs manual handling. See worktree \`.worktrees/issue-N\`."`
+- `platform_issue_edit_labels N --remove-label loop:in-progress --add-label human-gated`
+- `platform_issue_comment N "🔴 HUMAN GATE TRIPPED — needs manual handling. See worktree \`.worktrees/issue-N\`."`
 - Notify Telegram: `🔴 Issue #N tripped HUMAN GATE — needs manual handling`
 - Halt the loop
 
@@ -215,7 +217,7 @@ Super Build treats acceptance criteria as the completion contract. Workers must 
 
 - **Maximum 3 parallel workers** at a time (resource throttle).
 - **Never auto-touch issues with `human-gated` label** (production cutover, secrets, irreversible ops).
-- **Never modify code in the main worktree** while workers are running. Only run `gh issue` commands and merge/cleanup operations.
+- **Never modify code in the main worktree** while workers are running. Only run `platform_issue_*` operations and merge/cleanup operations.
 - **Merge conflicts** between concurrent workers' branches → halt loop, notify Telegram with conflict files, leave `loop:in-progress` label so a human can resolve. Don't auto-resolve.
 - **Telegram cadence:** 1 message at start, 1 per dispatch wave, 1 per completion (success/fail), 1 final summary. Don't spam.
 - **Workers MUST use the right skills.** The worker preamble enforces: workers parse the `Skills:` line from the issue body if present, otherwise use defaults (`superpowers:test-driven-development`, `superpowers:verification-before-completion`). All decision points use gstack advisors (`/plan-ceo-review`, `/plan-eng-review`, `/cso`, `/plan-design-review`) with majority vote (tie → smallest blast radius). See `references/gstack-voting.md` for when to invoke vs. when to escalate, and the required `--- gstack-vote ---` commit trailer.
@@ -227,7 +229,7 @@ The preamble at `references/worker-preamble.md` is the worker contract: decision
 ## Recovery / re-entry
 
 If the user invokes `/super-build` after a partial run:
-- Re-read `gh issue list`. Issues already closed are skipped automatically.
+- Re-read open issues via `platform_board_snapshot <number-or-config> <owner>` (then `platform_issue_view N` per card if needed). Issues already closed are skipped automatically.
 - If issue N already has an open PR from a prior `loop/issue-N` branch: skip re-dispatch, report the existing PR URL instead — don't open a duplicate PR.
 - If `.worktrees/issue-N` exists for an N that's still open: a previous worker was interrupted. Default: notify the user and ask before auto-resuming (a re-dispatch overwrites the previous attempt's branch).
 - If the `loop:in-progress` label is set on issue N but no worktree exists: stale lock from a crashed orchestrator. Remove the label and treat as ready.
@@ -256,8 +258,8 @@ If the user invokes `/super-build` after a partial run:
 When active, replace the default "On dispatcher exit 0" steps in **### 4. Wait + reconcile** with:
 - `cd <repo-root>`
 - `git merge --no-ff loop/issue-N -m "merge: loop/issue-N (closes #N)"`
-- `gh issue close N --comment "Closed by /super-build (standalone auto-merge) in $(git rev-parse --short HEAD)"`
-- `gh issue edit N --remove-label loop:in-progress`
+- `platform_issue_close N "Closed by /super-build (standalone auto-merge) in $(git rev-parse --short HEAD)"`
+- `platform_issue_edit_labels N --remove-label loop:in-progress`
 - `git worktree remove .worktrees/issue-N`
 - `git branch -D loop/issue-N`
 - Move the project item/card to `Done` if GitHub does not do it automatically on issue close.
@@ -297,8 +299,8 @@ Follow spec `.claude/skills/super-board/references/run.md` → Builder (first pa
 Triggered when card returns to Ready/Building with `loop:rebuild-N` label.
 1. Read PR review threads on this branch's PR; filter `[builder]` prefix.
 2. For each unresolved `[builder]` thread: read file:line + suggested fix → apply → resolve thread via:
-   ```bash
-   gh api graphql -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}' -f threadId="<thread-id>"
+   ```
+   platform_thread_resolve <thread-id>
    ```
 3. Address any new failure feedback from Tester's latest ❌ comment.
 4. Commit + push to same branch. Verify ALL `[builder]` threads are resolved before exit.

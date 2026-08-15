@@ -21,7 +21,7 @@ fi
 echo "checking skills/super-build/SKILL.md"
 
 # 1. The default success path must open a PR.
-grep -q -- 'gh pr create' "$FILE" || fail "default reconcile path no longer opens a PR (gh pr create missing)"
+grep -q -- 'platform_mr_create_draft' "$FILE" || fail "default reconcile path no longer opens a PR (platform_mr_create_draft missing)"
 
 # 2. The Autonomy preflight section must exist.
 grep -q '^## Autonomy preflight' "$FILE" || fail "'## Autonomy preflight' section missing"
@@ -35,8 +35,8 @@ if [ -z "$GATE_LINE" ]; then
   fail "'## Standalone Auto-Merge mode' heading missing"
 else
   # 5. The unconditional close command (the exact old default) must not appear before the gate.
-  if head -n "$((GATE_LINE - 1))" "$FILE" | grep -qE 'gh issue close N --comment "Closed by /super-build in \$'; then
-    fail "unconditional 'gh issue close' instruction found before the gated Standalone Auto-Merge section"
+  if head -n "$((GATE_LINE - 1))" "$FILE" | grep -qE 'platform_issue_close N "Closed by /super-build in \$'; then
+    fail "unconditional 'platform_issue_close' instruction found before the gated Standalone Auto-Merge section"
   fi
 fi
 
