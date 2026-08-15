@@ -3,8 +3,9 @@
 **Status:** Implemented. `extends` ships in `references/config-schema.json`, resolved by
 `scripts/config-resolve.sh` (sourced by `scripts/super-board-run.sh` and
 `scripts/super-board-wave-plan.sh`), `scripts/super-board-status.py`
-(`resolve_extends`/`_deep_merge`), and `packages/control-core/src/index.ts`
-(`resolveExtends`/`deepMerge`, both `discoverConfigs` and `runState`). `references/onboard.md`
+(`resolve_extends`/`_deep_merge`), and `packages/control-core/src/config.ts`
+(`resolveExtends`/`deepMerge`, called by `discoverConfigs` there and by `runState` in
+`packages/control-core/src/snapshot.ts`). `references/onboard.md`
 step 2 path A now writes one base config + N thin overlays instead of N fully duplicated
 files. Tests: `tests/test-config-extends.sh` (resolver unit cases, wave-plan integration
 including the process-substitution/FIFO test-mode path, and a `super-board-run.sh` smoke run
@@ -60,7 +61,7 @@ an effective config **once, upstream of every existing field read**, in whicheve
 they already read from one resolved JSON blob today, and would keep doing so; only the step
 that produces that blob gains an `extends` check first. Consumers needing this: `scripts/super-board-run.sh`,
 `skills/super-build/scripts/super-build-dispatch.sh`, `skills/super-qa/scripts/super-qa-dispatch.sh`,
-`scripts/super-board-status.py`, `packages/control-core/src/index.ts` (`discoverConfigs`).
+`scripts/super-board-status.py`, `packages/control-core/src/config.ts` (`discoverConfigs`).
 
 Onboarding changes (`onboard.md` step 2, path A / "independent boards"): ask the shared
 settings once, write the base file once, then for each tool selected write only the thin
