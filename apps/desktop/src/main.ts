@@ -173,28 +173,34 @@ function processRunnerLine(sessionId: string, line: string): void {
   for (const event of runnerEventsFromClaudeJsonLine(sessionId, line)) sendRunnerEvent(event);
 }
 
-function spawnRunner(repository: RepositoryRecord, request: CommandRequest): RunnerSession {
-  const id = createSessionId();
-  const sessionName = `supersaiyan-ui-${id}`;
-  const command = supersaiyanCommand(request);
+type RunnerSpawnOptions = {
+  argv: string[];
+  title: string;
+  sessionName: string;
+  command: CommandRequest;
+};
+
+function spawnHeadlessRunner(repository: RepositoryRecord, id: string, options: RunnerSpawnOptions): RunnerSession {
   const environment = Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
   );
   delete environment.npm_config_prefix;
   delete environment.NPM_CONFIG_PREFIX;
-  const child = spawn("claude", [
-    "-p",
-    "--verbose",
-    "--output-format", "stream-json",
-    "--include-partial-messages",
-    "--name", sessionName,
-    command,
-  ], {
+  // Runner commands are intentionally argv-based headless Claude processes so
+  // stream-json can be consumed without routing command content through a shell.
+  const child = spawn("claude", options.argv, {
     cwd: repository.path,
     env: environment,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const session: RunnerSession = { id, repoId: repository.id, title: `SuperSaiyan · ${request.verb}`, command: request, active: true, sessionName };
+  const session: RunnerSession = {
+    id,
+    repoId: repository.id,
+    title: options.title,
+    command: options.command,
+    active: true,
+    sessionName: options.sessionName,
+  };
   runners.set(id, { session, process: child, repoId: repository.id });
   sendRunnerEvent({ type: "init", sessionId: id });
 
@@ -230,60 +236,40 @@ function spawnRunner(repository: RepositoryRecord, request: CommandRequest): Run
   return session;
 }
 
-function spawnContinueRunner(repository: RepositoryRecord, sessionName: string, userText: string): RunnerSession {
+function spawnRunner(repository: RepositoryRecord, request: CommandRequest): RunnerSession {
   const id = createSessionId();
-  const environment = Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-  );
-  delete environment.npm_config_prefix;
-  delete environment.NPM_CONFIG_PREFIX;
-  const child = spawn("claude", [
-    "-p",
-    "--verbose",
-    "--output-format", "stream-json",
-    "--include-partial-messages",
-    "--continue",
-    "--name", sessionName,
-    userText,
-  ], {
-    cwd: repository.path,
-    env: environment,
-    stdio: ["ignore", "pipe", "pipe"],
+  const sessionName = `supersaiyan-ui-${id}`;
+  const command = supersaiyanCommand(request);
+  return spawnHeadlessRunner(repository, id, {
+    argv: [
+      "-p",
+      "--verbose",
+      "--output-format", "stream-json",
+      "--include-partial-messages",
+      "--name", sessionName,
+      command,
+    ],
+    title: `SuperSaiyan · ${request.verb}`,
+    sessionName,
+    command: request,
   });
-  const session: RunnerSession = { id, repoId: repository.id, title: "SuperSaiyan · reply", command: { verb: "run", args: [] }, active: true, sessionName };
-  runners.set(id, { session, process: child, repoId: repository.id });
-  sendRunnerEvent({ type: "init", sessionId: id });
+}
 
-  let stdoutBuffer = "";
-  let stderrBuffer = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (data: string) => {
-    stdoutBuffer += data;
-    const lines = stdoutBuffer.split(/\r?\n/);
-    stdoutBuffer = lines.pop() ?? "";
-    for (const line of lines) processRunnerLine(id, line);
+function spawnContinueRunner(repository: RepositoryRecord, sessionName: string, userText: string): RunnerSession {
+  return spawnHeadlessRunner(repository, createSessionId(), {
+    argv: [
+      "-p",
+      "--verbose",
+      "--output-format", "stream-json",
+      "--include-partial-messages",
+      "--continue",
+      "--name", sessionName,
+      userText,
+    ],
+    title: "SuperSaiyan · reply",
+    sessionName,
+    command: { verb: "run", args: [] },
   });
-  child.stderr.on("data", (data: string) => {
-    stderrBuffer += data;
-    const lines = stderrBuffer.split(/\r?\n/);
-    stderrBuffer = lines.pop() ?? "";
-    for (const line of lines) if (line.trim()) sendRunnerEvent({ type: "error", sessionId: id, message: line.trim() });
-  });
-  child.on("error", (error) => {
-    sendRunnerEvent({ type: "error", sessionId: id, message: error.message });
-  });
-  child.on("exit", (exitCode) => {
-    if (stdoutBuffer.trim()) processRunnerLine(id, stdoutBuffer);
-    if (stderrBuffer.trim()) sendRunnerEvent({ type: "error", sessionId: id, message: stderrBuffer.trim() });
-    session.active = false;
-    runners.delete(id);
-    if (mutatingSessions.get(repository.id) === id) mutatingSessions.delete(repository.id);
-    snapshots.delete(repository.id);
-    sendRunnerEvent({ type: "exit", sessionId: id, exitCode: exitCode ?? 0 });
-    send("workspace:changed", { repoId: repository.id });
-  });
-  return session;
 }
 
 function toolkitInstallerPath(): string {
@@ -346,6 +332,11 @@ function registerIpc(): void {
       mutatingSessions.delete(repoId);
     }
     const command = supersaiyanCommand(request);
+    // command:start intentionally opens an interactive PTY and writes the
+    // sanitized slash command into it. Keep this path interactive: both this
+    // path and the headless runner build command content via
+    // supersaiyanCommand(), which enforces the verb schema, rejects newlines,
+    // and restricts argument characters.
     const session = spawnTerminal(repository, `SuperSaiyan · ${request.verb}`, "supersaiyan", {
       file: "claude",
       args: ["--name", `supersaiyan-ui-${repository.name}-${request.verb}`],
