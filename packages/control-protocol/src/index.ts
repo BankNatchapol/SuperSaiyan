@@ -12,6 +12,10 @@ export const laneNames = [
 ] as const;
 
 export type LaneName = (typeof laneNames)[number];
+
+/** Lanes a human owns: a card sitting in one of these is not mid-pipeline, so it may be dragged. */
+export const movableLaneNames: readonly LaneName[] = ["Backlog", "Ready", "Blocked", "Skipped"];
+
 export type CommandVerb = "setup" | "new" | "prepare" | "lint" | "run" | "stop";
 export type Screen = "overview" | "board" | "features" | "runs" | "terminal" | "runner" | "repositories" | "settings";
 
