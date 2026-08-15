@@ -25,7 +25,12 @@ for f in "${FILES[@]}"; do
   [ -f "$f" ] || { echo "error: $f not found" >&2; exit 1; }
   rel="${f#"$ROOT"/}"
 
-  # Invocable: backtick-wrapped `gh <subcommand>` or command substitution $(gh …)
+  # Issue #5 AC: any gh api/issue/pr/project substring (catches fenced
+  # `gh issue close` with no backticks — the original leftover shape).
+  if grep -nE 'gh api|gh issue|gh pr|gh project' "$f"; then
+    fail "$rel still contains invocable gh api/issue/pr/project commands (use platform_*)"
+  fi
+  # Also catch `gh auth` / $(gh repo view …) that the AC substrings miss.
   if grep -nE '`gh [a-z]|\$\(gh ' "$f"; then
     fail "$rel still contains an invocable gh command (use platform_*)"
   fi
