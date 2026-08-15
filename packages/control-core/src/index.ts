@@ -107,14 +107,22 @@ async function resolveExtends(
   return merged;
 }
 
+// Display-only summary of config.worker_backend for the Control Center. The dispatcher is the
+// authority on validity (it exits 78 and names the offending lane); this only has to render a
+// malformed value legibly rather than blank or "[object Object]", so anything that is not a
+// string collapses to "invalid" instead of being stringified.
 export function formatWorkerBackend(value: unknown): string {
+  const laneBackend = (lane: unknown): string => {
+    if (lane === undefined || lane === null) return "claude-p"; // dispatcher's omitted-lane default
+    return typeof lane === "string" ? lane : "invalid";
+  };
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const lanes = value as Record<string, unknown>;
-    return ["build", "qa", "review"]
-      .map((lane) => `${lane}=${String(lanes[lane] ?? "claude-p")}`)
-      .join(" ");
+    return ["build", "qa", "review"].map((lane) => `${lane}=${laneBackend(lanes[lane])}`).join(" ");
   }
-  return String(value || "workflow");
+  if (value === undefined || value === null) return "workflow";
+  if (typeof value === "string") return value || "workflow";
+  return "invalid";
 }
 
 export class RepositoryRegistry {

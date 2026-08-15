@@ -42,6 +42,20 @@ describe("formatWorkerBackend", () => {
 
   it("treats a missing worker_backend as workflow", () => {
     expect(formatWorkerBackend(undefined)).toBe("workflow");
+    expect(formatWorkerBackend(null)).toBe("workflow");
     expect(formatWorkerBackend("")).toBe("workflow");
+  });
+
+  // The dispatcher rejects these (exit 78); the summary just has to stay readable.
+  it("renders a malformed lane value as invalid, never [object Object]", () => {
+    const rendered = formatWorkerBackend({ build: { name: "codex-exec" }, qa: "cursor-agent" });
+    expect(rendered).toBe("build=invalid qa=cursor-agent review=claude-p");
+    expect(rendered).not.toContain("[object Object]");
+  });
+
+  it("renders a non-object, non-string worker_backend as invalid rather than blank", () => {
+    expect(formatWorkerBackend([])).toBe("invalid");
+    expect(formatWorkerBackend(["codex-exec"])).toBe("invalid");
+    expect(formatWorkerBackend(7)).toBe("invalid");
   });
 });

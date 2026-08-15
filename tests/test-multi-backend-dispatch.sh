@@ -98,6 +98,9 @@ cleanup() {
   rm -rf "$STUB_DIR"
   [ -n "${SMOKE_DIR:-}" ] && rm -rf "$SMOKE_DIR"
   [ -n "${MODEL_CFG:-}" ] && rm -f "$MODEL_CFG"
+  # An EXIT trap that returns non-zero overrides a zero exit status, so a cleanup ending on an
+  # unset-var guard would turn a passing run into rc=1. Never let cleanup decide the verdict.
+  return 0
 }
 trap cleanup EXIT
 mkdir -p "$STUB_DIR/bin"
