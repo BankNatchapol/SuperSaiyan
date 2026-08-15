@@ -55,15 +55,14 @@ export async function resolveExtends(
   return merged;
 }
 
-// `worker_backend` is either a single backend name for the whole run, or a per-lane object
-// (see skills/super-board/references/backends.md). Render the object form as a compact
-// `build=… qa=… review=…` summary — String() on it would yield "[object Object]". Lane keys
-// omitted from the object default to claude-p, matching the dispatcher's own resolution.
-//
-// Display-only summary of config.worker_backend for the Control Center. The dispatcher is the
-// authority on validity (it exits 78 and names the offending lane); this only has to render a
-// malformed value legibly rather than blank or "[object Object]", so anything that is not a
-// string collapses to "invalid" instead of being stringified.
+// Display-only summary of config.worker_backend for the Control Center. The value is either a
+// single backend name for the whole run or a per-lane object (see
+// skills/super-board/references/backends.md); the object form renders as a compact
+// `build=… qa=… review=…` string because String() on it would yield "[object Object]", and lane
+// keys omitted from it default to claude-p, matching the dispatcher's own resolution. The
+// dispatcher is the authority on validity (it exits 78 and names the offending lane), so this
+// only has to render a malformed value legibly — anything non-string collapses to "invalid"
+// rather than being stringified or left blank.
 export function formatWorkerBackend(value: unknown): string {
   const laneBackend = (lane: unknown): string => {
     if (lane === undefined || lane === null) return "claude-p"; // dispatcher's omitted-lane default
