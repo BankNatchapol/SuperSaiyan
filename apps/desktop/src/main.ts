@@ -32,6 +32,7 @@ import {
   terminalIdSchema,
   type AppPreferences,
   type CommandRequest,
+  type DropTargetLaneName,
   type RepositoryRecord,
   type RepositorySnapshot,
   type RunnerSession,
@@ -415,7 +416,7 @@ function registerIpc(): void {
     terminalIdSchema.parse(sessionId);
     terminals.get(sessionId)?.process.kill();
   });
-  ipcMain.handle("board:move", async (event, repoId: string, issueNumber: number, targetStatus: "Backlog" | "Ready") => {
+  ipcMain.handle("board:move", async (event, repoId: string, issueNumber: number, targetStatus: DropTargetLaneName) => {
     assertTrusted(event);
     boardMoveSchema.parse({ repoId, issueNumber, targetStatus });
     await moveBoardCard(repositoryFor(repoId), issueNumber, targetStatus);

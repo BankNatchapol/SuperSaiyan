@@ -1,5 +1,5 @@
-import type { BoardCard, LaneName } from "@supersaiyan/control-protocol";
-import { movableLaneNames } from "@supersaiyan/control-protocol";
+import type { BoardCard, DropTargetLaneName, LaneName } from "@supersaiyan/control-protocol";
+import { dropTargetLaneNames, movableLaneNames } from "@supersaiyan/control-protocol";
 
 export function isBoardCardMovable(
   card: Pick<BoardCard, "assignees" | "state" | "status">,
@@ -9,6 +9,6 @@ export function isBoardCardMovable(
     && card.assignees.length === 0;
 }
 
-export function isBoardDropTarget(lane: LaneName): lane is "Backlog" | "Ready" {
-  return lane === "Backlog" || lane === "Ready";
+export function isBoardDropTarget(lane: LaneName): lane is DropTargetLaneName {
+  return dropTargetLaneNames.some((target) => target === lane);
 }

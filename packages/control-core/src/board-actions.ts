@@ -2,14 +2,14 @@
 // owns. Separate from board.ts (read path) because the guardrails below need a full snapshot,
 // and snapshot.ts imports board.ts — keeping the write path downstream of both avoids an
 // import cycle.
-import type { LaneName, RepositoryRecord } from "@supersaiyan/control-protocol";
+import type { DropTargetLaneName, LaneName, RepositoryRecord } from "@supersaiyan/control-protocol";
 import { laneNames, movableLaneNames } from "@supersaiyan/control-protocol";
 import { buildSnapshot } from "./snapshot";
 import { run, safeJson } from "./shared";
 
 const MUTABLE_SOURCES = new Set<LaneName>(movableLaneNames);
 
-export async function moveBoardCard(repository: RepositoryRecord, issueNumber: number, targetStatus: "Backlog" | "Ready"): Promise<void> {
+export async function moveBoardCard(repository: RepositoryRecord, issueNumber: number, targetStatus: DropTargetLaneName): Promise<void> {
   const snapshot = await buildSnapshot(repository);
   const card = laneNames.flatMap((lane) => snapshot.lanes[lane]).find((candidate) => candidate.number === issueNumber);
   if (!card) throw new Error(`Issue #${issueNumber} is not on the configured board`);

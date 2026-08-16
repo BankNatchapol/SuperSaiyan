@@ -7,6 +7,9 @@ export function detectChoices(text: string): ParsedChoices | null {
   const choices: Choice[] = [];
   let firstChoiceLine = -1;
 
+  // Every A)–Z) line counts, even if they are not contiguous. An A) inside a
+  // code block plus a B) fifty lines later still becomes a two-choice prompt
+  // with an empty preamble — same as the inlined parser this was extracted from.
   for (let i = 0; i < lines.length; i++) {
     const match = lines[i]!.match(/^(?:>\s*)?\*{0,2}([A-Z])\)\*{0,2}\s+(.*)/);
     if (match && match[1] && match[2]) {

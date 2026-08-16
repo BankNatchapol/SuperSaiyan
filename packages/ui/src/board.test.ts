@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { BoardCard, LaneName } from "@supersaiyan/control-protocol";
+import type { BoardCard } from "@supersaiyan/control-protocol";
+import { dropTargetLaneNames, laneNames, movableLaneNames } from "@supersaiyan/control-protocol";
 import { isBoardCardMovable, isBoardDropTarget } from "./board";
 
 function card(overrides: Partial<BoardCard> = {}): BoardCard {
@@ -17,14 +18,14 @@ function card(overrides: Partial<BoardCard> = {}): BoardCard {
 }
 
 describe("isBoardCardMovable", () => {
-  it.each(["Backlog", "Ready", "Blocked", "Skipped"] as const)(
+  it.each([...movableLaneNames])(
     "allows an unassigned open card in %s",
     (status) => {
       expect(isBoardCardMovable(card({ status }))).toBe(true);
     },
   );
 
-  it.each(["Building", "QA", "Review", "Done"] as const)(
+  it.each(laneNames.filter((lane) => !movableLaneNames.includes(lane)))(
     "rejects a card in %s",
     (status) => {
       expect(isBoardCardMovable(card({ status }))).toBe(false);
@@ -41,11 +42,11 @@ describe("isBoardCardMovable", () => {
 });
 
 describe("isBoardDropTarget", () => {
-  it.each(["Backlog", "Ready"] as const)("allows %s", (lane) => {
+  it.each([...dropTargetLaneNames])("allows %s", (lane) => {
     expect(isBoardDropTarget(lane)).toBe(true);
   });
 
-  it.each(["Building", "QA", "Review", "Done", "Blocked", "Skipped"] as LaneName[])(
+  it.each(laneNames.filter((lane) => !dropTargetLaneNames.some((target) => target === lane)))(
     "rejects %s",
     (lane) => {
       expect(isBoardDropTarget(lane)).toBe(false);

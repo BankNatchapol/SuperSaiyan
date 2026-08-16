@@ -26,6 +26,7 @@ import {
   type BoardCard,
   type CommandRequest,
   type ControlTransport,
+  type DropTargetLaneName,
   type RepositoryRecord,
   type RepositorySnapshot,
   type RunnerEvent,
@@ -96,7 +97,7 @@ function HealthCore({ snapshot }: { snapshot?: RepositorySnapshot }) {
 
 function BoardView({ snapshot, onMove, onOpen }: {
   snapshot: RepositorySnapshot;
-  onMove: (card: BoardCard, target: "Backlog" | "Ready") => void;
+  onMove: (card: BoardCard, target: DropTargetLaneName) => void;
   onOpen: (url?: string) => void;
 }) {
   return (
