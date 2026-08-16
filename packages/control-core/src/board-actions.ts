@@ -3,11 +3,11 @@
 // and snapshot.ts imports board.ts — keeping the write path downstream of both avoids an
 // import cycle.
 import type { LaneName, RepositoryRecord } from "@supersaiyan/control-protocol";
-import { laneNames } from "@supersaiyan/control-protocol";
+import { laneNames, movableLaneNames } from "@supersaiyan/control-protocol";
 import { buildSnapshot } from "./snapshot";
 import { run, safeJson } from "./shared";
 
-const MUTABLE_SOURCES = new Set<LaneName>(["Backlog", "Ready", "Blocked", "Skipped"]);
+const MUTABLE_SOURCES = new Set<LaneName>(movableLaneNames);
 
 export async function moveBoardCard(repository: RepositoryRecord, issueNumber: number, targetStatus: "Backlog" | "Ready"): Promise<void> {
   const snapshot = await buildSnapshot(repository);
