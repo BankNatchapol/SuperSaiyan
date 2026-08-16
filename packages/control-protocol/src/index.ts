@@ -12,6 +12,14 @@ export const laneNames = [
 ] as const;
 
 export type LaneName = (typeof laneNames)[number];
+
+/** Lanes a human owns: a card sitting in one of these is not mid-pipeline, so it may be dragged. */
+export const movableLaneNames: readonly LaneName[] = ["Backlog", "Ready", "Blocked", "Skipped"];
+
+/** Lanes a human may drop a card into. Source lanes and drop targets are different sets. */
+export const dropTargetLaneNames = ["Backlog", "Ready"] as const;
+export type DropTargetLaneName = (typeof dropTargetLaneNames)[number];
+
 export type CommandVerb = "setup" | "new" | "prepare" | "lint" | "run" | "stop";
 export type Screen = "overview" | "board" | "features" | "runs" | "terminal" | "runner" | "repositories" | "settings";
 
@@ -150,7 +158,7 @@ export const commandRequestSchema = z.object({
 export const boardMoveSchema = z.object({
   repoId: repoIdSchema,
   issueNumber: z.number().int().positive(),
-  targetStatus: z.enum(["Backlog", "Ready"]),
+  targetStatus: z.enum(dropTargetLaneNames),
 });
 
 export interface ControlTransport {
@@ -169,7 +177,7 @@ export interface ControlTransport {
   writeTerminal(sessionId: string, data: string): Promise<void>;
   resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void>;
   closeTerminal(sessionId: string): Promise<void>;
-  moveBoardCard(repoId: string, issueNumber: number, targetStatus: "Backlog" | "Ready"): Promise<void>;
+  moveBoardCard(repoId: string, issueNumber: number, targetStatus: DropTargetLaneName): Promise<void>;
   openPath(repoId: string, relativePath: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   getPreferences(): Promise<AppPreferences>;

@@ -26,6 +26,7 @@ import {
   type BoardCard,
   type CommandRequest,
   type ControlTransport,
+  type DropTargetLaneName,
   type RepositoryRecord,
   type RepositorySnapshot,
   type RunnerEvent,
@@ -35,6 +36,7 @@ import {
 } from "@supersaiyan/control-protocol";
 import { TerminalView } from "./TerminalView";
 import { SmartRunnerView } from "./SmartRunnerView";
+import { isBoardCardMovable, isBoardDropTarget } from "./board";
 
 export interface ControlCenterAppProps {
   transport: ControlTransport;
@@ -95,7 +97,7 @@ function HealthCore({ snapshot }: { snapshot?: RepositorySnapshot }) {
 
 function BoardView({ snapshot, onMove, onOpen }: {
   snapshot: RepositorySnapshot;
-  onMove: (card: BoardCard, target: "Backlog" | "Ready") => void;
+  onMove: (card: BoardCard, target: DropTargetLaneName) => void;
   onOpen: (url?: string) => void;
 }) {
   return (
@@ -105,10 +107,10 @@ function BoardView({ snapshot, onMove, onOpen }: {
           className="lane"
           key={lane}
           onDragOver={(event) => {
-            if (lane === "Backlog" || lane === "Ready") event.preventDefault();
+            if (isBoardDropTarget(lane)) event.preventDefault();
           }}
           onDrop={(event) => {
-            if (lane !== "Backlog" && lane !== "Ready") return;
+            if (!isBoardDropTarget(lane)) return;
             const number = Number(event.dataTransfer.getData("text/issue-number"));
             const source = laneNames.flatMap((name) => snapshot.lanes[name]).find((card) => card.number === number);
             if (source) onMove(source, lane);
@@ -121,7 +123,7 @@ function BoardView({ snapshot, onMove, onOpen }: {
           </div>
           <div className="lane-cards">
             {snapshot.lanes[lane].map((card) => {
-              const movable = ["Backlog", "Ready", "Blocked", "Skipped"].includes(card.status) && card.state === "OPEN" && !card.assignees.length;
+              const movable = isBoardCardMovable(card);
               return (
                 <article
                   className={`issue-card hover-lift ${movable ? "movable" : ""}`}
