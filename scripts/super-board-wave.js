@@ -140,7 +140,11 @@ const results = await pipeline(
     const model = tierFor(prev && prev.cls)
     let at = card.status
 
-    if (at === 'Ready' && input.variant === 'full') {
+    // 'Building' enters here too: a card sits in Building only while a Builder is
+    // mid-flight, so selecting one means the previous wave died before it advanced.
+    // Re-entering the build lane is the recovery — same shape as a Ready card
+    // carrying loop:rebuild-N.
+    if ((at === 'Ready' || at === 'Building') && input.variant === 'full') {
       const b = await runLane('build', card, model, history)
       if (b.status !== 'advanced') return { number: card.number, history }
       at = 'QA'

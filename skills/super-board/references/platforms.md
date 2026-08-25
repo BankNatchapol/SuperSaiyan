@@ -66,7 +66,7 @@ Verified against `gh`. Config keys: `project.owner`, `project.number`, `project.
 
 - Auth: `gh auth status`; `issue` needs `repo`, `board` needs `repo` + `project`.
 - Snapshot: `gh project item-list` / GraphQL `repositoryOwner.projectV2.items`. `.status` is the Status single-select.
-- Card move: `gh project item-edit --field-id --single-select-option-id`. `--add` uses `gh project item-add` then the same edit.
+- Card move: `gh project item-edit --field-id --single-select-option-id`. The contract form `<issue> <column>` resolves the item + Status option ids inside the adapter (via `platform_board_ensure` + `platform_board_snapshot`, 3 `gh` calls) and then issues that edit; a 4-arg `<item_id> <project_id> <field_id> <option_id>` call is still accepted for installed callers that resolved the ids themselves. `--add` uses `gh project item-add` then the same edit.
 - Claim: `gh issue edit N --add-assignee`. Release: `--remove-assignee`.
 - Issues: `gh issue create --title --body-file`; `gh issue view --json`; `gh issue comment`; `gh issue close --comment`; `gh issue edit --add-label/--remove-label`.
 - PRs: `gh pr create --draft --base --head --title --body-file`; `gh pr ready`; `gh pr comment`; `gh pr merge --squash --delete-branch`; `gh pr view`; `gh pr list --search "head:<branch>"`.
