@@ -338,6 +338,24 @@ dispatch_lane() {
     review) backend="$REVIEW_BACKEND" ;;
     *) log "unknown lane: $lane"; return 1 ;;
   esac
+  # Ready → Building. The dispatcher owns this transition, not the Builder: the Builder
+  # only ever exits Building (references/run.md → Builder lifecycle), so leaving it to the
+  # worker left the transition unowned and `Building` a write-never column — the card sat in
+  # `Ready` for the whole Build lane and `super-board status` / the Control Center faithfully
+  # reported a board that was wrong.
+  # Before backend_launch, so the worker's first board read already shows Building and a crash
+  # in the claim→launch window leaves the card visibly mid-flight rather than falsely Ready.
+  # Failure is non-fatal by design: super-build accepts `Ready/Building → QA` and
+  # check_lane_zombie's build lane accepts both columns, so a card left in Ready still
+  # completes. A board-API hiccup must never stall the drain.
+  # qa-only boards have no Building column and never dispatch a build lane.
+  if [ "$lane" = "build" ] && [ "$VARIANT" = "full" ]; then
+    if platform_card_status_set "$issue" Building >/dev/null 2>&1; then
+      log "card #${issue} Ready → Building"
+    else
+      log "⚠ could not move #${issue} Ready → Building — dispatching anyway (card stays in Ready)"
+    fi
+  fi
   # Re-source this lane's backend immediately before use (see load_backend's contract note).
   # Safe because dispatch_lane calls never overlap: the main loop invokes it synchronously,
   # at most once per lane per tick, and only the launched worker backgrounds — so there is no

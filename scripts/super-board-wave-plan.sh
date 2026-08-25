@@ -88,7 +88,10 @@ fi
 # Validate loudly: a typo (or missing key → literal "null") must not silently
 # drop the QA column from selection and strand cards there.
 case "$VARIANT" in
-  full)    COLUMNS='["Review","QA","Ready"]' ;;
+  # Building is selectable so a wave that stopped after the orchestrator moved
+  # Ready → Building re-enters the build lane on the next run instead of stranding
+  # the card in a column nothing reads (see references/run-workflow.md → Stop / resume).
+  full)    COLUMNS='["Review","QA","Building","Ready"]' ;;
   qa-only) COLUMNS='["Review","Ready"]' ;;
   *) echo "invalid variant in config: ${VARIANT} (expected full|qa-only)" >&2; exit 65 ;;
 esac

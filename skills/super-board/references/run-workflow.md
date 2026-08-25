@@ -106,7 +106,7 @@ Repeat until a done condition or halt gate fires:
 2. **Plan the wave** —
    `bash .supersaiyan/bin/super-board-wave-plan.sh --config <config-path>` →
    `{cards: [...]}`. Selection is backlog-aware: one card per non-empty
-   column downstream-first (Review → QA → Ready), then remaining
+   column downstream-first (Review → QA → Building → Ready), then remaining
    `max_workers` slots fill from the most backlogged column; extra Review
    cards only when `human_approves_merge: true` (merge-race guard). If
    `cards` is empty and Building/QA/Review counts are 0 → done. If empty
@@ -120,6 +120,18 @@ Repeat until a done condition or halt gate fires:
    bot_identity is unset — accepted single-orchestrator risk: without it
    there is no cross-session claim at all, so never run two orchestrators
    (or /loop re-entries) against the same board without bot_identity.
+   Then, **on the full variant only**, move every card whose planned status is
+   `Ready` into `Building` — this is the orchestrator's half of a transition
+   that belongs to the dispatch layer, never to the Builder (`references/run.md`
+   → Builder (first pass)):
+
+       bash .supersaiyan/bin/super-board-cardmove.sh <n> Building
+
+   Do it **after** the claim verifies and **before** step 4, so the card is
+   visibly mid-flight for the whole wave. If it fails, log it and launch the
+   wave anyway — the Builder accepts `Ready` or `Building` as its source
+   column, so a board-API hiccup must not stall the drain. Cards planned from
+   `Building`, `QA`, or `Review` are already in their lane's column; leave them.
 4. **Launch** — Workflow tool with
    `scriptPath: .supersaiyan/workflows/super-board-wave.js` and
    `args: { configPath, variant, cards, humanApprovesMerge, tier, gitPlatform }`. `gitPlatform`
@@ -162,9 +174,10 @@ Repeat until a done condition or halt gate fires:
 - Resume: just run again — board state is the only state. A workflow stopped
   mid-wave can also be resumed in-session via `resumeFromRunId` (completed
   lane agents return cached results).
-- Cards stranded in `Building` (wave stopped after the Builder moved
-  Ready → Building): the wave planner only selects from Review/QA/Ready,
-  so drag stranded Building cards back to Ready before re-running.
+- Cards left in `Building` (wave stopped after the orchestrator moved
+  Ready → Building at claim time) need no manual handling: the planner
+  selects `Building` on the full variant and `super-board-wave.js` routes
+  those cards straight back into the build lane. Just run again.
 
 ## Mid-run permission prompts
 

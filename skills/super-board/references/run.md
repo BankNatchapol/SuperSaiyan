@@ -176,6 +176,18 @@ Gate 1's narrow re-verification (Reviewer lifecycle step 2) is the one case wher
 
 ### Builder (first pass)
 
+**`Ready → Building` is not the Builder's to make.** The dispatch layer performs it at claim
+time, before the worker starts — `dispatch_lane` in `super-board-run.sh` for the bash
+dispatcher, the orchestrator's claim step for the workflow backend
+(`references/run-workflow.md` § The wave loop, step 3). The Builder only ever *exits*
+`Building`. Leaving the entry move to the worker is what made `Building` a write-never
+column: cards sat in `Ready` for the whole Build lane and `super-board status` / the Control
+Center reported a board that was wrong.
+
+Both dispatch paths treat a failed move as non-fatal and start the worker anyway, so the
+Builder must accept **either** `Ready` or `Building` as its source column. That tolerance is
+the fallback for a failed move, not the normal path — never rely on it to skip the move.
+
 1. Create worktree `.worktrees/issue-<N>-build/` off `config.base_branch`.
 2. Create branch `issue-<N>-<slug>` from `config.base_branch`.
 3. Read issue body + ALL comments + PROJECT.md.

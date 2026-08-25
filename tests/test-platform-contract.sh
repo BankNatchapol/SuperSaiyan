@@ -88,6 +88,26 @@ for f in "${PLATFORM_FILES[@]}"; do
   else
     echo "  ✓ all ${#REQUIRED_FUNCTIONS[@]} contract functions defined"
   fi
+
+  # Signature guard. Name-only checks let GitHub's platform_card_status_set drift to
+  # `<item_id> <project_id> <field_id> <option_id>` while the contract said
+  # `<issue> <column>` — under the dispatcher's `set -u` that aborted on an unbound $3, and
+  # without it, it issued `--project-id Building --field-id ""`. A one-arg call is the cheapest
+  # probe that needs no network: every adapter must reject it as a usage error (64) rather than
+  # treat the missing args as empty strings and proceed.
+  #
+  # Adapters are sourced under `set -u` here on purpose — that is how super-board-run.sh runs
+  # them. Full per-adapter behavior lives in tests/test-github-cardmove-contract.sh and
+  # tests/test-gitlab-cardmove-race.sh.
+  RC=0
+  ( set -uo pipefail; source "$f"; platform_card_status_set 42 >/dev/null 2>&1 ) || RC=$?
+  if [ "$RC" -ne 64 ]; then
+    echo "  FAIL: $name platform_card_status_set with one arg exited $RC, wanted 64 (usage)" >&2
+    echo "        contract is <issue> <column> — see references/platforms.md" >&2
+    FAIL=1
+  else
+    echo "  ✓ platform_card_status_set rejects a partial <issue> <column> call"
+  fi
 done
 
 if [ "$FAIL" -ne 0 ]; then

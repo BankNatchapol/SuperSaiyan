@@ -177,7 +177,11 @@ platform_top_unclaimed_card() {
 
 platform_card_status_set() {
   # GitHub ProjectV2 single-select write.
-  # Usage A (existing): <item_id> <project_id> <field_id> <option_id>
+  # Usage A (the Platform contract — see references/platforms.md): <issue> <column>
+  #   → resolves board metadata inside this adapter, same as GitLab's `<iid> <column>`.
+  # Usage A-legacy (pre-contract, kept source-compatible for installed callers that
+  #   already resolved the GitHub IDs themselves):
+  #   <item_id> <project_id> <field_id> <option_id>
   # Usage B (add-only — tasks-to-issues Ready enqueue):
   #   --add <config-path> <issue_url> <target-status>
   #   → resolves board metadata inside this adapter, then adds and moves the item.
@@ -224,9 +228,45 @@ platform_card_status_set() {
     echo "$item_id"
     return 0
   fi
-  local item_id="$1" project_id="$2" field_id="$3" option_id="$4"
-  gh project item-edit --id "$item_id" --project-id "$project_id" \
-    --field-id "$field_id" --single-select-option-id "$option_id"
+  if [ "$#" -ge 4 ]; then
+    local item_id="$1" project_id="$2" field_id="$3" option_id="$4"
+    gh project item-edit --id "$item_id" --project-id "$project_id" \
+      --field-id "$field_id" --single-select-option-id "$option_id"
+    return
+  fi
+  # Contract form: <issue> <column>. Resolve everything the ID form wants, then
+  # delegate to it so there is exactly one place that issues the mutation.
+  local issue="${1:-}" column="${2:-}"
+  [ -n "$issue" ] && [ -n "$column" ] || {
+    echo "platform_card_status_set: usage: <issue> <column> | <item_id> <project_id> <field_id> <option_id> | --add <config> <url> <column>" >&2
+    return 64
+  }
+  local number owner metadata project_id field_id option_id item_id snapshot
+  if [ -n "${PLATFORM_CONFIG_PATH:-}" ] && [ -f "$PLATFORM_CONFIG_PATH" ]; then
+    number=$(jq -r '.project.number // empty' "$PLATFORM_CONFIG_PATH")
+    owner=$(jq -r '.project.owner // "@me"' "$PLATFORM_CONFIG_PATH")
+  else
+    number="${GH_PROJECT_NUMBER:-}"
+    owner="${GH_PROJECT_OWNER:-@me}"
+  fi
+  [ -n "$number" ] || {
+    echo "platform_card_status_set: GitHub Project number is required (set PLATFORM_CONFIG_PATH or GH_PROJECT_NUMBER)" >&2
+    return 64
+  }
+  # Fails 65 when the column is absent from the Status field — the right answer for
+  # e.g. a qa-only board asked for "Building".
+  metadata=$(platform_board_ensure "$number" "$owner" "$column") || return
+  project_id=$(printf '%s\n' "$metadata" | sed -n '1p')
+  field_id=$(printf '%s\n' "$metadata" | sed -n '2p')
+  option_id=$(printf '%s\n' "$metadata" | sed -n '3p')
+  snapshot=$(platform_board_snapshot "$number" "$owner") || return
+  item_id=$(printf '%s' "$snapshot" | jq -r --arg n "$issue" \
+    '.items[] | select(.content.type == "Issue") | select(.content.number == ($n | tonumber)) | .id' | head -1)
+  [ -n "$item_id" ] || {
+    echo "platform_card_status_set: issue #${issue} is not an item on project ${owner}#${number}" >&2
+    return 65
+  }
+  platform_card_status_set "$item_id" "$project_id" "$field_id" "$option_id"
 }
 
 platform_card_move_verify() {
